@@ -1,6 +1,138 @@
-lat_default, lon_default = 18.55, 33.82
-lat_input = st.sidebar.number_input("خط العرض (Latitude):", value=float(lat_default), format="%.4f")
-lon_input = st.sidebar.number_input("خط الطول (Longitude):", value=float(lon_default), format="%.4f")
+import streamlit as st
+import pandas as pd
+import folium
+from streamlit_folium import st_folium
+
+# ==========================================
+# 1. تهيئة وإعدادات الصفحة الرئيسية
+# ==========================================
+st.set_page_config(
+    page_title="نظام التعدين الذكي - جامعة الخرطوم",
+    page_icon="⛏️",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# ==========================================
+# 2. التنسيق البصري (CSS)
+# ==========================================
+st.markdown("""
+<style>
+    .stApp {
+        background: linear-gradient(rgba(244, 238, 218, 0.88), rgba(193, 154, 107, 0.92)),
+                    url('https://images.unsplash.com/photo-1578328819058-b69f3a3b0f6b?q=80&w=1600&auto=format&fit=crop');
+        background-size: cover;
+        background-position: center;
+        background-attachment: fixed;
+    }
+    h1, h2, h3, h4, h5, h6 {
+        color: #5c2c16 !important;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    [data-testid="stSidebar"] {
+        background-color: #f5eedc !important;
+        border-right: 2px solid #c19a6b;
+    }
+    div[data-testid="stMetric"], div.stSelectbox, div.stNumberInput, div.stSlider, div.stTextInput {
+        background-color: rgba(255, 255, 255, 0.70) !important;
+        border-radius: 10px;
+        padding: 8px;
+        border: 1px solid #d4af37;
+    }
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+</style>
+""", unsafe_allow_html=True)
+
+# ==========================================
+# 3. الهيدر الرئيسي مع شعار جامعة الخرطوم
+# ==========================================
+col_logo, col_title = st.columns([1, 5])
+
+with col_logo:
+    st.image("https://upload.wikimedia.org/wikipedia/en/thumb/8/82/University_of_Khartoum_logo.png/220px-University_of_Khartoum_logo.png", width=105)
+
+with col_title:
+    st.title("⛏️ نظام التعدين الذكي وتقييم المخاطر البيئية")
+    st.caption("جامعة الخرطوم — كلية الهندسة — قسم هندسة التعدين | نظام الذكاء الاصطناعي للتنبؤ بالتسرب الجوفي")
+
+st.markdown("---")
+
+# ==========================================
+# 4. قاعدة البيانات وإدارة الجلسة
+# ==========================================
+preset_locations = {
+    "أبو حمد (نهر النيل)": {
+        "coords": (19.5333, 33.3167), "depth": 15, "dist": 250, 
+        "soil": "تربة رملية هشّة (نفاذية عالية)", "cyanide": 0.45
+    },
+    "عطبرة (نهر النيل)": {
+        "coords": (17.6833, 33.9833), "depth": 8, "dist": 100, 
+        "soil": "تربة رملية هشّة (نفاذية عالية)", "cyanide": 0.80
+    },
+    "بربر (نهر النيل)": {
+        "coords": (18.0167, 33.9833), "depth": 12, "dist": 180, 
+        "soil": "تربة طمية مختلطة (نفاذية متوسطة)", "cyanide": 0.30
+    },
+    "قبقبة / وادي العشاري": {
+        "coords": (21.8000, 34.5000), "depth": 60, "dist": 2500, 
+        "soil": "تربة صخرية صلبة (نفاذية منخفضة)", "cyanide": 0.10
+    },
+    "هيا (البحر الأحمر)": {
+        "coords": (18.3333, 36.3500), "depth": 45, "dist": 1500, 
+        "soil": "تربة صخرية صلبة (نفاذية منخفضة)", "cyanide": 0.05
+    },
+    "كادوقلي (جنوب كردفان)": {
+        "coords": (11.0167, 29.7167), "depth": 20, "dist": 400, 
+        "soil": "تربة طمية مختلطة (نفاذية متوسطة)", "cyanide": 0.20
+    }
+}
+
+# تهيئة القيم المبدئية في حالة الجلسة
+if "preset_choice" not in st.session_state:
+    st.session_state.preset_choice = "أبو حمد (نهر النيل)"
+
+default_data = preset_locations[st.session_state.preset_choice]
+
+if "lat_val" not in st.session_state:
+    st.session_state.lat_val = float(default_data["coords"][0])
+if "lon_val" not in st.session_state:
+    st.session_state.lon_val = float(default_data["coords"][1])
+if "depth_val" not in st.session_state:
+    st.session_state.depth_val = int(default_data["depth"])
+if "dist_val" not in st.session_state:
+    st.session_state.dist_val = int(default_data["dist"])
+if "soil_val" not in st.session_state:
+    st.session_state.soil_val = default_data["soil"]
+if "cyanide_val" not in st.session_state:
+    st.session_state.cyanide_val = float(default_data["cyanide"])
+
+def update_preset():
+    choice = st.session_state.preset_choice
+    data = preset_locations[choice]
+    st.session_state.lat_val = float(data["coords"][0])
+    st.session_state.lon_val = float(data["coords"][1])
+    st.session_state.depth_val = int(data["depth"])
+    st.session_state.dist_val = int(data["dist"])
+    st.session_state.soil_val = data["soil"]
+    st.session_state.cyanide_val = float(data["cyanide"])
+
+# ==========================================
+# 5. القائمة الجانبية (Sidebar)
+# ==========================================
+st.sidebar.image("https://upload.wikimedia.org/wikipedia/en/thumb/8/82/University_of_Khartoum_logo.png/220px-University_of_Khartoum_logo.png", width=140)
+st.sidebar.header("🔍 إدخال بيانات الموقع والبحث")
+
+selected_preset = st.sidebar.selectbox(
+    "اختر منطقة تعدين معروفة:", 
+    list(preset_locations.keys()),
+    key="preset_choice",
+    on_change=update_preset
+)
+
+lat_input = st.sidebar.number_input("خط العرض (Latitude):", key="lat_val", format="%.4f")
+lon_input = st.sidebar.number_input("خط الطول (Longitude):", key="lon_val", format="%.4f")
+
 map_style = st.sidebar.selectbox(
     "نوع الخريطة:",
     ["قمر صناعي (Satellite)", "خريطة شوارع (OpenStreetMap)"]
@@ -9,23 +141,27 @@ map_style = st.sidebar.selectbox(
 st.sidebar.markdown("---")
 st.sidebar.header("📊 المعطيات الهيدروجيولوجية والهندسية")
 
-water_depth = st.sidebar.slider("عمق المياه الجوفية (متر):", min_value=2, max_value=150, value=20)
-river_dist = st.sidebar.slider("البعد عن أقرب مجرى مائي (متر):", min_value=20, max_value=5000, value=350, step=50)
-soil_type = st.sidebar.selectbox(
-    "نوع التربة والهيكلية الجيولوجية:",
-    ["تربة صخرية صلبة (نفاذية منخفضة)", "تربة طمية مختلطة (نفاذية متوسطة)", "تربة رملية هشّة (نفاذية عالية)"]
-)
-cyanide_conc = st.sidebar.slider("تركيز السيانيد/الزئبق (mg/L):", min_value=0.01, max_value=2.00, value=0.15, step=0.01)
+soil_options = [
+    "تربة صخرية صلبة (نفاذية منخفضة)", 
+    "تربة طمية مختلطة (نفاذية متوسطة)", 
+    "تربة رملية هشّة (نفاذية عالية)"
+]
+
+water_depth = st.sidebar.slider("عمق المياه الجوفية (متر):", min_value=2, max_value=150, key="depth_val")
+river_dist = st.sidebar.slider("البعد عن أقرب مجرى مائي (متر):", min_value=20, max_value=5000, step=50, key="dist_val")
+soil_type = st.sidebar.selectbox("نوع التربة والهيكلية الجيولوجية:", soil_options, key="soil_val")
+cyanide_conc = st.sidebar.slider("تركيز السيانيد/الزئبق (mg/L):", min_value=0.01, max_value=2.00, step=0.01, key="cyanide_val")
 
 # ==========================================
-# 5. الحسابات
+# 6. الخوارزمية وحساب نتائج التقييم
 # ==========================================
 perm = 0.1 if "صخرية" in soil_type else (0.5 if "طمية" in soil_type else 0.95)
-risk_score = (1800 / (river_dist + 1)) * (perm * 35) * (30 / water_depth) + (cyanide_conc * 15)
+
+risk_score = (1800 / (river_dist + 1)) * (perm * 35) * (30 / water_depth) + (cyanide_conc * 20)
 risk_score = min(max(round(risk_score, 1), 5.0), 98.5)
 
 # ==========================================
-# 6. عرض النتائج والمؤشرات
+# 7. عرض النتائج والمؤشرات
 # ==========================================
 col1, col2, col3 = st.columns(3)
 
@@ -43,9 +179,9 @@ with col3:
 st.markdown("---")
 
 # ==========================================
-# 7. الخريطة التفاعلية
+# 8. الخريطة التفاعلية
 # ==========================================
-st.subheader(f"🗺️ الخريطة التفاعلية للموقع: {site_name}")
+st.subheader(f"🗺️ الخريطة التفاعلية للموقع: {selected_preset}")
 
 if map_style == "قمر صناعي (Satellite)":
     m = folium.Map(location=[lat_input, lon_input], zoom_start=11, tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri')
@@ -56,8 +192,8 @@ marker_color = "red" if risk_score >= 70 else ("orange" if risk_score >= 40 else
 
 folium.Marker(
     location=[lat_input, lon_input],
-    popup=f"<b>المنجم:</b> {site_name}<br><b>درجة الخطر:</b> {risk_score}%",
-    tooltip=site_name,
+    popup=f"<b>المنجم:</b> {selected_preset}<br><b>درجة الخطر:</b> {risk_score}%",
+    tooltip=selected_preset,
     icon=folium.Icon(color=marker_color, icon="info-sign")
 ).add_to(m)
 
