@@ -1,5 +1,7 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
+import pydeck as pdk
 import folium
 from streamlit_folium import st_folium
 
@@ -54,7 +56,7 @@ with col_logo:
 
 with col_title:
     st.title("⛏️ نظام التعدين الذكي وتقييم المخاطر البيئية")
-    st.caption("جامعة الخرطوم — كلية الهندسة — قسم هندسة التعدين | نظام الذكاء الاصطناعي للتنبؤ بالتسرب الجوفي")
+    st.caption("جامعة الخرطوم — كلية الهندسة — قسم هندسة التعدين | خريطة التضاريس والمخاطر ثلاثية الأبعاد (3D Terrain)")
 
 st.markdown("---")
 
@@ -64,27 +66,27 @@ st.markdown("---")
 preset_locations = {
     "أبو حمد (نهر النيل)": {
         "coords": (19.5333, 33.3167), "depth": 15, "dist": 250, 
-        "soil": "تربة رملية هشّة (نفاذية عالية)", "cyanide": 0.45
+        "soil": "تربة رملية هشّة (نفاذية عالية)", "cyanide": 0.45, "elevation": 280
     },
     "عطبرة (نهر النيل)": {
         "coords": (17.6833, 33.9833), "depth": 8, "dist": 100, 
-        "soil": "تربة رملية هشّة (نفاذية عالية)", "cyanide": 0.80
+        "soil": "تربة رملية هشّة (نفاذية عالية)", "cyanide": 0.80, "elevation": 350
     },
     "بربر (نهر النيل)": {
         "coords": (18.0167, 33.9833), "depth": 12, "dist": 180, 
-        "soil": "تربة طمية مختلطة (نفاذية متوسطة)", "cyanide": 0.30
+        "soil": "تربة طمية مختلطة (نفاذية متوسطة)", "cyanide": 0.30, "elevation": 340
     },
     "قبقبة / وادي العشاري": {
         "coords": (21.8000, 34.5000), "depth": 60, "dist": 2500, 
-        "soil": "تربة صخرية صلبة (نفاذية منخفضة)", "cyanide": 0.10
+        "soil": "تربة صخرية صلبة (نفاذية منخفضة)", "cyanide": 0.10, "elevation": 620
     },
     "هيا (البحر الأحمر)": {
         "coords": (18.3333, 36.3500), "depth": 45, "dist": 1500, 
-        "soil": "تربة صخرية صلبة (نفاذية منخفضة)", "cyanide": 0.05
+        "soil": "تربة صخرية صلبة (نفاذية منخفضة)", "cyanide": 0.05, "elevation": 680
     },
     "كادوقلي (جنوب كردفان)": {
         "coords": (11.0167, 29.7167), "depth": 20, "dist": 400, 
-        "soil": "تربة طمية مختلطة (نفاذية متوسطة)", "cyanide": 0.20
+        "soil": "تربة طمية مختلطة (نفاذية متوسطة)", "cyanide": 0.20, "elevation": 500
     }
 }
 
@@ -132,9 +134,9 @@ selected_preset = st.sidebar.selectbox(
 lat_input = st.sidebar.number_input("خط العرض (Latitude):", key="lat_val", format="%.4f")
 lon_input = st.sidebar.number_input("خط الطول (Longitude):", key="lon_val", format="%.4f")
 
-map_style = st.sidebar.selectbox(
-    "نمط الخريطة:",
-    ["خريطة جغرافية واضحة (OpenStreetMap)", "خريطة داكنة (CartoDB Dark)", "خريطة تضاريس (OpenTopoMap)"]
+map_view_type = st.sidebar.radio(
+    "نمط العرض الجغرافي:",
+    ["خريطة ثلاثية الأبعاد 3D (PyDeck Terrain)", "خريطة ثنائية الأبعاد 2D (Folium Map)"]
 )
 
 st.sidebar.markdown("---")
@@ -148,7 +150,7 @@ soil_options = [
 
 water_depth = st.sidebar.slider("عمق المياه الجوفية (متر):", min_value=2, max_value=150, key="depth_val")
 river_dist = st.sidebar.slider("البعد عن أقرب مجرى مائي (متر):", min_value=20, max_value=5000, step=50, key="dist_val")
-soil_type = st.sidebar.selectbox("نوع التربة والهيكلية الجيولوجية:", soil_options, key="soil_val")
+soil_type = st.sidebar.selectbox("نوع التربة للهيكلية الجيولوجية:", soil_options, key="soil_val")
 cyanide_conc = st.sidebar.slider("تركيز السيانيد/الزئبق (mg/L):", min_value=0.01, max_value=2.00, step=0.01, key="cyanide_val")
 
 # ==========================================
@@ -178,34 +180,96 @@ with col3:
 st.markdown("---")
 
 # ==========================================
-# 8. الخريطة التفاعلية
+# 8. عرض الخريطة ثلاثية الأبعاد / ثنائية الأبعاد
 # ==========================================
-st.subheader(f"🗺️ الخريطة التفاعلية للموقع: {selected_preset}")
+st.subheader(f"🗺️ العرض التفاعلي للموقع: {selected_preset}")
 
-# إعداد طبقة الخريطة المضمونة
-if "داكنة" in map_style:
-    m = folium.Map(location=[lat_input, lon_input], zoom_start=11, tiles="CartoDB dark_matter")
-elif "تضاريس" in map_style:
-    m = folium.Map(location=[lat_input, lon_input], zoom_start=11, tiles="OpenTopoMap")
+# تحديد لون العمود ثلاثي الأبعاد حسب مستوى الخطر (RGB)
+if risk_score >= 70:
+    color_rgb = [230, 50, 50, 200]    # أحمر
+elif risk_score >= 40:
+    color_rgb = [240, 160, 20, 200]   # برتقالي
 else:
+    color_rgb = [40, 180, 80, 200]    # أخضر
+
+if "ثلاثية" in map_view_type:
+    st.info("💡 يمكنك استخدام الزر الأيمن للماوس أو السحب بأصبعين على الشاشة لتدوير الخريطة وتغيير زاوية الرؤية ثلاثية الأبعاد (3D).")
+
+    # إنشاء نقاط محاكاة ثلاثية الأبعاد للمنجم والنطاق المحيط به
+    elevation_val = preset_locations[selected_preset].get("elevation", 300)
+    
+    # تجهيز بيانات العمود ثلاثي الأبعاد (ColumnLayer)
+    df_3d = pd.DataFrame({
+        "name": [selected_preset],
+        "lat": [lat_input],
+        "lon": [lon_input],
+        "elevation": [elevation_val + (risk_score * 15)],
+        "radius": [river_dist / 2]
+    })
+
+    # إنشاء طبقة الأعمدة ثلاثية الأبعاد
+    column_layer = pdk.Layer(
+        "ColumnLayer",
+        data=df_3d,
+        get_position=["lon", "lat"],
+        get_elevation="elevation",
+        elevation_scale=3,
+        radius=300,
+        get_fill_color=color_rgb,
+        pickable=True,
+        auto_highlight=True,
+        extruded=True
+    )
+
+    # إنشاء طبقة النطاق التأثيري ثلاثي الأبعاد (ScatterplotLayer)
+    scatter_layer = pdk.Layer(
+        "ScatterplotLayer",
+        data=df_3d,
+        get_position=["lon", "lat"],
+        get_color=color_rgb,
+        get_radius=river_dist,
+        opacity=0.3,
+        pickable=True
+    )
+
+    # ضبط إعدادات الكاميرا ثلاثية الأبعاد (Pitch & Bearing)
+    view_state = pdk.ViewState(
+        latitude=lat_input,
+        longitude=lon_input,
+        zoom=11,
+        pitch=60,       # زاوية انحدار الكاميرا لتجسيم الـ 3D
+        bearing=30      # زاوية دوران الكاميرا
+    )
+
+    # رسم الخريطة ثلاثية الأبعاد
+    r = pdk.Deck(
+        layers=[scatter_layer, column_layer],
+        initial_view_state=view_state,
+        tooltip={"html": "<b>المنجم:</b> {name}<br/><b>الارتفاع الممثل للمخاطر:</b> {elevation} م"},
+        map_style="mapbox://styles/mapbox/satellite-v9"
+    )
+
+    st.pydeck_chart(r)
+
+else:
+    # الخريطة الثنائية 2D الاحتياطية (Folium)
     m = folium.Map(location=[lat_input, lon_input], zoom_start=11, tiles="OpenStreetMap")
+    marker_color = "red" if risk_score >= 70 else ("orange" if risk_score >= 40 else "green")
 
-marker_color = "red" if risk_score >= 70 else ("orange" if risk_score >= 40 else "green")
+    folium.Marker(
+        location=[lat_input, lon_input],
+        popup=f"<b>المنجم:</b> {selected_preset}<br><b>درجة الخطر:</b> {risk_score}%",
+        tooltip=selected_preset,
+        icon=folium.Icon(color=marker_color, icon="info-sign")
+    ).add_to(m)
 
-folium.Marker(
-    location=[lat_input, lon_input],
-    popup=f"<b>المنجم:</b> {selected_preset}<br><b>درجة الخطر:</b> {risk_score}%",
-    tooltip=selected_preset,
-    icon=folium.Icon(color=marker_color, icon="info-sign")
-).add_to(m)
+    folium.Circle(
+        location=[lat_input, lon_input],
+        radius=river_dist,
+        color=marker_color,
+        fill=True,
+        fill_opacity=0.2,
+        popup="نطاق التأثير المتوقع"
+    ).add_to(m)
 
-folium.Circle(
-    location=[lat_input, lon_input],
-    radius=river_dist,
-    color=marker_color,
-    fill=True,
-    fill_opacity=0.2,
-    popup="نطاق التأثير المتوقع"
-).add_to(m)
-
-st_folium(m, width="100%", height=450)
+    st_folium(m, width="100%", height=450)
