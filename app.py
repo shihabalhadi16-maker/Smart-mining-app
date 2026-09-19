@@ -1,39 +1,3 @@
-import streamlit as st
-import pandas as pd
-import folium
-from streamlit_folium import st_folium
-
-# يجب أن يكون استدعاء set_page_config أول أمر بعد الـ import مباشرة
-st.set_page_config(
-    page_title="Smart Mining System",
-    layout="wide"
-)
-
-st.title("⛏️ منصة التعدين الذكي وتقييم المخاطر البيئية")
-
-import pandas as pd
-import folium
-from streamlit_folium import st_folium
-
-st.set_page_config(page_title="Smart Mining System", page_icon="⛏️", layout="wide")
-
-st.title("⛏️ منصة التعدين الذكي وتقييم المخاطر البيئية")
-st.markdown("نظام ذكي متكامل لتقييم أمان مواقع التعدين وجدواها الاقتصادية باستخدام الذكاء الاصطناعي - جامعة الخرطوم")
-
-mining_data = [
-    {"ID": "ST-01", "الموقع": "حوض الكرتة الرئيسي", "الولاية": "نهر النيل", "lat": 18.55, "lon": 33.82, "عمق المياه (م)": 12, "الخطر %": 96.8, "الحالة": "حرج جداً"},
-    {"ID": "ST-02", "الموقع": "منجم أهلي حديث", "الولاية": "نهر النيل", "lat": 18.42, "lon": 33.95, "عمق المياه (م)": 28, "الخطر %": 78.5, "الحالة": "مرتفع"},
-    {"ID": "ST-03", "الموقع": "معالجة بعيدة عن المياه", "الولاية": "الشمالية", "lat": 18.60, "lon": 33.65, "عمق المياه (م)": 85, "الخطر %": 22.1, "الحالة": "آمن"},
-    {"ID": "ST-04", "الموقع": "حوض معالجة بالسيانيد", "الولاية": "البحر الأحمر", "lat": 18.35, "lon": 33.72, "عمق المياه (م)": 18, "الخطر %": 84.3, "الحالة": "حرج"},
-    {"ID": "ST-05", "الموقع": "منطقة استكشاف جديدة", "الولاية": "نهر النيل", "lat": 18.70, "lon": 33.90, "عمق المياه (م)": 95, "الخطر %": 15.0, "الحالة": "آمن"}
-]
-
-df = pd.DataFrame(mining_data)
-
-col1, col2 = st.columns([3, 2])
-
-with col1:
-    st.subheader("📍 الخريطة الجغرافية للمواقع والمخاطر")
     m = folium.Map(location=[18.55, 33.82], zoom_start=8)
     for idx, row in df.iterrows():
         color = "red" if row["الخطر %"] > 70 else "green"
