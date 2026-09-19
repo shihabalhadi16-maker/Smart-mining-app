@@ -88,9 +88,8 @@ preset_locations = {
     }
 }
 
-# تهيئة القيم المبدئية في حالة الجلسة
 if "preset_choice" not in st.session_state:
-    st.session_state.preset_choice = "أبو حمد (نهر النيل)"
+    st.session_state.preset_choice = "عطبرة (نهر النيل)"
 
 default_data = preset_locations[st.session_state.preset_choice]
 
@@ -134,8 +133,8 @@ lat_input = st.sidebar.number_input("خط العرض (Latitude):", key="lat_val"
 lon_input = st.sidebar.number_input("خط الطول (Longitude):", key="lon_val", format="%.4f")
 
 map_style = st.sidebar.selectbox(
-    "نوع الخريطة:",
-    ["قمر صناعي (Satellite)", "خريطة شوارع (OpenStreetMap)"]
+    "نمط الخريطة:",
+    ["خريطة جغرافية واضحة (OpenStreetMap)", "خريطة داكنة (CartoDB Dark)", "خريطة تضاريس (OpenTopoMap)"]
 )
 
 st.sidebar.markdown("---")
@@ -183,10 +182,13 @@ st.markdown("---")
 # ==========================================
 st.subheader(f"🗺️ الخريطة التفاعلية للموقع: {selected_preset}")
 
-if map_style == "قمر صناعي (Satellite)":
-    m = folium.Map(location=[lat_input, lon_input], zoom_start=11, tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri')
+# إعداد طبقة الخريطة المضمونة
+if "داكنة" in map_style:
+    m = folium.Map(location=[lat_input, lon_input], zoom_start=11, tiles="CartoDB dark_matter")
+elif "تضاريس" in map_style:
+    m = folium.Map(location=[lat_input, lon_input], zoom_start=11, tiles="OpenTopoMap")
 else:
-    m = folium.Map(location=[lat_input, lon_input], zoom_start=11)
+    m = folium.Map(location=[lat_input, lon_input], zoom_start=11, tiles="OpenStreetMap")
 
 marker_color = "red" if risk_score >= 70 else ("orange" if risk_score >= 40 else "green")
 
