@@ -8,7 +8,7 @@ from streamlit_folium import st_folium
 # 1. إعدادات الصفحة
 # ==========================================
 st.set_page_config(
-    page_title="نظام التعدين الذكي 3D - جامعة الخرطوم",
+    page_title="نظام التعدين الذكي - تفاصيل عالية الدقة",
     page_icon="⛏️",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -54,8 +54,8 @@ with col_logo:
     st.image("https://upload.wikimedia.org/wikipedia/en/thumb/8/82/University_of_Khartoum_logo.png/220px-University_of_Khartoum_logo.png", width=105)
 
 with col_title:
-    st.title("⛏️ خريطة التعدين الواقعية ثلاثية الأبعاد (Real 3D Terrain)")
-    st.caption("جامعة الخرطوم — كلية الهندسة — قسم هندسة التعدين | التجسيم الميداني للتضاريس والمخاطر البيئية")
+    st.title("⛏️ خريطة الأقمار الصناعية ثلاثية الأبعاد عالية التفاصيل")
+    st.caption("جامعة الخرطوم — كلية الهندسة — قسم هندسة التعدين | تقييم الميدان بدقة عالية")
 
 st.markdown("---")
 
@@ -133,8 +133,11 @@ selected_preset = st.sidebar.selectbox(
 lat_input = st.sidebar.number_input("خط العرض (Latitude):", key="lat_val", format="%.4f")
 lon_input = st.sidebar.number_input("خط الطول (Longitude):", key="lon_val", format="%.4f")
 
-pitch_val = st.sidebar.slider("زاوية إمالة الخريطة 3D (Pitch):", min_value=0, max_value=85, value=65)
-bearing_val = st.sidebar.slider("زاوية دوران الاتجاه (Bearing):", min_value=0, max_value=360, value=30)
+st.sidebar.markdown("---")
+st.sidebar.header("🎮 إعدادات دقة وتفاصيل الخريطة")
+zoom_level = st.sidebar.slider("مستوى التقريب والتفاصيل (Zoom):", min_value=10, max_value=18, value=14)
+pitch_val = st.sidebar.slider("زاوية الإمالة ثلاثية الأبعاد (Pitch):", min_value=0, max_value=80, value=60)
+bearing_val = st.sidebar.slider("زاوية الدوران (Bearing):", min_value=0, max_value=360, value=20)
 
 st.sidebar.markdown("---")
 st.sidebar.header("📊 المعطيات الجيولوجية")
@@ -170,67 +173,99 @@ with col3:
 st.markdown("---")
 
 # ==========================================
-# 7. بناء الخريطة ثلاثية الأبعاد الفعلية (True 3D Map)
+# 7. خريطة الأقمار الصناعية عالية التفاصيل (High-Detail Satellite)
 # ==========================================
-st.subheader(f"🗺️ الخريطة التضاريسية ثلاثية الأبعاد: {selected_preset}")
-st.info("👆 **طريقة التحكم:** استخدم زر الماوس الأيمن أو السحب باللمس بإصبعين على الشاشة لتعديل زاوية الرؤية ثلاثية الأبعاد، التدوير، والتكبير.")
+st.subheader(f"📡 عرض الأقمار الصناعية التفاعلي المباشر (3D High-Detail Satellite)")
 
 # تحديد الألوان حسب نسبة الخطر
 if risk_score >= 70:
-    color_rgb = [230, 40, 40, 220]
+    color_rgb = [235, 40, 40, 230]
 elif risk_score >= 40:
-    color_rgb = [240, 150, 20, 220]
+    color_rgb = [245, 160, 20, 230]
 else:
-    color_rgb = [40, 180, 80, 220]
+    color_rgb = [45, 190, 85, 230]
 
 df_site = pd.DataFrame([{
     "name": selected_preset,
     "lat": lat_input,
     "lon": lon_input,
-    "elevation": risk_score * 25,
+    "elevation": risk_score * 12,
     "radius": river_dist
 }])
 
-# طبقة مجسم الموقع الهندسي (3D Extruded Column)
+# 1. عمق ثلاثي الأبعاد فوق نقطة المنجم
 column_layer = pdk.Layer(
     "ColumnLayer",
     data=df_site,
     get_position=["lon", "lat"],
     get_elevation="elevation",
-    elevation_scale=4,
-    radius=180,
+    elevation_scale=2,
+    radius=80,
     get_fill_color=color_rgb,
     pickable=True,
     extruded=True,
 )
 
-# طبقة الحرم المائي والنطاق التأثيري ثلاثي الأبعاد
+# 2. دائرة الحرم المائي والنطاق الجغرافي
 scatterplot_layer = pdk.Layer(
     "ScatterplotLayer",
     data=df_site,
     get_position=["lon", "lat"],
     get_radius=river_dist,
-    get_fill_color=[color_rgb[0], color_rgb[1], color_rgb[2], 60],
+    get_fill_color=[color_rgb[0], color_rgb[1], color_rgb[2], 50],
     get_line_color=color_rgb,
-    line_width_min_pixels=2,
+    line_width_min_pixels=3,
     pickable=True,
 )
 
-# إعدادات الكاميرا والتجسيم الثلاثي الأبعاد
+# إعدادات الكاميرا للتحكم بدقة التقريب والرؤية
 view_state = pdk.ViewState(
     latitude=lat_input,
     longitude=lon_input,
-    zoom=12,
-    pitch=pitch_val,      # التحكم بإمالة الكاميرا للـ 3D
-    bearing=bearing_val   # التحكم بتدوير الاتجاه
+    zoom=zoom_level,
+    pitch=pitch_val,
+    bearing=bearing_val
 )
 
-# عرض الخريطة ثلاثية الأبعاد
+# تطبيق نمط الأقمار الصناعية عالي الدقة والموثوقية
 r = pdk.Deck(
     layers=[scatterplot_layer, column_layer],
     initial_view_state=view_state,
-    map_style="pdk.map_styles.SATELLITE",
-    tooltip={"html": "<b>الموقع:</b> {name}<br/><b>مستوى مجسم الخطر:</b> {elevation}m"}
+    map_style="mapbox://styles/mapbox/satellite-v9",
+    tooltip={"html": "<b>المنجم:</b> {name}<br/><b>الارتفاع الممثل للمخاطر:</b> {elevation}m"}
 )
 
 st.pydeck_chart(r)
+
+st.markdown("---")
+
+# ==========================================
+# 8. خريطة تفاصيل مساعدة موثوقة (Esri World Imagery)
+# ==========================================
+st.subheader("🗺️ خريطة الأقمار الصناعية البديلة بالتضاريس الميدانية (Esri Satellite)")
+
+m_sat = folium.Map(
+    location=[lat_input, lon_input], 
+    zoom_start=zoom_level,
+    tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    attr="Esri World Imagery"
+)
+
+marker_color = "red" if risk_score >= 70 else ("orange" if risk_score >= 40 else "green")
+
+folium.Marker(
+    location=[lat_input, lon_input],
+    popup=f"<b>{selected_preset}</b><br>نسبة الخطر: {risk_score}%",
+    icon=folium.Icon(color=marker_color, icon="info-sign")
+).add_to(m_sat)
+
+folium.Circle(
+    location=[lat_input, lon_input],
+    radius=river_dist,
+    color=marker_color,
+    fill=True,
+    fill_opacity=0.25,
+    popup="نطاق الحرم البيئي والمائي"
+).add_to(m_sat)
+
+st_folium(m_sat, width="100%", height=450)
