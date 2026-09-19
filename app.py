@@ -1,8 +1,6 @@
-        lat_default, lon_default = 18.55, 33.82
-
+lat_default, lon_default = 18.55, 33.82
 lat_input = st.sidebar.number_input("خط العرض (Latitude):", value=float(lat_default), format="%.4f")
 lon_input = st.sidebar.number_input("خط الطول (Longitude):", value=float(lon_default), format="%.4f")
-
 map_style = st.sidebar.selectbox(
     "نوع الخريطة:",
     ["قمر صناعي (Satellite)", "خريطة شوارع (OpenStreetMap)"]
