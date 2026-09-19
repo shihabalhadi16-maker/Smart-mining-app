@@ -2,7 +2,9 @@ import streamlit as st
 import pandas as pd
 import folium
 from streamlit_folium import st_folium
-from geopy.geocoders import Nominatim
+import json
+from urllib.request import urlopen, Request
+from urllib.parse import quote
 
 # ==========================================
 # 1. تهيئة وإعدادات الصفحة الرئيسية
@@ -70,31 +72,34 @@ preset_locations = {
     "أبو حمد (نهر النيل)": (19.5333, 33.3167),
     "عطبرة (نهر النيل)": (17.6833, 33.9833),
     "بربر (نهر النيل)": (18.0167, 33.9833),
-    "القباب (البحر الأحمر)": (21.8000, 35.5000),
+    "قبقبة / وادي العشاري": (21.8000, 34.5000),
     "هيا (البحر الأحمر)": (18.3333, 36.3500),
     "كادوقلي (جنوب كردفان)": (11.0167, 29.7167),
-    "إدخال موقع آخـر / بحث تلقائي": None
+    "إدخال موقع آخـر / بحث يدوياً": None
 }
 
 selected_preset = st.sidebar.selectbox("اختر منطقة تعدين معروفة:", list(preset_locations.keys()))
 
-if selected_preset != "إدخال موقع آخـر / بحث تلقائي":
+if selected_preset != "إدخال موقع آخـر / بحث يدوياً":
     lat_default, lon_default = preset_locations[selected_preset]
     site_name = selected_preset
 else:
     site_name = st.sidebar.text_input("اكتب اسم المدينة / المنطقة للبحث:", "Atbara, Sudan")
     
-    # البحث التلقائي باستخدام Geopy
-    geolocator = Nominatim(user_agent="mining_app_uofk")
+    # محرك بحث جغرافي خارجي بدون الحاجة لمكتبة geopy
     try:
-        location = geolocator.geocode(site_name)
-        if location:
-            lat_default = location.latitude
-            lon_default = location.longitude
-            st.sidebar.success(f"📍 تم العثور على الموقع: {location.address[:30]}...")
+        url = f"https://nominatim.openstreetmap.org/search?q={quote(site_name)}&format=json&limit=1"
+        req = Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        response = urlopen(req)
+        data = json.loads(response.read().decode('utf-8'))
+        
+        if data:
+            lat_default = float(data[0]['lat'])
+            lon_default = float(data[0]['lon'])
+            st.sidebar.success("📍 تم العثور على الموقع وتحديث الإحداثيات تلقائياً!")
         else:
             lat_default, lon_default = 18.55, 33.82
-            st.sidebar.warning("لم يتم العثور على الموقع، تم استخدام الإحداثيات الافتراضية.")
+            st.sidebar.warning("لم يتم العثور على الموقع، تم إرجاع الإحداثيات الافتراضية.")
     except:
         lat_default, lon_default = 18.55, 33.82
 
