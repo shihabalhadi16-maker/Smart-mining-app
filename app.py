@@ -1,3 +1,15 @@
+import streamlit as st
+import pandas as pd
+import folium
+from streamlit_folium import st_folium
+
+# يجب أن يكون استدعاء set_page_config أول أمر بعد الـ import مباشرة
+st.set_page_config(
+    page_title="Smart Mining System",
+    layout="wide"
+)
+
+st.title("⛏️ منصة التعدين الذكي وتقييم المخاطر البيئية")
 
 import pandas as pd
 import folium
