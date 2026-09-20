@@ -1,176 +1,71 @@
 import streamlit as st
-import pandas as pd
-import numpy as np
-import pydeck as pdk
 import folium
 from streamlit_folium import st_folium
-from google import genai
+import google.generativeai as genai
 
-# ==========================================
-# 1. إعدادات الصفحة والتصميم
-# ==========================================
-st.set_page_config(
-    page_title="نظام التعدين الذكي - دعم القرار بالذكاء الاصطناعي",
-    page_icon="⛏️",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# --- 1. إعدادات الصفحة ---
+st.set_page_config(page_title="المساعد الجيولوجي والرقابي الذكي", layout="wide")
 
-# ==========================================
-# 2. التنسيق البصري (CSS)
-# ==========================================
-st.markdown("""
-<style>
-    .stApp {
-        background-color: #f4f6f9;
-    }
-    h1, h2, h3, h4, h5, h6 {
-        color: #0e3047 !important;
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    }
-    [data-testid="stSidebar"] {
-        background-color: #ffffff !important;
-        border-right: 2px solid #d97736;
-    }
-    .ai-box {
-        background-color: #ffffff;
-        border-right: 5px solid #d97736;
-        padding: 15px;
-        border-radius: 8px;
-        margin-top: 15px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    }
-</style>
-""", unsafe_allow_html=True)
+st.title("🛡️ المساعد الجيولوجي والرقابي الذكي")
+st.write("منصة تقييم المخاطر البيئية لمواقع التعدين بالسودان")
 
-# ==========================================
-# 3. الهيدر الرئيسي
-# ==========================================
-st.title("⛏️ المنصة الذكية لدعم القرار وتقييم مخاطر التعدين")
-st.caption("جامعة الخرطوم — كلية الهندسة — قسم هندسة التعدين | مدعوم بنماذج الذكاء الاصطناعي")
+# --- 2. جلب مفتاح Gemini من الـ Secrets تلقائياً ---
+api_key = st.secrets.get("GEMINI_API_KEY")
 
-st.markdown("---")
+if api_key:
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel('gemini-1.5-flash')
+else:
+    st.error("⚠️ لم يتم العثور على GEMINI_API_KEY في قسم Secrets. يرجى التأكد من إضافته في إعدادات التطبيق.")
 
-# ==========================================
-# 4. المعاملات الجيولوجية والدالة
-# ==========================================
-SOIL_PROPERTIES = {
-    "تربة صخرية نارية صلبة": {"K": 0.001, "n": 0.05},
-    "تربة طمية رسوبية": {"K": 0.15, "n": 0.25},
-    "تربة رملية حصوية": {"K": 5.0, "n": 0.35}
-}
+# --- 3. القائمة الجانبية (مدخلات البيانات) ---
+st.sidebar.header("📋 مدخلات موقع التعدين")
+site_name = st.sidebar.text_input("اسم المنجم / الموقع", "أبو حمد - موقع 1")
+water_depth = st.sidebar.slider("عمق المياه الجوفية (متر)", 2, 150, 25)
+river_dist = st.sidebar.slider("المسافة عن أقرب مجرى مائي (متر)", 10, 5000, 350)
+cyanide_conc = st.sidebar.number_input("تركيز السيانيد (mg/L)", 0.0, 5.0, 0.25, step=0.05)
+soil_type = st.sidebar.selectbox("نوع التربة", ["تربة رملية (نفاذية عالية)", "تربة صخرية (نفاذية متوسطة)", "تربة طينية (نفاذية منخفضة)"])
 
-preset_locations = {
-    "سوق طواحين أبو حمد (نهر النيل)": {
-        "coords": (19.5333, 33.3167), "depth": 14.0, "dist": 300, 
-        "soil": "تربة رملية حصوية", "cyanide": 0.85
-    },
-    "عطبرة - النيل الكبرى": {
-        "coords": (17.6833, 33.9833), "depth": 8.5, "dist": 120, 
-        "soil": "تربة رملية حصوية", "cyanide": 1.20
-    },
-    "مناجم أرياب (البحر الأحمر)": {
-        "coords": (18.3333, 36.3500), "depth": 40.0, "dist": 1800, 
-        "soil": "تربة صخرية نارية صلبة", "cyanide": 0.08
-    }
-}
+# --- 4. قسم الذكاء الاصطناعي (توليد التقرير) ---
+st.subheader("🤖 التحليل البيئي بالذكاء الاصطناعي")
 
-if "preset_choice" not in st.session_state:
-    st.session_state.preset_choice = "سوق طواحين أبو حمد (نهر النيل)"
-
-default_data = preset_locations[st.session_state.preset_choice]
-
-# ==========================================
-# 5. القائمة الجانبية ومفتاح الذكاء الاصطناعي
-# ==========================================
-st.sidebar.header("📍 موقع التعدين")
-
-selected_preset = st.sidebar.selectbox(
-    "اختر الموقع الميداني:", 
-    list(preset_locations.keys()),
-    key="preset_choice"
-)
-
-lat_input = default_data["coords"][0]
-lon_input = default_data["coords"][1]
-
-st.sidebar.markdown("---")
-st.sidebar.header("⚙️ المعاملات الفيزيائية")
-
-soil_type = st.sidebar.selectbox("نوع التربة الجيولوجية:", list(SOIL_PROPERTIES.keys()))
-water_depth = st.sidebar.slider("عمق المياه الجوفية (متر):", min_value=1.0, max_value=120.0, value=default_data["depth"])
-river_dist = st.sidebar.slider("البعد عن المسطح المائي (متر):", min_value=10, max_value=5000, value=default_data["dist"])
-cyanide_conc = st.sidebar.slider("تركيز الملوثات (mg/L):", min_value=0.01, max_value=3.00, value=default_data["cyanide"])
-
-st.sidebar.markdown("---")
-# 🔥 هذا هو الخيار الذي سيظهر لك في الجانب:
-st.sidebar.header("🤖 إعدادات الذكاء الاصطناعي")
-api_key_input = st.sidebar.text_input("مفتاح Gemini API Key:", type="password", help="ضع مفتاح API المنسوخ هنا")
-
-# ==========================================
-# 6. الحسابات الجيولوجية
-# ==========================================
-K_val = SOIL_PROPERTIES[soil_type]["K"]
-n_val = SOIL_PROPERTIES[soil_type]["n"]
-
-v_seepage_m_day = (K_val * 0.01) / n_val
-vertical_years = round((water_depth / (v_seepage_m_day + 1e-6)) / 365.25, 2)
-
-raw_risk = ((cyanide_conc / 0.05) * 25) + (((1000 - min(1000, river_dist)) / 1000) * 40)
-risk_score = float(np.clip(round(raw_risk, 1), 2.0, 99.0))
-
-# ==========================================
-# 7. المؤشرات والنتائج
-# ==========================================
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    st.metric(label="مؤشر الخطر البيئي", value=f"{risk_score}%")
-with col2:
-    st.metric(label="تركيز السيانيد", value=f"{cyanide_conc} mg/L")
-with col3:
-    st.metric(label="زمن وصول التسرب للمياه", value=f"{vertical_years} سنة")
-
-st.markdown("---")
-
-# ==========================================
-# 8. قسم العقل الاصطناعي (AI Assistant)
-# ==========================================
-st.subheader("🤖 المساعد الجيولوجي والرقابي الذكي")
-
-generate_report = st.button("✨ توليد تقرير وتحليل بيئي بالذكاء الاصطناعي", use_container_width=True)
-
-if generate_report:
-    if not api_key_input:
-        st.error("⚠️ يرجى إدخال مفتاح Gemini API Key في القائمة الجانبية أولاً.")
+if st.button("✨ توليد تقرير وتحليل بيئي بالذكاء الاصطناعي"):
+    if not api_key:
+        st.error("يرجى التأكد من إضافة المفتاح في قسم Secrets أولاً.")
     else:
-        with st.spinner("جاري تحليل البيانات عبر الذكاء الاصطناعي..."):
+        with st.spinner("جاري تحليل البيانات الجيولوجية والبيئية بواسطة Gemini..."):
+            prompt = f"""
+            بصفتك خبيراً بيئياً وجيوتقنياً في مجال التعدين بالسودان، قم بتوليد تقرير هندسي وتقييم مخاطر للموقع التالي:
+            - اسم المنجم/المنطقة: {site_name}
+            - عمق المياه الجوفية: {water_depth} متر
+            - المسافة عن المجرى المائي: {river_dist} متر
+            - تركيز السيانيد: {cyanide_conc} mg/L
+            - نوع التربة: {soil_type}
+            
+            يرجى تقديم:
+            1. تقييم مدى خطورة التسرب الجوفي.
+            2. التوصيات الهندسية الفورية للسلامة.
+            3. حلول المعالجة المقترحة لحماية المياه الجوفية والمجرى المائي.
+            """
+            
             try:
-                client = genai.Client(api_key=api_key_input)
-                prompt = f"قم بتحليل موقع تعدين في السودان ({selected_preset}) بتركيز سيانيد {cyanide_conc} mg/L ونسبة خطر {risk_score}%. اعط توصيات بيئية هامة."
-                
-                response = client.models.generate_content(
-                    model='gemini-2.5-flash',
-                    contents=prompt,
-                )
-                
-                st.markdown(f"""
-                <div class="ai-box">
-                    <h4>📋 التقرير البيئي الصادر عن الذكاء الاصطناعي:</h4>
-                    <br>
-                    {response.text}
-                </div>
-                """, unsafe_allow_html=True)
-                
+                response = model.generate_content(prompt)
+                st.success("تم توليد التقرير بنجاح! 📊")
+                st.markdown(response.text)
             except Exception as e:
-                st.error(f"حدث خطأ أثناء الاتصال: {e}")
+                st.error(f"حدث خطأ أثناء الاتصال بالذكاء الاصطناعي: {e}")
 
-st.markdown("---")
+st.divider()
 
-# ==========================================
-# 9. عرض الخريطة
-# ==========================================
+# --- 5. عرض الخريطة الميدانية ---
 st.subheader("🌐 الخريطة الجغرافية الميدانية")
-m = folium.Map(location=[lat_input, lon_input], zoom_start=12)
-folium.Marker([lat_input, lon_input], popup=selected_preset).add_to(m)
+# إحداثيات افتراضية لمدينة أبو حمد
+m = folium.Map(location=[19.5333, 33.3167], zoom_start=12)
+folium.Marker(
+    [19.5333, 33.3167], 
+    popup=f"موقع: {site_name}", 
+    tooltip=site_name,
+    icon=folium.Icon(color="red", icon="info-sign")
+).add_to(m)
+
 st_folium(m, width="100%", height=400)
