@@ -1,71 +1,233 @@
 import streamlit as st
+import pandas as pd
 import folium
 from streamlit_folium import st_folium
-import google.generativeai as genai
 
-# --- 1. إعدادات الصفحة ---
-st.set_page_config(page_title="المساعد الجيولوجي والرقابي الذكي", layout="wide")
+# ==========================================
+# 1. تهيئة إعدادات الصفحة
+# ==========================================
+st.set_page_config(
+    page_title="نظام التعدين الذكي - جامعة الخرطوم",
+    page_icon="⛏️",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-st.title("🛡️ المساعد الجيولوجي والرقابي الذكي")
-st.write("منصة تقييم المخاطر البيئية لمواقع التعدين بالسودان")
+# ==========================================
+# 2. التنسيق البصري (CSS)
+# ==========================================
+st.markdown("""
+<style>
+    .stApp {
+        background: linear-gradient(rgba(244, 238, 218, 0.88), rgba(193, 154, 107, 0.92)),
+                    url('https://images.unsplash.com/photo-1578328819058-b69f3a3b0f6b?q=80&w=1600&auto=format&fit=crop');
+        background-size: cover;
+        background-position: center;
+        background-attachment: fixed;
+    }
+    h1, h2, h3, h4, h5, h6 {
+        color: #5c2c16 !important;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    [data-testid="stSidebar"] {
+        background-color: #f5eedc !important;
+        border-right: 2px solid #c19a6b;
+    }
+    div[data-testid="stMetric"], div.stSelectbox, div.stNumberInput, div.stSlider, div.stTextInput {
+        background-color: rgba(255, 255, 255, 0.75) !important;
+        border-radius: 10px;
+        padding: 8px;
+        border: 1px solid #d4af37;
+    }
+    .report-card {
+        background-color: rgba(255, 255, 255, 0.90);
+        padding: 20px;
+        border-radius: 12px;
+        border-right: 6px solid #5c2c16;
+        margin-top: 15px;
+    }
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+</style>
+""", unsafe_allow_html=True)
 
-# --- 2. جلب مفتاح Gemini من الـ Secrets تلقائياً ---
-api_key = st.secrets.get("GEMINI_API_KEY")
+# ==========================================
+# 3. الهيدر الرئيسي وشعار الجامعة
+# ==========================================
+col_logo, col_title = st.columns([1, 5])
 
-if api_key:
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-2.5-flash')
-else:
-    st.error("⚠️ لم يتم العثور على GEMINI_API_KEY في قسم Secrets. يرجى التأكد من إضافته في إعدادات التطبيق.")
+with col_logo:
+    st.image("https://upload.wikimedia.org/wikipedia/en/thumb/8/82/University_of_Khartoum_logo.png/220px-University_of_Khartoum_logo.png", width=105)
 
-# --- 3. القائمة الجانبية (مدخلات البيانات) ---
-st.sidebar.header("📋 مدخلات موقع التعدين")
-site_name = st.sidebar.text_input("اسم المنجم / الموقع", "أبو حمد - موقع 1")
-water_depth = st.sidebar.slider("عمق المياه الجوفية (متر)", 2, 150, 25)
-river_dist = st.sidebar.slider("المسافة عن أقرب مجرى مائي (متر)", 10, 5000, 350)
-cyanide_conc = st.sidebar.number_input("تركيز السيانيد (mg/L)", 0.0, 5.0, 0.25, step=0.05)
-soil_type = st.sidebar.selectbox("نوع التربة", ["تربة رملية (نفاذية عالية)", "تربة صخرية (نفاذية متوسطة)", "تربة طينية (نفاذية منخفضة)"])
+with col_title:
+    st.title("⛏️ منصة تقييم المخاطر البيئية لمواقع التعدين بالسودان")
+    st.caption("جامعة الخرطوم — كلية الهندسة — قسم هندسة التعدين | نظام الذكاء الاصطناعي للتنبؤ بالتسرب الجوفي")
 
-# --- 4. قسم الذكاء الاصطناعي (توليد التقرير) ---
-st.subheader("🤖 التحليل البيئي بالذكاء الاصطناعي")
+st.markdown("---")
 
-if st.button("✨ توليد تقرير وتحليل بيئي بالذكاء الاصطناعي"):
-    if not api_key:
-        st.error("يرجى التأكد من إضافة المفتاح في قسم Secrets أولاً.")
+# ==========================================
+# 4. قاعدة البيانات وإدارة التفاعلات
+# ==========================================
+preset_locations = {
+    "أبو حمد (نهر النيل)": {
+        "coords": (19.5333, 33.3167), "depth": 15, "dist": 250, 
+        "soil": "تربة رملية هشّة (نفاذية عالية)", "cyanide": 0.45
+    },
+    "عطبرة (نهر النيل)": {
+        "coords": (17.6833, 33.9833), "depth": 8, "dist": 100, 
+        "soil": "تربة رملية هشّة (نفاذية عالية)", "cyanide": 0.80
+    },
+    "بربر (نهر النيل)": {
+        "coords": (18.0167, 33.9833), "depth": 12, "dist": 180, 
+        "soil": "تربة طمية مختلطة (نفاذية متوسطة)", "cyanide": 0.30
+    },
+    "قبقبة / وادي العشاري": {
+        "coords": (21.8000, 34.5000), "depth": 60, "dist": 2500, 
+        "soil": "تربة صخرية صلبة (نفاذية منخفضة)", "cyanide": 0.10
+    },
+    "هيا (البحر الأحمر)": {
+        "coords": (18.3333, 36.3500), "depth": 45, "dist": 1500, 
+        "soil": "تربة صخرية صلبة (نفاذية منخفضة)", "cyanide": 0.05
+    },
+    "كادوقلي (جنوب كردفان)": {
+        "coords": (11.0167, 29.7167), "depth": 20, "dist": 400, 
+        "soil": "تربة طمية مختلطة (نفاذية متوسطة)", "cyanide": 0.20
+    }
+}
+
+def update_preset_values():
+    selected = st.session_state.selected_preset
+    data = preset_locations[selected]
+    st.session_state.lat_input = float(data["coords"][0])
+    st.session_state.lon_input = float(data["coords"][1])
+    st.session_state.water_depth = int(data["depth"])
+    st.session_state.river_dist = int(data["dist"])
+    st.session_state.soil_type = data["soil"]
+    st.session_state.cyanide_conc = float(data["cyanide"])
+
+if "selected_preset" not in st.session_state:
+    st.session_state.selected_preset = "أبو حمد (نهر النيل)"
+    update_preset_values()
+
+# ==========================================
+# 5. القائمة الجانبية (Sidebar)
+# ==========================================
+st.sidebar.image("https://upload.wikimedia.org/wikipedia/en/thumb/8/82/University_of_Khartoum_logo.png/220px-University_of_Khartoum_logo.png", width=130)
+st.sidebar.header("🔍 إدخال بيانات الموقع والبحث")
+
+selected_preset = st.sidebar.selectbox(
+    "اختر منطقة تعدين معروفة:", 
+    list(preset_locations.keys()),
+    key="selected_preset",
+    on_change=update_preset_values
+)
+
+site_name = selected_preset
+
+lat_input = st.sidebar.number_input("خط العرض (Latitude):", key="lat_input", format="%.4f")
+lon_input = st.sidebar.number_input("خط الطول (Longitude):", key="lon_input", format="%.4f")
+
+map_style = st.sidebar.selectbox(
+    "نوع الخريطة:",
+    ["قمر صناعي (Satellite)", "خريطة شوارع (OpenStreetMap)"]
+)
+
+st.sidebar.markdown("---")
+st.sidebar.header("📊 المعطيات الهيدروجيولوجية والهندسية")
+
+water_depth = st.sidebar.slider("عمق المياه الجوفية (متر):", min_value=2, max_value=150, key="water_depth")
+river_dist = st.sidebar.slider("البعد عن أقرب مجرى مائي (متر):", min_value=20, max_value=5000, step=50, key="river_dist")
+soil_type = st.sidebar.selectbox(
+    "نوع التربة والهيكلية الجيولوجية:",
+    ["تربة صخرية صلبة (نفاذية منخفضة)", "تربة طمية مختلطة (نفاذية متوسطة)", "تربة رملية هشّة (نفاذية عالية)"],
+    key="soil_type"
+)
+cyanide_conc = st.sidebar.slider("تركيز السيانيد/الزئبق (mg/L):", min_value=0.01, max_value=2.00, step=0.01, key="cyanide_conc")
+
+# ==========================================
+# 6. الخوارزمية وحساب نتائج التقييم
+# ==========================================
+perm = 0.1 if "صخرية" in soil_type else (0.5 if "طمية" in soil_type else 0.95)
+
+risk_score = (1800 / (river_dist + 1)) * (perm * 35) * (30 / water_depth) + (cyanide_conc * 20)
+risk_score = min(max(round(risk_score, 1), 5.0), 98.5)
+
+# ==========================================
+# 7. عرض النتائج والمؤشرات
+# ==========================================
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    st.metric(label="درجة الخطر التقديرية (Score)", value=f"{risk_score}%")
+
+with col2:
+    status = "✅ مطابق للمواصفات" if cyanide_conc <= 0.05 else "⚠️ يتجاوز حد WHO"
+    st.metric(label="تركيز السيانيد", value=f"{cyanide_conc} mg/L", delta=status, delta_color="inverse" if cyanide_conc > 0.05 else "normal")
+
+with col3:
+    years = round((water_depth * (1.1 - perm)) / 1.3, 1)
+    st.metric(label="زمن وصول التسرب للمياه الجوفية", value=f"{years} سنة")
+
+st.markdown("---")
+
+# ==========================================
+# 8. قسم التحليل والتمرير الهيدروجيولوجي الذكي
+# ==========================================
+st.subheader("🤖 التحليل البيئي والتقرير الجيولوجي الذكي")
+
+if st.button("✨ توليد تقرير وتحليل بيئي شامل"):
+    st.markdown("<div class='report-card'>", unsafe_allow_html=True)
+    st.markdown(f"### 📄 تقرير التقييم الفني لمنطقة: **{site_name}**")
+    
+    if risk_score > 60:
+        st.error(f"🔴 **منطقة عالية الخطورة ({risk_score}%)**")
+        st.markdown(f"""
+        - **التقييم الجيولوجي:** التشكيل الجيولوجي الحالي ({soil_type}) مع القرب الشديد من المجرى المائي ({river_dist} متر) يشكل خطراً مباشراً على حوض المياه الجوفية.
+        - **الخطر الكيميائي:** تركيز المواد الكيميائية السامة المرتفع ({cyanide_conc} mg/L) يسارع عملية التلوث المنتشر.
+        - **التوصية الهندسية:** يُلزم المطور بتركيب بطانات عالية الكثافة (HDPE Geomembranes) بسمك لا يقل عن 2.0 مم مع إنشاء آبار مراقبة دائمة على بُعد 50 متراً.
+        """)
+    elif risk_score > 30:
+        st.warning(f"🟠 **منطقة متوسطة الخطورة ({risk_score}%)**")
+        st.markdown(f"""
+        - **التقييم الجيولوجي:** الموقع يتطلب احتياطات هيدروجيولوجية متوسطة، بسبب نفاذية التربة المقدرة بـ ({soil_type}).
+        - **التوصية الهندسية:** ينبغي معالجة المخلفات والتأكد من إبقاء تركيزات المواد الكيميائية دون الحدود الحتمية المسموح بها عالمياً.
+        """)
     else:
-        with st.spinner("جاري تحليل البيانات الجيولوجية والبيئية بواسطة Gemini..."):
-            prompt = f"""
-            بصفتك خبيراً بيئياً وجيوتقنياً في مجال التعدين بالسودان، قم بتوليد تقرير هندسي وتقييم مخاطر للموقع التالي:
-            - اسم المنجم/المنطقة: {site_name}
-            - عمق المياه الجوفية: {water_depth} متر
-            - المسافة عن المجرى المائي: {river_dist} متر
-            - تركيز السيانيد: {cyanide_conc} mg/L
-            - نوع التربة: {soil_type}
-            
-            يرجى تقديم:
-            1. تقييم مدى خطورة التسرب الجوفي.
-            2. التوصيات الهندسية الفورية للسلامة.
-            3. حلول المعالجة المقترحة لحماية المياه الجوفية والمجرى المائي.
-            """
-            
-            try:
-                response = model.generate_content(prompt)
-                st.success("تم توليد التقرير بنجاح! 📊")
-                st.markdown(response.text)
-            except Exception as e:
-                st.error(f"حدث خطأ أثناء الاتصال بالذكاء الاصطناعي: {e}")
+        st.success(f"🟢 **منطقة آمنة نسبياً ({risk_score}%)**")
+        st.markdown(f"""
+        - **التقييم الجيولوجي:** الموقع يتميز بعمق مياه جوفية آمن ({water_depth} متر) وبعد مناسب عن مجاري المياه ({river_dist} متر).
+        - **التوصية الهندسية:** يمكن استمرار أعمال التعدين مع تطبيق شروط السلامة والتخلص الآمن الدائم من مخلفات المعالجة.
+        """)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-st.divider()
+st.markdown("---")
 
-# --- 5. عرض الخريطة الميدانية ---
-st.subheader("🌐 الخريطة الجغرافية الميدانية")
-# إحداثيات افتراضية لمدينة أبو حمد
-m = folium.Map(location=[19.5333, 33.3167], zoom_start=12)
+# ==========================================
+# 9. الخريطة التفاعلية الميدانية
+# ==========================================
+st.subheader(f"🌐 الخريطة الجغرافية الميدانية للموقع")
+
+if map_style == "قمر صناعي (Satellite)":
+    m = folium.Map(location=[lat_input, lon_input], zoom_start=11, tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri')
+else:
+    m = folium.Map(location=[lat_input, lon_input], zoom_start=11)
+
+marker_color = "red" if risk_score >= 60 else ("orange" if risk_score >= 30 else "green")
+
 folium.Marker(
-    [19.5333, 33.3167], 
-    popup=f"موقع: {site_name}", 
+    location=[lat_input, lon_input],
+    popup=f"<b>المنجم:</b> {site_name}<br><b>درجة الخطر:</b> {risk_score}%",
     tooltip=site_name,
-    icon=folium.Icon(color="red", icon="info-sign")
+    icon=folium.Icon(color=marker_color, icon="info-sign")
 ).add_to(m)
 
-st_folium(m, width="100%", height=400)
+folium.Circle(
+    location=[lat_input, lon_input],
+    radius=river_dist,
+    color=marker_color,
+    fill=True,
+    fill_opacity=0.2,
+    popup="نطاق التأثير الهيدروجيولوجي"
+).add_to(m)
+
+st_folium(m, width="100%", height=450)
