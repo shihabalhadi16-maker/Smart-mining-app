@@ -1,4 +1,24 @@
 import streamlit as st
+
+# 1. تحديد اسم التطبيق وأيقونة الموقع (Favicon)
+st.set_page_config(
+    page_title="نظام التعدين الذكي",  # الاسم الذي يظهر في عنوان المتصفح
+    page_icon="⛏️",                    # أيقونة التعدين (تظهر على التبويب)
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# 2. كود PWA لتحديد الاسم والأيقونة عند الإضافة للشاشة الرئيسية للهاتف
+pwa_code = """
+    <meta name="apple-mobile-web-app-title" content="التعدين الذكي">
+    <meta name="application-name" content="التعدين الذكي">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/2991/2991106.png">
+    <link rel="icon" type="image/png" href="https://cdn-icons-png.flaticon.com/512/2991/2991106.png">
+"""
+st.markdown(pwa_code, unsafe_allow_html=True)
+import streamlit as st
 import pandas as pd
 import folium
 from streamlit_folium import st_folium
