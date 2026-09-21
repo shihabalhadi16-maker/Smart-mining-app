@@ -170,11 +170,13 @@ st.markdown("---")
 # ==========================================
 st.subheader("🤖 التحليل البيئي بالذكاء الاصطناعي (Gemini)")
 
-# زر الضغط المباشر
+# زر الضغط التفاعلي
 if st.button("✨ اضغط هنا لتوليد تقرير وتحليل بيئي بالذكاء الاصطناعي", type="primary", use_container_width=True):
     if "GEMINI_API_KEY" in st.secrets:
         try:
             genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+            
+            # تم استخدام النموذج المعتمد والمتاح gemini-2.5-flash
             model = genai.GenerativeModel('gemini-2.5-flash')
             
             prompt = f"""
