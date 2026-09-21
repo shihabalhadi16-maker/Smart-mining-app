@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import folium
 from streamlit_folium import st_folium
+import google.generativeai as genai
 
 # ==========================================
 # 1. تهيئة وإعدادات الصفحة الرئيسية
@@ -11,17 +12,6 @@ st.set_page_config(
     page_icon="⛏️",
     layout="wide"
 )
-
-# بيانات التعريف لتثبيت التطبيق على الجوال
-pwa_meta = """
-<meta name="apple-mobile-web-app-title" content="التعدين الذكي">
-<meta name="application-name" content="نظام التعدين الذكي">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/2921/2921961.png">
-<link rel="icon" type="image/png" href="https://cdn-icons-png.flaticon.com/512/2921/2921961.png">
-"""
-st.markdown(pwa_meta, unsafe_allow_html=True)
 
 # ==========================================
 # 2. التنسيق البصري (CSS)
@@ -176,7 +166,45 @@ with col3:
 st.markdown("---")
 
 # ==========================================
-# 8. الخريطة التفاعلية
+# 8. قسم الذكاء الاصطناعي (مُفعّل بزر ضغط)
+# ==========================================
+st.subheader("🤖 التحليل البيئي بالذكاء الاصطناعي (Gemini)")
+
+# زر الضغط المباشر
+if st.button("✨ اضغط هنا لتوليد تقرير وتحليل بيئي بالذكاء الاصطناعي", type="primary", use_container_width=True):
+    if "GEMINI_API_KEY" in st.secrets:
+        try:
+            genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+            model = genai.GenerativeModel('gemini-2.5-flash')
+            
+            prompt = f"""
+            بصفتك خبير بيئي وهيدروجيولوجي في قسم هندسة التعدين جامعة الخرطوم، قم بتحليل البيانات التالية لمنطقة تعدين سودانية:
+            - اسم الموقع: {site_name}
+            - الإحداثيات: {lat_input}, {lon_input}
+            - عمق المياه الجوفية: {water_depth} متر
+            - البعد عن أقرب مجرى مائي/النيل: {river_dist} متر
+            - نوع التربة: {soil_type}
+            - تركيز السيانيد/الزئبق: {cyanide_conc} ملجم/لتر
+            - نسبة الخطر المحسوبة: {risk_score}%
+            - زمن الوصول المتوقع للمياه الجوفية: {years} سنة
+
+            قم بتقديم:
+            1. تقييم شامل للمخاطر البيئية والصحية للموقع.
+            2. أهم التوصيات الهندسية والحلول العاجلة للحد من التسرب لحماية المياه الجوفية.
+            """
+            
+            with st.spinner("جاري قراءة المعطيات وتحليلها عبر الذكاء الاصطناعي..."):
+                response = model.generate_content(prompt)
+                st.info(response.text)
+        except Exception as e:
+            st.error(f"حدث خطأ أثناء الاتصال بالذكاء الاصطناعي: {e}")
+    else:
+        st.warning("⚠️ المفتاح غير متصل بعد. يرجى التأكد من إضافة GEMINI_API_KEY داخل Secrets في Streamlit Cloud.")
+
+st.markdown("---")
+
+# ==========================================
+# 9. الخريطة التفاعلية
 # ==========================================
 st.subheader(f"🗺️ الخريطة التفاعلية للموقع: {site_name}")
 
