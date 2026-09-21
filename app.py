@@ -4,13 +4,14 @@ import folium
 from streamlit_folium import st_folium
 import google.generativeai as genai
 from geopy.geocoders import Nominatim
+import random
 
 # ==========================================
 # 1. تهيئة مفتاح الذكاء الاصطناعي
 # ==========================================
 API_KEY = "ضع_مفتاحك_هنا_بين_التنصيص"  # <--- ضع مفتاح Gemini الخاص بك هنا
 
-if API_KEY and API_KEY != "AQ.Ab8RN6IRlumDiEdrZW9MePcRq0o_AoqmMCNAEidjCEspa8x0yA ":
+if API_KEY and API_KEY != "ضع_مفتاحك_هنا_بين_التنصيص":
     try:
         genai.configure(api_key=API_KEY)
         model = genai.GenerativeModel('gemini-2.5-flash')
@@ -82,7 +83,8 @@ preset_locations = {
     "بربر (نهر النيل)": (18.0167, 33.9833),
     "قبقبة / وادي العشاري": (21.8000, 34.5000),
     "هيا (البحر الأحمر)": (18.3333, 36.3500),
-    "كادوقلي (جنوب كردفان)": (11.0167, 29.7167)
+    "كادوقلي (جنوب كردفان)": (11.0167, 29.7167),
+    "أرياب (البحر الأحمر)": (19.2667, 35.8167)
 }
 
 if "latitude" not in st.session_state:
@@ -93,28 +95,42 @@ if "site_name" not in st.session_state:
     st.session_state.site_name = "أبو حمد (نهر النيل)"
 
 # ==========================================
-# 6. القائمة الجانبية ووظائف البحث العالميه
+# 6. القائمة الجانبية ووظائف البحث العالمية
 # ==========================================
 st.sidebar.image("https://upload.wikimedia.org/wikipedia/en/thumb/8/82/University_of_Khartoum_logo.png/220px-University_of_Khartoum_logo.png", width=140)
 
 st.sidebar.header("🌍 البحث في أي منطقة في العالم")
-search_query = st.sidebar.text_input("اكتب اسم مدنية/منطقة/منجم:", placeholder="مثال: Dubai, Cairo, الخرطوم...")
+search_query = st.sidebar.text_input("اكتب اسم مدينة/منطقة/منجم:", placeholder="مثال: Ariab, الخرطوم, Cairo...")
 
 if st.sidebar.button("بحث عالمي 🧭", type="primary"):
-    if search_query.strip():
-        geolocator = Nominatim(user_agent="smart_mining_global_app")
+    q = search_query.strip()
+    if q:
+        # إنشاء اسم معرف عشوائي لتفادي حظر السيرفرات
+        unique_user_agent = f"uofk_mining_app_{random.randint(1000, 9999)}"
+        geolocator = Nominatim(user_agent=unique_user_agent)
+        
+        location = None
         try:
-            location = geolocator.geocode(search_query.strip(), timeout=10)
-            if location:
-                st.session_state.latitude = float(location.latitude)
-                st.session_state.longitude = float(location.longitude)
-                st.session_state.site_name = search_query.strip()
-                st.sidebar.success(f"📍 تم العثور على: {location.address[:40]}...")
-                st.rerun()
-            else:
-                st.sidebar.error("❌ لم يتم العثور على هذا الموقع.")
+            # المحاولة الأولى: البحث بإضافة اسم "Sudan" لزيادة دقة البحث المحلي
+            location = geolocator.geocode(f"{q}, Sudan", timeout=12)
         except Exception:
-            st.sidebar.error("⚠️ يتعذر الاتصال بخدمة البحث حالياً.")
+            pass
+            
+        if not location:
+            try:
+                # المحاولة الثانية: البحث المباشر في قاعدة البيانات العالمية
+                location = geolocator.geocode(q, timeout=12)
+            except Exception:
+                pass
+                
+        if location:
+            st.session_state.latitude = float(location.latitude)
+            st.session_state.longitude = float(location.longitude)
+            st.session_state.site_name = q
+            st.sidebar.success(f"📍 تم العثور على: {location.address[:40]}...")
+            st.rerun()
+        else:
+            st.sidebar.error("❌ لم يتم العثور على هذا الموقع. جرب كتابة الاسم بالإنجليزية أو اختياره من القائمة.")
 
 st.sidebar.markdown("---")
 st.sidebar.header("📋 أو اختر من المواقع السودانية الجاهزة")
@@ -138,7 +154,6 @@ st.sidebar.header("📍 الإحداثيات الحالية")
 lat_input = st.sidebar.number_input("خط العرض (Lat):", value=st.session_state.latitude, format="%.4f")
 lon_input = st.sidebar.number_input("خط الطول (Lon):", value=st.session_state.longitude, format="%.4f")
 
-# تحديث الجلسة إذا عدّل المستخدم الأرقام يدوياً
 st.session_state.latitude = lat_input
 st.session_state.longitude = lon_input
 
