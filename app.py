@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import folium
 from streamlit_folium import st_folium
+from folium.plugins import Geocoder
 import google.generativeai as genai
 
 # ==========================================
@@ -62,30 +63,14 @@ st.markdown("---")
 # 4. قاعدة البيانات وإدارة الجلسة
 # ==========================================
 preset_locations = {
-    "أبو حمد (نهر النيل)": {
-        "coords": (19.5333, 33.3167), "depth": 15, "dist": 250, 
-        "soil": "تربة رملية هشّة (نفاذية عالية)", "cyanide": 0.45
-    },
-    "عطبرة (نهر النيل)": {
-        "coords": (17.6833, 33.9833), "depth": 8, "dist": 100, 
-        "soil": "تربة رملية هشّة (نفاذية عالية)", "cyanide": 0.80
-    },
-    "بربر (نهر النيل)": {
-        "coords": (18.0167, 33.9833), "depth": 12, "dist": 180, 
-        "soil": "تربة طمية مختلطة (نفاذية متوسطة)", "cyanide": 0.30
-    },
-    "قبقبة / وادي العشاري": {
-        "coords": (21.8000, 34.5000), "depth": 60, "dist": 2500, 
-        "soil": "تربة صخرية صلبة (نفاذية منخفضة)", "cyanide": 0.10
-    },
-    "هيا (البحر الأحمر)": {
-        "coords": (18.3333, 36.3500), "depth": 45, "dist": 1500, 
-        "soil": "تربة صخرية صلبة (نفاذية منخفضة)", "cyanide": 0.05
-    },
-    "كادوقلي (جنوب كردفان)": {
-        "coords": (11.0167, 29.7167), "depth": 20, "dist": 400, 
-        "soil": "تربة طمية مختلطة (نفاذية متوسطة)", "cyanide": 0.20
-    }
+    "أبو حمد (نهر النيل)": {"coords": (19.5333, 33.3167), "depth": 15, "dist": 250, "soil": "تربة رملية هشّة (نفاذية عالية)", "cyanide": 0.45},
+    "عطبرة (نهر النيل)": {"coords": (17.6833, 33.9833), "depth": 8, "dist": 100, "soil": "تربة رملية هشّة (نفاذية عالية)", "cyanide": 0.80},
+    "بربر (نهر النيل)": {"coords": (18.0167, 33.9833), "depth": 12, "dist": 180, "soil": "تربة طمية مختلطة (نفاذية متوسطة)", "cyanide": 0.30},
+    "سوق العبيدية (نهر النيل)": {"coords": (18.1234, 33.9876), "depth": 10, "dist": 300, "soil": "تربة رملية هشّة (نفاذية عالية)", "cyanide": 0.65},
+    "قبقبة / وادي العشاري": {"coords": (21.8000, 34.5000), "depth": 60, "dist": 2500, "soil": "تربة صخرية صلبة (نفاذية منخفضة)", "cyanide": 0.10},
+    "هيا (البحر الأحمر)": {"coords": (18.3333, 36.3500), "depth": 45, "dist": 1500, "soil": "تربة صخرية صلبة (نفاذية منخفضة)", "cyanide": 0.05},
+    "كادوقلي (جنوب كردفان)": {"coords": (11.0167, 29.7167), "depth": 20, "dist": 400, "soil": "تربة طمية مختلطة (نفاذية متوسطة)", "cyanide": 0.20},
+    "📍 إدخال موقع/إحداثيات مخصصة": {"coords": (19.5333, 33.3167), "depth": 15, "dist": 250, "soil": "تربة رملية هشّة (نفاذية عالية)", "cyanide": 0.10}
 }
 
 if "selected_preset" not in st.session_state:
@@ -111,13 +96,16 @@ st.sidebar.image("https://upload.wikimedia.org/wikipedia/en/thumb/8/82/Universit
 st.sidebar.header("🔍 إدخال بيانات الموقع والبحث")
 
 selected_preset = st.sidebar.selectbox(
-    "اختر منطقة تعدين معروفة:", 
+    "اختر منطقة من القائمة أو حدد موقع مخصص:", 
     list(preset_locations.keys()),
     key="selected_preset",
     on_change=update_preset_values
 )
 
-site_name = selected_preset
+if selected_preset == "📍 إدخال موقع/إحداثيات مخصصة":
+    site_name = st.sidebar.text_input("اسم الموقع الجديد:", value="منجم مخصص")
+else:
+    site_name = selected_preset
 
 lat_input = st.sidebar.number_input("خط العرض (Latitude):", key="val_lat", format="%.4f")
 lon_input = st.sidebar.number_input("خط الطول (Longitude):", key="val_lon", format="%.4f")
@@ -166,38 +154,37 @@ with col3:
 st.markdown("---")
 
 # ==========================================
-# 8. قسم الذكاء الاصطناعي (مُفعّل بزر ضغط)
+# 8. قسم الذكاء الاصطناعي (معخاصية البث السريع Streaming)
 # ==========================================
 st.subheader("🤖 التحليل البيئي بالذكاء الاصطناعي (Gemini)")
 
-# زر الضغط التفاعلي
-if st.button("✨ اضغط هنا لتوليد تقرير وتحليل بيئي بالذكاء الاصطناعي", type="primary", use_container_width=True):
+if st.button("✨ اضغط هنا لتوليد تقرير وتحليل بيئي سريع", type="primary", use_container_width=True):
     if "GEMINI_API_KEY" in st.secrets:
         try:
             genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-            
-            # تحديث اسم النموذج التابع لشركة Google هنا مباشرة
             model = genai.GenerativeModel('gemini-3.6-flash')
             
             prompt = f"""
-            بصفتك خبير بيئي وهيدروجيولوجي في قسم هندسة التعدين جامعة الخرطوم، قم بتحليل البيانات التالية لمنطقة تعدين سودانية:
+            بصفتك خبير بيئي وهيدروجيولوجي في قسم هندسة التعدين جامعة الخرطوم، قدم تحليلاً موجزاً ودقيقاً ومباشراً للبيانات التالية:
             - اسم الموقع: {site_name}
-            - الإحداثيات: {lat_input}, {lon_input}
-            - عمق المياه الجوفية: {water_depth} متر
-            - البعد عن أقرب مجرى مائي/النيل: {river_dist} متر
-            - نوع التربة: {soil_type}
-            - تركيز السيانيد/الزئبق: {cyanide_conc} ملجم/لتر
-            - نسبة الخطر المحسوبة: {risk_score}%
-            - زمن الوصول المتوقع للمياه الجوفية: {years} سنة
+            - العمق: {water_depth}م | البعد عن المجرى: {river_dist}م
+            - نوع التربة: {soil_type} | تركيز السيانيد: {cyanide_conc} mg/L
+            - نسبة الخطر: {risk_score}% | زمن الوصول: {years} سنة
 
-            قم بتقديم:
-            1. تقييم شامل للمخاطر البيئية والصحية للموقع.
-            2. أهم التوصيات الهندسية والحلول العاجلة للحد من التسرب لحماية المياه الجوفية.
+            اذكر باختصار:
+            1. تقييم المخاطر البيئية للصحة والمياه الجوفية.
+            2. أهم التوصيات والحلول الهندسية العاجلة.
             """
             
-            with st.spinner("جاري قراءة المعطيات وتحليلها عبر الذكاء الاصطناعي..."):
-                response = model.generate_content(prompt)
-                st.info(response.text)
+            response_stream = model.generate_content(prompt, stream=True)
+            
+            def stream_generator():
+                for chunk in response_stream:
+                    if chunk.text:
+                        yield chunk.text
+
+            st.write_stream(stream_generator)
+            
         except Exception as e:
             st.error(f"حدث خطأ أثناء الاتصال بالذكاء الاصطناعي: {e}")
     else:
@@ -206,14 +193,17 @@ if st.button("✨ اضغط هنا لتوليد تقرير وتحليل بيئي 
 st.markdown("---")
 
 # ==========================================
-# 9. الخريطة التفاعلية
+# 9. الخريطة التفاعلية + شريط البحث (Google Style)
 # ==========================================
-st.subheader(f"🗺️ الخريطة التفاعلية للموقع: {site_name}")
+st.subheader(f"🗺️ الخريطة التفاعلية والبحث الجغرافي: {site_name}")
 
 if map_style == "قمر صناعي (Satellite)":
     m = folium.Map(location=[lat_input, lon_input], zoom_start=11, tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri')
 else:
     m = folium.Map(location=[lat_input, lon_input], zoom_start=11)
+
+# إضافة شريط البحث الذكي (Geocoder) في أعلى الخريطة
+Geocoder(collapsed=False, placeholder="🔍 ابحث عن أي موقع أو منجم بالاسم...").add_to(m)
 
 marker_color = "red" if risk_score >= 70 else ("orange" if risk_score >= 40 else "green")
 
@@ -233,4 +223,9 @@ folium.Circle(
     popup="نطاق التأثير المتوقع"
 ).add_to(m)
 
-st_folium(m, width="100%", height=450)
+map_data = st_folium(m, width="100%", height=450)
+
+# التفاعل مع نتائج البحث على الخريطة
+if map_data and map_data.get("last_geocoder_result"):
+    geocoded = map_data["last_geocoder_result"]
+    st.success(f"📍 تم تحديد الموقع من البحث: **{geocoded.get('name', 'موقع جديد')}** — الإحداثيات: ({geocoded['center'][0]:.4f}, {geocoded['center'][1]:.4f})")
