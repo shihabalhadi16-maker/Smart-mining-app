@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import folium
 from streamlit_folium import st_folium
-from folium.plugins import Geocoder
 import google.generativeai as genai
 
 # ==========================================
@@ -35,7 +34,7 @@ h1, h2, h3, h4, h5, h6 {
     border-right: 2px solid #c19a6b;
 }
 div[data-testid="stMetric"], div.stSelectbox, div.stNumberInput, div.stSlider, div.stTextInput {
-    background-color: rgba(255, 255, 255, 0.70) !important;
+    background-color: rgba(255, 255, 255, 0.75) !important;
     border-radius: 10px;
     padding: 8px;
     border: 1px solid #d4af37;
@@ -51,7 +50,7 @@ footer {visibility: hidden;}
 col_logo, col_title = st.columns([1, 5])
 
 with col_logo:
-    st.image("https://upload.wikimedia.org/wikipedia/en/thumb/8/82/University_of_Khartoum_logo.png/220px-University_of_Khartoum_logo.png", width=105)
+    st.image("https://upload.wikimedia.org/wikipedia/en/thumb/8/82/University_of_Khartoum_logo.png/220px-University_of_Khartoum_logo.png", width=100)
 
 with col_title:
     st.title("⛏️ نظام التعدين الذكي وتقييم المخاطر البيئية")
@@ -60,7 +59,7 @@ with col_title:
 st.markdown("---")
 
 # ==========================================
-# 4. قائمة المناطق الشاملة في السودان
+# 4. قائمة المناطق الشاملة للوصول الفوري
 # ==========================================
 preset_locations = {
     "سوق طواحين أبو حمد (نهر النيل)": {"coords": (19.5333, 33.3167), "depth": 15, "dist": 250, "soil": "تربة رملية هشّة (نفاذية عالية)", "cyanide": 0.45},
@@ -106,7 +105,7 @@ selected_preset = st.sidebar.selectbox(
 )
 
 if selected_preset == "📍 إدخال موقع مخصص / إحداثيات":
-    site_name = st.sidebar.text_input("اسم المنجم الجديد:", value="منجم جديد")
+    site_name = st.sidebar.text_input("اسم المنجم الجديد:", value="منجم مخصص")
 else:
     site_name = selected_preset
 
@@ -174,17 +173,14 @@ if st.button("✨ توليد تقرير بيئي سريع", type="primary", use_
 st.markdown("---")
 
 # ==========================================
-# 9. الخريطة الخفيفة والسريعة جداً
+# 9. الخريطة السريعة جداً (بدون أداة البحث المبطئة)
 # ==========================================
 st.subheader(f"🗺️ الخريطة: {site_name}")
 
 if map_style == "قمر صناعي (Satellite)":
-    m = folium.Map(location=[lat_input, lon_input], zoom_start=11, tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri')
+    m = folium.Map(location=[lat_input, lon_input], zoom_start=12, tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri')
 else:
-    m = folium.Map(location=[lat_input, lon_input], zoom_start=11)
-
-# محرك بحث خفيف واستجابة سريعة عبر خدمة Esri
-Geocoder(service="esri", collapsed=True, placeholder="ابحث عن مكان...").add_to(m)
+    m = folium.Map(location=[lat_input, lon_input], zoom_start=12)
 
 marker_color = "red" if risk_score >= 70 else ("orange" if risk_score >= 40 else "green")
 
@@ -195,4 +191,13 @@ folium.Marker(
     icon=folium.Icon(color=marker_color, icon="info-sign")
 ).add_to(m)
 
-st_folium(m, width="100%", height=400)
+folium.Circle(
+    location=[lat_input, lon_input],
+    radius=river_dist,
+    color=marker_color,
+    fill=True,
+    fill_opacity=0.2,
+    popup="نطاق التأثير البيئي المتوقع"
+).add_to(m)
+
+st_folium(m, width="100%", height=420)
