@@ -9,7 +9,7 @@ import google.generativeai as genai
 # ==========================================
 API_KEY = "ضع_مفتاحك_هنا_بين_التنصيص"  # <--- ضع مفتاح Gemini الخاص بك هنا
 
-if API_KEY and API_KEY != "ضع_مفتاحك_هنا_بين_التنصيص":
+if API_KEY and API_KEY != "AQ.Ab8RN6J3yTq7pINo-9-V487xeQ46_1x1P01N5dJJNWRv9fur2g ":
     try:
         genai.configure(api_key=API_KEY)
         model = genai.GenerativeModel('gemini-2.5-flash')
