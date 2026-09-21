@@ -179,7 +179,7 @@ if st.button("✨ توليد تقرير بيئي سريع", type="primary", use_
     if "GEMINI_API_KEY" in st.secrets:
         try:
             genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-            model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-2.5-flash')
             
             prompt = f"قم بتحليل موقع {site_name} بتركيز سيانيد {cyanide_conc} mg/L وخطر {risk_score}%. أعط توصيات موجزة."
             response = model.generate_content(prompt)
