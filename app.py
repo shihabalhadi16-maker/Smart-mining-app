@@ -11,7 +11,7 @@ import random
 # ==========================================
 API_KEY = "ضع_مفتاحك_هنا_بين_التنصيص"  # <--- ضع مفتاح Gemini الخاص بك هنا
 
-if API_KEY and API_KEY != "AQ.Ab8RN6J3ZM6D-saxlmt2fhSlDJaoNkoAslfvwjKA_lYstWJz2A ":
+if API_KEY and API_KEY != "AQ.Ab8RN6IV5s_KbsKQSFRchYhhyaRaBBzIgSM9cg2NfW0V7i5oGA ":
     try:
         genai.configure(api_key=API_KEY)
         model = genai.GenerativeModel('gemini-2.5-flash')
