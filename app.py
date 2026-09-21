@@ -5,29 +5,29 @@ from streamlit_folium import st_folium
 import google.generativeai as genai
 
 # ==========================================
-# 1. تهيئة مفتاح الذكاء الاصطناعي (ضع مفتاحك في السطر 9)
+# 1. تهيئة مفتاح الذكاء الاصطناعي
 # ==========================================
-API_KEY = "AQ.Ab8RN6JgOdzM61jc2krJnrEkcJsX0-lkQJRWvnS97lGSgvj7lw"  # <--- استبدل النص بين التنصيص بمفتاح Gemini الخاص بك
+API_KEY = "ضع_مفتاحك_هنا_بين_التنصيص"  # <--- ضع مفتاح Gemini الخاص بك هنا
 
 # ==========================================
-# 2. تهيئة إعدادات الصفحة
+# 2. إعدادات اسم وأيقونة التطبيق المتكاملة
 # ==========================================
 st.set_page_config(
-    page_title="نظام التعدين الذكي - جامعة الخرطوم",
+    page_title="نظام التعدين الذكي",
     page_icon="⛏️",
     layout="wide"
 )
 
-# ==========================================
-# 3. تنسيق الواجهة والخلفية (CSS)
-# ==========================================
-st.markdown("""
-<style>
-    .stApp {
-        background: linear-gradient(rgba(244, 238, 218, 0.88), rgba(193, 154, 107, 0.92)),
-                    url('https://images.unsplash.com/photo-1578328819058-b69f3a3b0f6b?q=80&w=1600&auto=format&fit=crop');
-        background-size: cover;
-        background-position: center;
+# كود تخصيص الأيقونة واسم التطبيق لشاشة الجوال الرئيسية والمتصفح
+pwa_meta = """
+<meta name="apple-mobile-web-app-title" content="التعدين الذكي">
+<meta name="application-name" content="نظام التعدين الذكي">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/2921/2921961.png">
+<link rel="icon" type="image/png" href="https://cdn-icons-png.flaticon.com/512/2921/2921961.png">
+"""
+st.markdown(pwa_meta, unsafe_allow_html=True)
         background-attachment: fixed;
     }
     h1, h2, h3, h4, h5, h6 {
