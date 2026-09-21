@@ -3,13 +3,14 @@ import pandas as pd
 import folium
 from streamlit_folium import st_folium
 import google.generativeai as genai
+from geopy.geocoders import Nominatim
 
 # ==========================================
-# 1. تهيئة مفتاح الذكاء الاصطناعي والنموذج
+# 1. تهيئة مفتاح الذكاء الاصطناعي
 # ==========================================
 API_KEY = "ضع_مفتاحك_هنا_بين_التنصيص"  # <--- ضع مفتاح Gemini الخاص بك هنا
 
-if API_KEY and API_KEY != "ضع_مفتاحك_هنا_بين_التنصيص":
+if API_KEY and API_KEY != "AQ.Ab8RN6IRlumDiEdrZW9MePcRq0o_AoqmMCNAEidjCEspa8x0yA ":
     try:
         genai.configure(api_key=API_KEY)
         model = genai.GenerativeModel('gemini-2.5-flash')
@@ -73,86 +74,89 @@ with col_title:
 st.markdown("---")
 
 # ==========================================
-# 5. قاعدة البيانات وإدارة الجلسة
+# 5. إدارة حالة الجلسة والإحداثيات الأولية
 # ==========================================
 preset_locations = {
-    "أبو حمد (نهر النيل)": {
-        "coords": (19.5333, 33.3167), "depth": 15, "dist": 250, 
-        "soil": "تربة رملية هشّة (نفاذية عالية)", "cyanide": 0.45
-    },
-    "عطبرة (نهر النيل)": {
-        "coords": (17.6833, 33.9833), "depth": 8, "dist": 100, 
-        "soil": "تربة رملية هشّة (نفاذية عالية)", "cyanide": 0.80
-    },
-    "بربر (نهر النيل)": {
-        "coords": (18.0167, 33.9833), "depth": 12, "dist": 180, 
-        "soil": "تربة طمية مختلطة (نفاذية متوسطة)", "cyanide": 0.30
-    },
-    "قبقبة / وادي العشاري": {
-        "coords": (21.8000, 34.5000), "depth": 60, "dist": 2500, 
-        "soil": "تربة صخرية صلبة (نفاذية منخفضة)", "cyanide": 0.10
-    },
-    "هيا (البحر الأحمر)": {
-        "coords": (18.3333, 36.3500), "depth": 45, "dist": 1500, 
-        "soil": "تربة صخرية صلبة (نفاذية منخفضة)", "cyanide": 0.05
-    },
-    "كادوقلي (جنوب كردفان)": {
-        "coords": (11.0167, 29.7167), "depth": 20, "dist": 400, 
-        "soil": "تربة طمية مختلطة (نفاذية متوسطة)", "cyanide": 0.20
-    }
+    "أبو حمد (نهر النيل)": (19.5333, 33.3167),
+    "عطبرة (نهر النيل)": (17.6833, 33.9833),
+    "بربر (نهر النيل)": (18.0167, 33.9833),
+    "قبقبة / وادي العشاري": (21.8000, 34.5000),
+    "هيا (البحر الأحمر)": (18.3333, 36.3500),
+    "كادوقلي (جنوب كردفان)": (11.0167, 29.7167)
 }
 
-if "selected_preset" not in st.session_state:
-    st.session_state.selected_preset = "أبو حمد (نهر النيل)"
-
-def update_preset_values():
-    selected = st.session_state.selected_preset
-    data = preset_locations[selected]
-    st.session_state.val_lat = float(data["coords"][0])
-    st.session_state.val_lon = float(data["coords"][1])
-    st.session_state.val_depth = int(data["depth"])
-    st.session_state.val_dist = int(data["dist"])
-    st.session_state.val_soil = data["soil"]
-    st.session_state.val_cyanide = float(data["cyanide"])
-
-if "val_lat" not in st.session_state:
-    update_preset_values()
+if "latitude" not in st.session_state:
+    st.session_state.latitude = 19.5333
+if "longitude" not in st.session_state:
+    st.session_state.longitude = 33.3167
+if "site_name" not in st.session_state:
+    st.session_state.site_name = "أبو حمد (نهر النيل)"
 
 # ==========================================
-# 6. القائمة الجانبية والشريط التفاعلي للبحث
+# 6. القائمة الجانبية ووظائف البحث العالميه
 # ==========================================
 st.sidebar.image("https://upload.wikimedia.org/wikipedia/en/thumb/8/82/University_of_Khartoum_logo.png/220px-University_of_Khartoum_logo.png", width=140)
-st.sidebar.header("🔍 البحث عن موقع أو إدخال البيانات")
 
-# ميزة البحث القابلة للكتابة والفلترة السريعة
+st.sidebar.header("🌍 البحث في أي منطقة في العالم")
+search_query = st.sidebar.text_input("اكتب اسم مدنية/منطقة/منجم:", placeholder="مثال: Dubai, Cairo, الخرطوم...")
+
+if st.sidebar.button("بحث عالمي 🧭", type="primary"):
+    if search_query.strip():
+        geolocator = Nominatim(user_agent="smart_mining_global_app")
+        try:
+            location = geolocator.geocode(search_query.strip(), timeout=10)
+            if location:
+                st.session_state.latitude = float(location.latitude)
+                st.session_state.longitude = float(location.longitude)
+                st.session_state.site_name = search_query.strip()
+                st.sidebar.success(f"📍 تم العثور على: {location.address[:40]}...")
+                st.rerun()
+            else:
+                st.sidebar.error("❌ لم يتم العثور على هذا الموقع.")
+        except Exception:
+            st.sidebar.error("⚠️ يتعذر الاتصال بخدمة البحث حالياً.")
+
+st.sidebar.markdown("---")
+st.sidebar.header("📋 أو اختر من المواقع السودانية الجاهزة")
+
 selected_preset = st.sidebar.selectbox(
-    "🔎 اكتب اسم المنطقة أو اخترها من القائمة:", 
-    options=list(preset_locations.keys()),
-    key="selected_preset",
-    on_change=update_preset_values
+    "مناطق تعدين مسجلة:",
+    ["-- اختر موقعاً --"] + list(preset_locations.keys())
 )
 
-site_name = selected_preset
+if selected_preset != "-- اختر موقعاً --":
+    coords = preset_locations[selected_preset]
+    if st.session_state.latitude != coords[0] or st.session_state.longitude != coords[1]:
+        st.session_state.latitude = coords[0]
+        st.session_state.longitude = coords[1]
+        st.session_state.site_name = selected_preset
+        st.rerun()
 
-lat_input = st.sidebar.number_input("خط العرض (Latitude):", key="val_lat", format="%.4f")
-lon_input = st.sidebar.number_input("خط الطول (Longitude):", key="val_lon", format="%.4f")
+st.sidebar.markdown("---")
+st.sidebar.header("📍 الإحداثيات الحالية")
+
+lat_input = st.sidebar.number_input("خط العرض (Lat):", value=st.session_state.latitude, format="%.4f")
+lon_input = st.sidebar.number_input("خط الطول (Lon):", value=st.session_state.longitude, format="%.4f")
+
+# تحديث الجلسة إذا عدّل المستخدم الأرقام يدوياً
+st.session_state.latitude = lat_input
+st.session_state.longitude = lon_input
 
 map_style = st.sidebar.selectbox(
     "نوع الخريطة:",
-    ["قمر صناعي (Satellite)", "خريطة شوارع (OpenStreetMap)"]
+    ["خريطة شوارع (OpenStreetMap)", "قمر صناعي (Satellite)"]
 )
 
 st.sidebar.markdown("---")
 st.sidebar.header("📊 المعطيات الهيدروجيولوجية والهندسية")
 
-water_depth = st.sidebar.slider("عمق المياه الجوفية (متر):", min_value=2, max_value=150, key="val_depth")
-river_dist = st.sidebar.slider("البعد عن أقرب مجرى مائي (متر):", min_value=20, max_value=5000, step=50, key="val_dist")
+water_depth = st.sidebar.slider("عمق المياه الجوفية (متر):", min_value=2, max_value=150, value=15)
+river_dist = st.sidebar.slider("البعد عن أقرب مجرى مائي (متر):", min_value=20, max_value=5000, value=250, step=50)
 soil_type = st.sidebar.selectbox(
     "نوع التربة والهيكلية الجيولوجية:",
-    ["تربة صخرية صلبة (نفاذية منخفضة)", "تربة طمية مختلطة (نفاذية متوسطة)", "تربة رملية هشّة (نفاذية عالية)"],
-    key="val_soil"
+    ["تربة صخرية صلبة (نفاذية منخفضة)", "تربة طمية مختلطة (نفاذية متوسطة)", "تربة رملية هشّة (نفاذية عالية)"]
 )
-cyanide_conc = st.sidebar.slider("تركيز السيانيد/الزئبق (mg/L):", min_value=0.01, max_value=2.00, step=0.01, key="val_cyanide")
+cyanide_conc = st.sidebar.slider("تركيز السيانيد/الزئبق (mg/L):", min_value=0.01, max_value=2.00, value=0.45, step=0.01)
 
 # ==========================================
 # 7. الخوارزمية وحساب نتائج التقييم
@@ -187,12 +191,13 @@ st.subheader("🤖 التحليل البيئي بالذكاء الاصطناعي
 
 if st.button("توليد تقرير بيئي سريع ✨", type="primary"):
     if model is None:
-        st.warning("يرجى إضافة مفتاح API_KEY الصحيح في السطر 8 لتفعيل خدمة الذكاء الاصطناعي.")
+        st.warning("يرجى إضافة مفتاح API_KEY الصحيح في السطر 9 لتفعيل خدمة الذكاء الاصطناعي.")
     else:
         with st.spinner("جاري تحليل المعطيات وتوليد التقرير الهندسي..."):
             prompt = f"""
             أنت خبير هندسة تعدين وسلامة بيئية. قم بتوليد تقرير تقييم مخاطر مختصر لمنطقة التعدين التالية:
-            - اسم الموقع: {site_name}
+            - اسم الموقع: {st.session_state.site_name}
+            - الإحداثيات: {st.session_state.latitude}, {st.session_state.longitude}
             - عمق المياه الجوفية: {water_depth} متر
             - البعد عن أقرب مجرى مائي: {river_dist} متر
             - نوع التربة: {soil_type}
@@ -213,24 +218,24 @@ st.markdown("---")
 # ==========================================
 # 10. الخريطة التفاعلية
 # ==========================================
-st.subheader(f"🗺️ الخريطة التفاعلية للموقع: {site_name}")
+st.subheader(f"🗺️ الخريطة التفاعلية للموقع: {st.session_state.site_name}")
 
 if map_style == "قمر صناعي (Satellite)":
-    m = folium.Map(location=[lat_input, lon_input], zoom_start=11, tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri')
+    m = folium.Map(location=[st.session_state.latitude, st.session_state.longitude], zoom_start=11, tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri')
 else:
-    m = folium.Map(location=[lat_input, lon_input], zoom_start=11)
+    m = folium.Map(location=[st.session_state.latitude, st.session_state.longitude], zoom_start=11)
 
 marker_color = "red" if risk_score >= 70 else ("orange" if risk_score >= 40 else "green")
 
 folium.Marker(
-    location=[lat_input, lon_input],
-    popup=f"<b>المنجم:</b> {site_name}<br><b>درجة الخطر:</b> {risk_score}%",
-    tooltip=site_name,
+    location=[st.session_state.latitude, st.session_state.longitude],
+    popup=f"<b>الموقع:</b> {st.session_state.site_name}<br><b>درجة الخطر:</b> {risk_score}%",
+    tooltip=st.session_state.site_name,
     icon=folium.Icon(color=marker_color, icon="info-sign")
 ).add_to(m)
 
 folium.Circle(
-    location=[lat_input, lon_input],
+    location=[st.session_state.latitude, st.session_state.longitude],
     radius=river_dist,
     color=marker_color,
     fill=True,
@@ -238,4 +243,4 @@ folium.Circle(
     popup="نطاق التأثير المتوقع"
 ).add_to(m)
 
-st_folium(m, width="100%", height=450)
+st_folium(m, width="100%", height=450, key=f"map_{st.session_state.latitude}_{st.session_state.longitude}")
