@@ -3,12 +3,10 @@ import pandas as pd
 import folium
 from streamlit_folium import st_folium
 import google.generativeai as genai
-
 # ==========================================
 # 1. تهيئة مفتاح الذكاء الاصطناعي
 # ==========================================
 API_KEY = "ضع_مفتاحك_هنا_بين_التنصيص"  # <--- ضع مفتاح Gemini الخاص بك هنا
-
 # ==========================================
 # 2. إعدادات اسم وأيقونة التطبيق المتكاملة
 # ==========================================
@@ -17,7 +15,6 @@ st.set_page_config(
     page_icon="⛏️",
     layout="wide"
 )
-
 # كود تخصيص الأيقونة واسم التطبيق لشاشة الجوال الرئيسية والمتصفح
 pwa_meta = """
 <meta name="apple-mobile-web-app-title" content="التعدين الذكي">
@@ -43,19 +40,16 @@ st.markdown(pwa_meta, unsafe_allow_html=True)
         border-radius: 10px;
         padding: 8px;
         border: 1px solid #d4af37;
-    }
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
-
 # ==========================================
 # 4. العنوان الرئيسي
 # ==========================================
 st.title("⛏️ نظام التعدين الذكي وتقييم المخاطر البيئية")
 st.caption("جامعة الخرطوم - قسم هندسة التعدين | نظام الذكاء الاصطناعي للتنبؤ بالتسرب الجوفي")
 st.markdown("---")
-
 # ==========================================
 # 5. القائمة الجانبية (مدخلات البيانات)
 # ==========================================
@@ -63,7 +57,6 @@ st.sidebar.header("🔍 إدخال بيانات الموقع الميداني")
 site_name = st.sidebar.text_input("اسم المنجم / المنطقة:", "منجم نهر النيل - Block A4")
 lat_input = st.sidebar.number_input("خط العرض (Latitude):", value=18.5500, format="%.4f")
 lon_input = st.sidebar.number_input("خط الطول (Longitude):", value=33.8200, format="%.4f")
-
 st.sidebar.markdown("---")
 st.sidebar.header("📊 المعطيات البيئية والجيولوجية")
 water_depth = st.sidebar.slider("عمق المياه الجوفية (متر):", min_value=2, max_value=150, value=20)
@@ -73,7 +66,6 @@ soil_type = st.sidebar.selectbox(
     ["تربة صخرية صلبة (نفاذية منخفضة)", "تربة طمية مختلطة (نفاذية متوسطة)", "تربة رملية هشّة (نفاذية عالية)"]
 )
 cyanide_conc = st.sidebar.slider("تركيز السيانيد/الزئبق (mg/L):", min_value=0.01, max_value=2.00, value=0.15, step=0.01)
-
 # ==========================================
 # 6. المعادلة الحسابية للتقييم
 # ==========================================
@@ -104,12 +96,11 @@ st.subheader("🤖 التقرير والاستشارة البيئية بالذك
 if st.button("توليد التقرير البيئي الشامل ⚡"):
     if API_KEY == "ضع_مفتاحك_هنا_بين_التنصيص" or not API_KEY:
         st.error("⚠️ يرجى وضع مفتاح Gemini API في السطر رقم 9 داخل الكود أولاً.")
-    else:
+    else
         with st.spinner("جاري تحليل المعطيات وتوليد التوصيات الهندسية..."):
             try:
                 genai.configure(api_key=API_KEY)
                 model = genai.GenerativeModel('gemini-1.5-flash')
-                
                 prompt = f"""
                 أنت خبير بيئي وهندسي متخصص في مجال التعدين بالسودان. قم بتوليد تقرير تقييم مخاطر للموقع التالي:
                 - اسم المنجم: {site_name}
@@ -123,7 +114,6 @@ if st.button("توليد التقرير البيئي الشامل ⚡"):
                 1. تقييم سريع ومباشر لمدى خطورة الوضع على المياه الجوفية.
                 2. توصيات هندسية سريعة وميدانية للحد من هذا التسرب وتقليل المخاطر.
                 """
-                
                 response = model.generate_content(prompt)
                 st.success("تم توليد التقرير بنجاح!")
                 st.write(response.text)
