@@ -19,23 +19,13 @@ else:
     model = None
 
 # ==========================================
-# 2. إعدادات اسم وأيقونة التطبيق المتكاملة
+# 2. إعدادات الصفحة
 # ==========================================
 st.set_page_config(
     page_title="نظام التعدين الذكي",
     page_icon="⛏️",
     layout="wide"
 )
-
-pwa_meta = """
-<meta name="apple-mobile-web-app-title" content="التعدين الذكي">
-<meta name="application-name" content="نظام التعدين الذكي">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/2921/2921961.png">
-<link rel="icon" type="image/png" href="https://cdn-icons-png.flaticon.com/512/2921/2921961.png">
-"""
-st.markdown(pwa_meta, unsafe_allow_html=True)
 
 # ==========================================
 # 3. التنسيق البصري (CSS)
@@ -129,14 +119,15 @@ if "val_lat" not in st.session_state:
     update_preset_values()
 
 # ==========================================
-# 6. القائمة الجانبية (Sidebar)
+# 6. القائمة الجانبية والشريط التفاعلي للبحث
 # ==========================================
 st.sidebar.image("https://upload.wikimedia.org/wikipedia/en/thumb/8/82/University_of_Khartoum_logo.png/220px-University_of_Khartoum_logo.png", width=140)
-st.sidebar.header("🔍 إدخال بيانات الموقع والبحث")
+st.sidebar.header("🔍 البحث عن موقع أو إدخال البيانات")
 
+# ميزة البحث القابلة للكتابة والفلترة السريعة
 selected_preset = st.sidebar.selectbox(
-    "اختر منطقة تعدين معروفة:", 
-    list(preset_locations.keys()),
+    "🔎 اكتب اسم المنطقة أو اخترها من القائمة:", 
+    options=list(preset_locations.keys()),
     key="selected_preset",
     on_change=update_preset_values
 )
@@ -196,7 +187,7 @@ st.subheader("🤖 التحليل البيئي بالذكاء الاصطناعي
 
 if st.button("توليد تقرير بيئي سريع ✨", type="primary"):
     if model is None:
-        st.warning("يرجى إضافة مفتاح API_KEY الصحيح في الكود لتفعيل خدمة الذكاء الاصطناعي.")
+        st.warning("يرجى إضافة مفتاح API_KEY الصحيح في السطر 8 لتفعيل خدمة الذكاء الاصطناعي.")
     else:
         with st.spinner("جاري تحليل المعطيات وتوليد التقرير الهندسي..."):
             prompt = f"""
