@@ -176,8 +176,8 @@ if st.button("✨ اضغط هنا لتوليد تقرير وتحليل بيئي 
         try:
             genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
             
-            # تم استخدام النموذج المعتمد والمتاح gemini-2.5-flash
-            model = genai.GenerativeModel('gemini-2.5-flash')
+            # تحديث اسم النموذج التابع لشركة Google هنا مباشرة
+            model = genai.GenerativeModel('gemini-3.6-flash')
             
             prompt = f"""
             بصفتك خبير بيئي وهيدروجيولوجي في قسم هندسة التعدين جامعة الخرطوم، قم بتحليل البيانات التالية لمنطقة تعدين سودانية:
