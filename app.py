@@ -3,6 +3,8 @@ import pandas as pd
 import folium
 from streamlit_folium import st_folium
 import google.generativeai as genai
+from geopy.geocoders import Nominatim
+from geopy.exc import GeocoderTimedOut, GeocoderServiceError
 
 # ==========================================
 # 1. إعدادات الصفحة
@@ -93,21 +95,38 @@ if "val_lat" not in st.session_state:
     update_preset_values()
 
 # ==========================================
-# 5. القائمة الجانبية
+# 5. القائمة الجانبية والبحث عن المواقع
 # ==========================================
-st.sidebar.header("📍 اختيار موقع التعدين")
+st.sidebar.header("📍 اختيار أو البحث عن موقع")
 
 selected_preset = st.sidebar.selectbox(
-    "اختر منطقة التعدين للوصول السريع:", 
+    "اختر منطقة جاهزة:", 
     list(preset_locations.keys()),
     key="selected_preset",
     on_change=update_preset_values
 )
 
-if selected_preset == "📍 إدخال موقع مخصص / إحداثيات":
-    site_name = st.sidebar.text_input("اسم المنجم الجديد:", value="منجم مخصص")
-else:
-    site_name = selected_preset
+st.sidebar.markdown("---")
+st.sidebar.subheader("🔍 البحث بالاسم عن أي منطقة جديدة:")
+custom_search_name = st.sidebar.text_input("اكتب اسم المدينة أو المنجم:", value="", placeholder="مثال: Port Sudan أو Shendi")
+
+if st.sidebar.button("🔍 بحث وانتقال للموقع"):
+    if custom_search_name.strip() != "":
+        geolocator = Nominatim(user_agent="smart_mining_app_sudan")
+        try:
+            # إضافة كلمة Sudan لضمان نتائج دقيقة داخل السودان
+            query = f"{custom_search_name}, Sudan" if "sudan" not in custom_search_name.lower() else custom_search_name
+            location = geolocator.geocode(query, timeout=10)
+            if location:
+                st.session_state.val_lat = location.latitude
+                st.session_state.val_lon = location.longitude
+                st.sidebar.success(f"تم العثور على: {location.address.split(',')[0]}")
+            else:
+                st.sidebar.error("لم يتم العثور على المنجم/المدينة، تأكد من صحة الاسم.")
+        except Exception:
+            st.sidebar.error("حدث خطأ أثناء البحث، تحقق من الاتصال بالشبكة.")
+
+site_name = custom_search_name if custom_search_name.strip() != "" else selected_preset
 
 lat_input = st.sidebar.number_input("خط العرض (Latitude):", key="val_lat", format="%.4f")
 lon_input = st.sidebar.number_input("خط الطول (Longitude):", key="val_lon", format="%.4f")
@@ -173,7 +192,7 @@ if st.button("✨ توليد تقرير بيئي سريع", type="primary", use_
 st.markdown("---")
 
 # ==========================================
-# 9. الخريطة السريعة جداً (بدون أداة البحث المبطئة)
+# 9. الخريطة والتحديث الفوري للموقع
 # ==========================================
 st.subheader(f"🗺️ الخريطة: {site_name}")
 
