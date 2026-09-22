@@ -2,5 +2,5 @@ streamlit
 pandas
 folium
 streamlit-folium
-google-generativeai
+google-genai
 geopy
