@@ -322,3 +322,21 @@ folium.Circle(
 ).add_to(m)
 
 st_folium(m, width="100%", height=450, key=f"map_{st.session_state.latitude}_{st.session_state.longitude}")
+# ==========================================
+# 10. قسم استبيان وآراء المهندسين
+# ==========================================
+st.markdown("---")
+st.subheader("💬 شاركنا رأيك وتوصياتك لتطوير النظام")
+
+with st.form(key="feedback_form"):
+    engineer_name = st.text_input("الاسم / المسمى الوظيفي (اختياري):")
+    rating = st.slider("تقييمك الأولي للنظام:", 1, 5, 5)
+    feedback_text = st.text_area("ملاحظاتك الهندسية أو اقتراحات للتطوير:")
+    
+    submit_button = st.form_submit_button(label="إرسال الملاحظات 📤")
+
+if submit_button:
+    if feedback_text.strip() != "":
+        st.success("شكرًا جزيلًا لك! تم استلام ملاحظاتك بنجاح وستُأخذ بعين الاعتبار في التحديث القادم. 🙏")
+    else:
+        st.warning("يرجى كتابة ملاحظتك قبل الإرسال.")
