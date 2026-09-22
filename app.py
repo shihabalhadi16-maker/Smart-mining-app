@@ -2,23 +2,21 @@ import streamlit as st
 import pandas as pd
 import folium
 from streamlit_folium import st_folium
-import google.generativeai as genai
+from google import genai
 from geopy.geocoders import Nominatim
 import random
 
 # ==========================================
-# 1. تهيئة مفتاح الذكاء الاصطناعي
+# 1. تهيئة مكتبة Google GenAI الحديثة
 # ==========================================
-API_KEY = "ضع_مفتاحك_هنا_بين_التنصيص"  # <--- ضع مفتاح Gemini الخاص بك هنا
+API_KEY = st.secrets.get("GEMINI_API_KEY", None)
 
-if API_KEY and API_KEY != "AQ.Ab8RN6IV5s_KbsKQSFRchYhhyaRaBBzIgSM9cg2NfW0V7i5oGA ":
+client = None
+if API_KEY:
     try:
-        genai.configure(api_key=API_KEY)
-        model = genai.GenerativeModel('gemini-2.5-flash')
-    except Exception as e:
-        model = None
-else:
-    model = None
+        client = genai.Client(api_key=API_KEY)
+    except Exception:
+        client = None
 
 # ==========================================
 # 2. إعدادات الصفحة
@@ -105,20 +103,17 @@ search_query = st.sidebar.text_input("اكتب اسم مدينة/منطقة/من
 if st.sidebar.button("بحث عالمي 🧭", type="primary"):
     q = search_query.strip()
     if q:
-        # إنشاء اسم معرف عشوائي لتفادي حظر السيرفرات
         unique_user_agent = f"uofk_mining_app_{random.randint(1000, 9999)}"
         geolocator = Nominatim(user_agent=unique_user_agent)
         
         location = None
         try:
-            # المحاولة الأولى: البحث بإضافة اسم "Sudan" لزيادة دقة البحث المحلي
             location = geolocator.geocode(f"{q}, Sudan", timeout=12)
         except Exception:
             pass
             
         if not location:
             try:
-                # المحاولة الثانية: البحث المباشر في قاعدة البيانات العالمية
                 location = geolocator.geocode(q, timeout=12)
             except Exception:
                 pass
@@ -200,33 +195,42 @@ with col3:
 st.markdown("---")
 
 # ==========================================
-# 9. قسم التحليل البيئي بالذكاء الاصطناعي
+# 9. قسم التحليل البيئي بالذكاء الاصطناعي (باستخدام google-genai الحديث)
 # ==========================================
 st.subheader("🤖 التحليل البيئي بالذكاء الاصطناعي")
 
 if st.button("توليد تقرير بيئي سريع ✨", type="primary"):
-    if model is None:
-        st.warning("يرجى إضافة مفتاح API_KEY الصحيح في السطر 9 لتفعيل خدمة الذكاء الاصطناعي.")
+    if client is None:
+        st.error("⚠️ لم يتم العثور على المفتاح GEMINI_API_KEY داخل Secrets في إعدادات التطبيق.")
     else:
-        with st.spinner("جاري تحليل المعطيات وتوليد التقرير الهندسي..."):
-            prompt = f"""
-            أنت خبير هندسة تعدين وسلامة بيئية. قم بتوليد تقرير تقييم مخاطر مختصر لمنطقة التعدين التالية:
-            - اسم الموقع: {st.session_state.site_name}
-            - الإحداثيات: {st.session_state.latitude}, {st.session_state.longitude}
-            - عمق المياه الجوفية: {water_depth} متر
-            - البعد عن أقرب مجرى مائي: {river_dist} متر
-            - نوع التربة: {soil_type}
-            - تركيز السيانيد/الزئبق: {cyanide_conc} mg/L
-            - درجة الخطر التقديرية: {risk_score}%
+        prompt = f"""
+        أنت خبير هندسة تعدين وسلامة بيئية. اكتب تقريراً موجزاً جداً وفي نقاط سريعة ومباشرة:
+        - الموقع: {st.session_state.site_name}
+        - عمق المياه الجوفية: {water_depth}م | المجرى المائي: {river_dist}م | التربة: {soil_type}
+        - السيانيد: {cyanide_conc} mg/L | درجة الخطر: {risk_score}%
+        
+        اذكر فوراً:
+        1. تقييم المخاطر المباشرة.
+        2. 3 توصيات هندسية حاسمة لمنع التسرب.
+        """
+        
+        report_container = st.empty()
+        full_text = ""
+        
+        try:
+            response = client.models.generate_content_stream(
+                model='gemini-2.5-flash',
+                contents=prompt
+            )
+            for chunk in response:
+                full_text += chunk.text
+                report_container.markdown(full_text + "▌")
             
-            قدم التوصيات الهندسية والإجراءات التصحيحية المباشرة للحفاظ على البيئة والمياه الجوفية.
-            """
-            try:
-                response = model.generate_content(prompt)
-                st.success("تم توليد التقرير بنجاح:")
-                st.write(response.text)
-            except Exception as e:
-                st.error(f"حدث خطأ أثناء الاتصال بالذكاء الاصطناعي: {e}")
+            report_container.markdown(full_text)
+            st.success("تم كتابة التقرير بنجاح!")
+            
+        except Exception as e:
+            st.error(f"حدث خطأ أثناء الاتصال بالذكاء الاصطناعي: {e}")
 
 st.markdown("---")
 
