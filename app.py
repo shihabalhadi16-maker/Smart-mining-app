@@ -26,7 +26,11 @@ API_KEY = st.secrets.get("GEMINI_API_KEY", None)
 if API_KEY:
     try:
         genai.configure(api_key=API_KEY)
-model = genai.GenerativeModel('gemini-3.6-flash')
+try:
+    model = genai.GenerativeModel('gemini-3.6-flash')
+    # باقي كود التقرير المعتاد
+except Exception as e:
+    st.error(f"حدث خطأ أثناء الاتصال بالنموذج: {e}")
     except Exception:
         model = None
 else:
