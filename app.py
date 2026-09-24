@@ -2,21 +2,17 @@ import streamlit as st
 import pandas as pd
 import folium
 from streamlit_folium import st_folium
-from google import genai
+import google.generativeai as genai
 from geopy.geocoders import Nominatim
 import random
 
 # ==========================================
-# 1. تهيئة مكتبة Google GenAI
+# 1. تهيئة مكتبة Google Generative AI
 # ==========================================
 API_KEY = st.secrets.get("GEMINI_API_KEY", None)
 
-client = None
 if API_KEY:
-    try:
-        client = genai.Client(api_key=API_KEY)
-    except Exception:
-        client = None
+    genai.configure(api_key=API_KEY)
 
 # ==========================================
 # 2. إعدادات الصفحة
@@ -224,7 +220,7 @@ st.markdown("---")
 st.subheader("🤖 التحليل البيئي بالذكاء الاصطناعي")
 
 if st.button("توليد تقرير بيئي سريع ✨", type="primary"):
-    if client is None:
+    if not API_KEY:
         st.error("⚠️ لم يتم العثور على المفتاح GEMINI_API_KEY داخل Secrets في إعدادات التطبيق.")
     else:
         prompt = f"""
@@ -239,20 +235,19 @@ if st.button("توليد تقرير بيئي سريع ✨", type="primary"):
         """
         
         report_container = st.empty()
-        full_text = ""
         
-        # قائمة بالنماذج المتاحة للتبديل عند وجود ضغط
-        models_to_try = ['gemini-3.6-flash', 'gemini-3.6-pro']
+        # قائمة بالنماذج المتاحة
+        models_to_try = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash']
         success = False
 
         for model_name in models_to_try:
             if success:
                 break
             try:
-                response = client.models.generate_content_stream(
-                    model=model_name,
-                    contents=prompt
-                )
+                model = genai.GenerativeModel(model_name)
+                response = model.generate_content(prompt, stream=True)
+                
+                full_text = ""
                 for chunk in response:
                     full_text += chunk.text
                     report_container.markdown(full_text + "▌")
@@ -264,7 +259,7 @@ if st.button("توليد تقرير بيئي سريع ✨", type="primary"):
                 continue
         
         if not success:
-            st.warning("⏳ الخوادم تعاني من ضغط عالٍ حالياً (503)، يرجى الضغط على الزر مرة أخرى بعد بضع ثوانٍ.")
+            st.warning("⏳ الخوادم تعاني من ضغط حالياً، يرجى الضغط على الزر مرة أخرى بعد بضع ثوانٍ.")
 
 st.markdown("---")
 
