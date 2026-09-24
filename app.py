@@ -123,7 +123,7 @@ with tab1:
                         break
                 
                 if not found_in_preset:
-                    geolocator = Nominatim(user_agent="uofk_smart_mining_v6_gemini38")
+                    geolocator = Nominatim(user_agent="uofk_smart_mining_v8_gemini36")
                     try:
                         q = f"{query_str}, Sudan" if "sudan" not in query_str.lower() else query_str
                         loc = geolocator.geocode(q, timeout=8)
@@ -206,49 +206,63 @@ with tab1:
         st_folium(m, width="100%", height=400, key="sat_map")
 
         # ==========================================
-        # محرك الذكاء الاصطناعي المحدث (Gemini 3.8 Flash)
+        # محرك الذكاء الاصطناعي (Gemini 3.6 Flash)
         # ==========================================
         st.markdown("---")
-        st.markdown("<h4 class='section-header'>🤖 التقرير البيئي بالذكاء الاصطناعي (Gemini 3.8 Flash)</h4>", unsafe_allow_html=True)
+        st.markdown("<h4 class='section-header'>⚡ التقرير البيئي الفوري (Gemini 3.6 Flash)</h4>", unsafe_allow_html=True)
         
-        if st.button("✨ توليد تقرير فني شامل بالذكاء الاصطناعي", type="primary", use_container_width=True):
+        if st.button("✨ توليد تقرير فني فوري", type="primary", use_container_width=True):
             if "GEMINI_API_KEY" in st.secrets:
                 try:
-                    with st.spinner("جاري كتابة وتحليل التقرير البيئي بواسطة محرك Gemini 3.8 Flash..."):
-                        genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-                        
-                        # التحديث لنموذج Gemini 3.8 Flash مع نظام احتياطي تلقائي
-                        try:
-                            model = genai.GenerativeModel('gemini-3.8-flash')
-                        except Exception:
-                            try:
-                                model = genai.GenerativeModel('gemini-2.5-flash')
-                            except Exception:
-                                model = genai.GenerativeModel('gemini-1.5-flash')
-                        
-                        prompt = f"""
-                        أنت خبير بيئي وهيدروجيولوجي متخصص في التعدين بجامعة الخرطوم.
-                        قم بكتابة تقرير تقييم أثر بيئي مفصل وشامل لموقع: {st.session_state.selected_site_name}
-                        المعطيات الفنية:
-                        - الإحداثيات: ({lat_val}, {lon_val})
-                        - عمق المياه الجوفية: {depth} متر
-                        - نوع التربة: {soil}
-                        - البعد عن المجرى المائي: {river_dist} متر
-                        - تركيز السيانيد: {cyanide} ملجم/لتر (الحد الآمن العالمي هو 0.05)
-                        - مؤشر الخطر المحسوب: {risk_score}%
-                        - الزمن المتوقع لوصول الملوثات للمياه: {years} سنة
+                    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+                    
+                    # محاولة استدعاء النموذج 3.6 Flash مع الاحتياط التلقائي للنماذج المتاحة
+                    try:
+                        model = genai.GenerativeModel(
+                            'gemini-3.6-flash',
+                            generation_config={
+                                "temperature": 0.2,
+                                "max_output_tokens": 350
+                            }
+                        )
+                    except Exception:
+                        model = genai.GenerativeModel(
+                            'gemini-2.5-flash',
+                            generation_config={
+                                "temperature": 0.2,
+                                "max_output_tokens": 350
+                            }
+                        )
+                    
+                    prompt = f"""
+                    أنت خبير بيئي وهيدروجيولوجي بجامعة الخرطوم. اكتب تقريراً موجزاً ومباشراً جداً لموقع {st.session_state.selected_site_name}:
+                    المعطيات: عمق المياه {depth}m، تربة {soil}، البعد عن المجرى المائي {river_dist}m، تركيز السيانيد {cyanide}mg/L، الخطر {risk_score}%.
+                    
+                    قم بالصياغة في 3 نقاط مركزة مباشرة:
+                    1. **تقييم الخطورة الهيدروجيولوجية:** (موجز)
+                    2. **الأثر البيئي والصحي:** (موجز)
+                    3. **توصيتين هندسيتين عاجلتين:**
+                    """
+                    
+                    st.markdown("##### 📄 التقرير الفني المباشر:")
+                    
+                    # التوليد الفوري والمباشر خلال ثانية
+                    response = model.generate_content(prompt, stream=True)
+                    
+                    def stream_generator():
+                        for chunk in response:
+                            if chunk.text:
+                                yield chunk.text
 
-                        يرجى صياغة التقرير بأسلوب هندسي رصين في المحاور التالية:
-                        1. تقييم مدى الخطورة الهيدروجيولوجية على المياه الجوفية والسطحية.
-                        2. الأثر الصحي والبيئي المتوقع على المجتمعات والمراعي المحيطة.
-                        3. التوصيات والتدابير الهندسية العاجلة الواجب اتخاذها من قبل الإدارة البيئية.
-                        """
-                        response = model.generate_content(prompt)
-                        st.info(response.text)
+                    st.write_stream(stream_generator)
+
                 except Exception as e:
-                    st.error(f"حدث خطأ أثناء الاتصال بالذكاء الاصطناعي: {e}")
+                    if "429" in str(e):
+                        st.warning("⏳ تم الوصول للحد الأقصى للطلبات المجانية في الدقيقة. يرجى الانتظار دقيقة واحدة ثم الضغط على الزر مجدداً.")
+                    else:
+                        st.error(f"حدث خطأ أثناء الاتصال بالذكاء الاصطناعي: {e}")
             else:
-                st.warning("⚠️ يرجى إضافة مفتاح GEMINI_API_KEY في صفحة Secrets على Streamlit Cloud ليتمكن النظام من كتابة التقرير.")
+                st.warning("⚠️ يرجى إضافة مفتاح GEMINI_API_KEY في صفحة Secrets على Streamlit Cloud.")
 
 # ==========================================
 # TAB 2: التقييم الجماعي والخرائط الحرارية
