@@ -1,332 +1,251 @@
 import streamlit as st
 import pandas as pd
 import folium
-from folium.plugins import HeatMap, Geocoder
 from streamlit_folium import st_folium
+from folium.plugins import HeatMap
 import google.generativeai as genai
-import io
+from geopy.geocoders import Nominatim
 
 # ==========================================
-# 1. تهيئة وإعدادات الصفحة الرئيسية
+# 1. إعدادات الصفحة والمعايير البصرية (Corporate Standards)
 # ==========================================
 st.set_page_config(
-    page_title="المنصة الذكية لتقييم المخاطر البيئية للتعدين (DRASTIC)",
+    page_title="نظام النمذجة الهيدروجيولوجية والتقييم البيئي للتعدين",
     page_icon="⛏️",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-# ==========================================
-# 2. التنسيق البصري وواجهة المستخدم (CSS)
-# ==========================================
+# Custom Enterprise CSS
 st.markdown("""
 <style>
-.stApp {
-    background: linear-gradient(rgba(244, 238, 218, 0.90), rgba(193, 154, 107, 0.93)),
-                url('https://images.unsplash.com/photo-1578328819058-b69f3a3b0f6b?q=80&w=1600&auto=format&fit=crop');
-    background-size: cover;
-    background-position: center;
-    background-attachment: fixed;
-}
-h1, h2, h3, h4, h5, h6 {
-    color: #5c2c16 !important;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-}
-[data-testid="stSidebar"] {
-    background-color: #f5eedc !important;
-    border-right: 2px solid #c19a6b;
-}
-div[data-testid="stMetric"], div.stSelectbox, div.stNumberInput, div.stSlider, div.stTextInput {
-    background-color: rgba(255, 255, 255, 0.85) !important;
-    border-radius: 10px;
-    padding: 10px;
-    border: 1px solid #d4af37;
-}
-#MainMenu {visibility: hidden;}
-footer {visibility: hidden;}
+    :root {
+        --primary-color: #5C2C16;
+        --secondary-color: #C19A6B;
+        --bg-color: #F8F9FA;
+        --card-bg: #FFFFFF;
+    }
+    .stApp {
+        background-color: var(--bg-color);
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    /* Metric Cards */
+    div[data-testid="stMetric"] {
+        background-color: var(--card-bg) !important;
+        border: 1px solid #E0E0E0;
+        border-radius: 8px;
+        padding: 15px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    div[data-testid="stMetric"] label {
+        color: #666666 !important;
+        font-size: 0.9rem !important;
+        font-weight: 600;
+    }
+    /* Sidebar styling */
+    [data-testid="stSidebar"] {
+        background-color: #F4EEDA !important;
+        border-right: 1px solid #D4AF37;
+    }
+    /* Section Headers */
+    .section-header {
+        color: #5C2C16;
+        border-bottom: 2px solid #C19A6B;
+        padding-bottom: 8px;
+        margin-bottom: 20px;
+        font-weight: bold;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 3. الهيدر الرئيسي مع شعار الجامعة
+# 2. الهيدر المؤسسي وشعار الجامعة
 # ==========================================
-col_logo, col_title = st.columns([1, 5])
-
+col_logo, col_title = st.columns([1, 6])
 with col_logo:
-    st.image("https://upload.wikimedia.org/wikipedia/en/thumb/8/82/University_of_Khartoum_logo.png/220px-University_of_Khartoum_logo.png", width=105)
-
+    st.image("https://upload.wikimedia.org/wikipedia/en/thumb/8/82/University_of_Khartoum_logo.png/220px-University_of_Khartoum_logo.png", width=90)
 with col_title:
-    st.title("⛏️ المنصة المتقدمة لتقييم حساسية المياه الجوفية للتلوث (DRASTIC Model)")
-    st.caption("جامعة الخرطوم — كلية الهندسة — قسم هندسة التعدين | نظام نمذجة التلوث الجوفي والتحليل السيناريو")
+    st.markdown("<h2 style='color: #5C2C16; margin-bottom:0;'>جامعة الخرطوم — كلية الهندسة</h2>", unsafe_allow_html=True)
+    st.markdown("<h4 style='color: #C19A6B; margin-top:0;'>نظام النمذجة الجيومكانية والتقييم البيئي لموقع التعدين (DRASTIC Model)</h4>", unsafe_allow_html=True)
 
 st.markdown("---")
 
 # ==========================================
-# 4. خوارزمية DRASTIC المعتمدة عالمياً (تعديل 1)
+# 3. محرك نموذج DRASTIC العلمي
 # ==========================================
-def calculate_drastic(depth, recharge, aquifer, soil, topography, vadose, hydraulic_cond, liner=False):
-    """
-    نموذج DRASTIC مع حزمة الأوزان القياسية (US EPA):
-    Index = D_r*D_w + R_r*R_w + A_r*A_w + S_r*S_w + T_r*T_w + I_r*I_w + C_r*C_w
-    """
-    # الأوزان المعتمدة (Weights)
-    Dw, Rw, Aw, Sw, Tw, Iw, Cw = 5, 4, 3, 2, 1, 5, 3
-
-    # 1. Depth to Water Rating (D)
-    if depth < 5: Dr = 10
-    elif depth < 15: Dr = 9
-    elif depth < 30: Dr = 7
-    elif depth < 50: Dr = 5
-    else: Dr = 2
-
-    # 2. Recharge Rating (R)
-    Rr = 8 if recharge > 200 else (5 if recharge > 100 else 2)
-
-    # 3. Aquifer Media Rating (A)
-    Ar = 8 if "حصى" in aquifer or "كاست" in aquifer else (6 if "حجر رملي" in aquifer else 4)
-
-    # 4. Soil Media Rating (S)
-    if "رملية" in soil: Sr = 9
-    elif "طمية" in soil: Sr = 5
-    else: Sr = 2 # صخرية أو طينية
-
-    # 5. Topography Rating (T)
-    Tr = 10 if topography < 2 else (7 if topography < 5 else 3)
-
-    # 6. Impact of Vadose Zone (I)
-    Ir = 9 if "رمل" in vadose or "هشة" in vadose else (5 if "مختلطة" in vadose else 2)
-    if liner: Ir = max(1, Ir - 6) # تطبيق البطانة العازلة ينقص التأثير بشكل حاد
-
-    # 7. Hydraulic Conductivity (C)
-    Cr = 10 if hydraulic_cond > 40 else (6 if hydraulic_cond > 10 else 2)
-
-    # حساب المؤشر النهائي
-    drastic_index = (Dr * Dw) + (Rr * Rw) + (Ar * Aw) + (Sr * Sw) + (Tr * Tw) + (Ir * Iw) + (Cr * Cw)
+def calculate_drastic_index(depth, recharge, soil_type, slope, cyanide_conc):
+    # D: Depth to Water rating (1-10)
+    d_rating = 10 if depth < 5 else (9 if depth < 15 else (7 if depth < 30 else (3 if depth < 50 else 1)))
     
-    # تحويل المؤشر لنسبة مئوية (المجال النظري بين 23 و 226)
-    risk_percentage = min(max(round(((drastic_index - 23) / (226 - 23)) * 100, 1), 5.0), 99.0)
-    return drastic_index, risk_percentage
-
-# ==========================================
-# 5. إدارة الجلسة والمواقع المسبقة
-# ==========================================
-preset_locations = {
-    "أبو حمد (نهر النيل)": {"coords": (19.5333, 33.3167), "depth": 15, "dist": 250, "soil": "تربة رملية هشّة (نفاذية عالية)", "cyanide": 0.45},
-    "عطبرة (نهر النيل)": {"coords": (17.6833, 33.9833), "depth": 8, "dist": 100, "soil": "تربة رملية هشّة (نفاذية عالية)", "cyanide": 0.80},
-    "بربر (نهر النيل)": {"coords": (18.0167, 33.9833), "depth": 12, "dist": 180, "soil": "تربة طمية مختلطة (نفاذية متوسطة)", "cyanide": 0.30},
-    "قبقبة / وادي العشاري": {"coords": (21.8000, 34.5000), "depth": 60, "dist": 2500, "soil": "تربة صخرية صلبة (نفاذية منخفضة)", "cyanide": 0.10},
-    "📍 إدخال موقع مخصص": {"coords": (19.5333, 33.3167), "depth": 15, "dist": 250, "soil": "تربة رملية هشّة (نفاذية عالية)", "cyanide": 0.10}
-}
-
-if "selected_preset" not in st.session_state:
-    st.session_state.selected_preset = "أبو حمد (نهر النيل)"
-
-def update_preset():
-    sel = st.session_state.selected_preset
-    d = preset_locations[sel]
-    st.session_state.v_lat = float(d["coords"][0])
-    st.session_state.v_lon = float(d["coords"][1])
-    st.session_state.v_depth = int(d["depth"])
-    st.session_state.v_dist = int(d["dist"])
-    st.session_state.v_soil = d["soil"]
-    st.session_state.v_cyanide = float(d["cyanide"])
-
-if "v_lat" not in st.session_state:
-    update_preset()
-
-# ==========================================
-# 6. القائمة الجانبية للتفاعل (Sidebar)
-# ==========================================
-st.sidebar.image("https://upload.wikimedia.org/wikipedia/en/thumb/8/82/University_of_Khartoum_logo.png/220px-University_of_Khartoum_logo.png", width=120)
-st.sidebar.header("🕹️ مدخلات وتقييم الموقع")
-
-selected_preset = st.sidebar.selectbox("اختيار موقع معتمد:", list(preset_locations.keys()), key="selected_preset", on_change=update_preset)
-site_name = st.sidebar.text_input("اسم المنجم/الموقع:", value=selected_preset if selected_preset != "📍 إدخال موقع مخصص" else "منجم جديد")
-
-lat_input = st.sidebar.number_input("خط العرض (Lat):", key="v_lat", format="%.4f")
-lon_input = st.sidebar.number_input("خط الطول (Lon):", key="v_lon", format="%.4f")
-
-st.sidebar.markdown("---")
-st.sidebar.header("🧬 معايير نموذج DRASTIC")
-water_depth = st.sidebar.slider("عمق المياه الجوفية (متر) - D:", 1, 120, key="v_depth")
-river_dist = st.sidebar.slider("البعد عن أقرب مجرى مائي (متر):", 20, 5000, key="v_dist")
-soil_type = st.sidebar.selectbox("نوع التربة - S:", ["تربة رملية هشّة (نفاذية عالية)", "تربة طمية مختلطة (نفاذية متوسطة)", "تربة صخرية صلبة (نفاذية منخفضة)"], key="v_soil")
-cyanide_conc = st.sidebar.slider("تركيز السيانيد/الملوثات (mg/L):", 0.01, 2.00, key="v_cyanide")
-
-# ==========================================
-# 7. حساب نموذج DRASTIC وسيناريو المقارنة (تعديل 1 & 5)
-# ==========================================
-# حساب الوضع الحالي
-drastic_idx_current, risk_current = calculate_drastic(
-    depth=water_depth, recharge=50, aquifer="حجر رملي",
-    soil=soil_type, topography=2, vadose=soil_type, hydraulic_cond=15, liner=False
-)
-
-# قسم مقارنة السيناريوهات (تعديل 5)
-st.subheader("💡 مقارنة السيناريوهات والحلول الهندسية (Scenario Analysis)")
-col_sc1, col_sc2 = st.columns(2)
-
-with col_sc1:
-    st.markdown("#### 🔴 الوضع الحالي (دون معالجة)")
-    st.metric("مؤشر DRASTIC الحالي", f"{drastic_idx_current} pt")
-    st.metric("نسبة الخطر البيئي", f"{risk_current}%", delta="وضع حرج" if risk_current > 60 else "متوسط", delta_color="inverse")
-
-with col_sc2:
-    st.markdown("#### 🟢 السيناريو المعدل (إجراءات هندسية)")
-    apply_liner = st.checkbox("تطبيق بطانة HDPE عالية الكثافة عازلة للتربة", value=True)
-    add_distance = st.slider("زيادة مسافة الأمان عن المجرى المائي (متر إضافي):", 0, 2000, step=100, value=500)
+    # R: Recharge rating
+    r_rating = 8 if recharge == "عالية (أمطار/سيول)" else (5 if recharge == "متوسطة" else 2)
     
-    # حساب سيناريو التحسين
-    drastic_idx_opt, risk_opt = calculate_drastic(
-        depth=water_depth, recharge=20, aquifer="حجر رملي",
-        soil=soil_type, topography=2, vadose=soil_type, hydraulic_cond=5, liner=apply_liner
-    )
+    # S: Soil Media rating
+    s_rating = 10 if "رملية" in soil_type else (6 if "طمية" in soil_type else 2)
     
-    diff = round(risk_current - risk_opt, 1)
-    st.metric("مؤشر DRASTIC بعد التحسين", f"{drastic_idx_opt} pt")
-    st.metric("نسبة الخطر الجديدة", f"{risk_opt}%", delta=f"انخفاض الخطر بـ -{diff}%", delta_color="normal")
-
-st.markdown("---")
-
-# ==========================================
-# 8. رفع وتحليل الملفات الجماعية CSV/Excel (تعديل 2)
-# ==========================================
-st.subheader("📂 التقييم الجماعي للمواقع (Bulk CSV/Excel Upload)")
-uploaded_file = st.file_uploader("قم برفع ملف إكسل أو CSV يحتوي إحداثيات المناجم لحسابها دفعة واحدة:", type=["csv", "xlsx"])
-
-bulk_df = None
-if uploaded_file is not None:
-    try:
-        if uploaded_file.name.endswith('.csv'):
-            bulk_df = pd.read_csv(uploaded_file)
-        else:
-            bulk_df = pd.read_excel(uploaded_file)
-            
-        st.success(f"تم تحميل الملف بنجاح! عدد المواقع المكتشفة: {len(bulk_df)}")
-        
-        # حساب التقييم لكل موقع في الملف
-        if 'Latitude' in bulk_df.columns and 'Longitude' in bulk_df.columns:
-            results = []
-            for _, row in bulk_df.iterrows():
-                d = row.get('Depth', 15)
-                s = row.get('Soil', 'رملية')
-                _, idx_risk = calculate_drastic(d, 50, "حجر رملي", s, 2, s, 15)
-                results.append(idx_risk)
-            
-            bulk_df['DRASTIC_Risk_%'] = results
-            st.dataframe(bulk_df.head(10), use_container_width=True)
-            
-            # زر تحميل النتائج المجتمعة
-            output_buffer = io.BytesIO()
-            bulk_df.to_excel(output_buffer, index=False)
-            st.download_button(
-                label="📥 تحميل التقرير الشامل لجميع المناجم (Excel)",
-                data=output_buffer.getvalue(),
-                file_name="Mining_Risks_Report.xlsx",
-                mime="application/vnd.ms-excel"
-            )
-        else:
-            st.warning("⚠️ يرجى التأكد من احتواء الملف على أعمدة باسم 'Latitude' و 'Longitude'.")
-    except Exception as e:
-        st.error(f"حدث خطأ أثناء قراءة الملف: {e}")
-
-st.markdown("---")
-
-# ==========================================
-# 9. التقرير بالذكاء الاصطناعي وتصدير PDF/Text (تعديل 4)
-# ==========================================
-st.subheader("🤖 التقرير الفني الذكي والتصدير (Gemini 3.6)")
-
-ai_report_text = ""
-if st.button("✨ توليد التقرير البيئي الشامل", type="primary", use_container_width=True):
-    if "GEMINI_API_KEY" in st.secrets:
-        try:
-            genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-            model = genai.GenerativeModel('gemini-3.6-flash')
-            
-            prompt = f"""
-            بصفتك مستشاراً هيدروجيولوجياً وبيئياً في جامعة الخرطوم، أعد تقريراً هندسياً رفيضاً مستنداً على نموذج DRASTIC:
-            - اسم الموقع: {site_name} | الإحداثيات: ({lat_input}, {lon_input})
-            - مؤشر DRASTIC الحالي: {drastic_idx_current} ({risk_current}%)
-            - مؤشر DRASTIC بعد الحلول الهندسية: {drastic_idx_opt} ({risk_opt}%)
-            - تركيز السيانيد: {cyanide_conc} mg/L | عمق المياه: {water_depth}م
-            
-            قدم التقرير ملخصاً في:
-            1. **تقييم حساسية المياه الجوفية للتلوث بناءً على DRASTIC**.
-            2. **مقارنة الأثر قبل وبعد التعديل الهندسي**.
-            3. **توصيات نهائية سريعة**.
-            """
-            
-            response = model.generate_content(prompt)
-            ai_report_text = response.text
-            st.markdown(ai_report_text)
-            
-            # تصدير التقرير النصي جاهز للطباعة (تعديل 4)
-            full_pdf_content = f"""
-            ==================================================
-            جامعة الخرطوم - كلية الهندسة - قسم هندسة التعدين
-            تقرير تقييم المخاطر البيئية والتسرب الجوفي (DRASTIC)
-            ==================================================
-            الموقع: {site_name}
-            الإحداثيات: {lat_input}, {lon_input}
-            نسبة الخطر الحالي: {risk_current}%
-            نسبة الخطر بعد معالجة البطانة: {risk_opt}%
-            --------------------------------------------------
-            التحليل الفني والذكاء الاصطناعي:
-            {ai_report_text}
-            """
-            
-            st.download_button(
-                label="📄 تصدير التقرير الفني للطباعة (TXT/PDF Ready)",
-                data=full_pdf_content,
-                file_name=f"DRASTIC_Report_{site_name}.txt",
-                mime="text/plain"
-            )
-            
-        except Exception as e:
-            st.error(f"خطأ أثناء استدعاء نموذج الذكاء الاصطناعي: {e}")
+    # T: Topography (Slope) rating
+    t_rating = 10 if slope < 2 else (9 if slope < 6 else (5 if slope < 12 else 1))
+    
+    # Standard Weights (EPA DRASTIC Model)
+    Dw, Rw, Sw, Tw = 5, 4, 2, 1
+    
+    # Base DRASTIC Index
+    drastic_score = (d_rating * Dw) + (r_rating * Rw) + (s_rating * Sw) + (t_rating * Tw)
+    
+    # Vulnerability Classification
+    if drastic_score >= 85:
+        category = "عالية جداً (Very High Vulnerability)"
+        color = "#D32F2F"
+    elif drastic_score >= 65:
+        category = "عالية (High Vulnerability)"
+        color = "#F57C00"
+    elif drastic_score >= 45:
+        category = "متوسطة (Moderate Vulnerability)"
+        color = "#FBC02D"
     else:
-        st.warning("⚠️ يرجى إضافة GEMINI_API_KEY في إعدادات Secrets.")
-
-st.markdown("---")
+        category = "منخفضة (Low Vulnerability)"
+        color = "#388E3C"
+        
+    return drastic_score, category, color
 
 # ==========================================
-# 10. الخريطة الحرارية المتقدمة GIS Heatmap (تعديل 3)
+# 4. تبويبات النظام (Main Navigation Tabs)
 # ==========================================
-st.subheader(f"🗺️ التحليل المكاني GIS والخرائط الحرارية (Heatmaps & Buffers): {site_name}")
+tab1, tab2, tab3 = st.tabs([
+    "📍 تقييم موقع فردي (Single Site Assessment)",
+    "📊 التقييم الجماعي والخرائط الحرارية (Bulk Upload & Heatmaps)",
+    "🛡️ محاكي السيناريوهات والحلول الهندسية (Engineering Mitigation)"
+])
 
-# إنشاء الخريطة الأساسية
-m = folium.Map(location=[lat_input, lon_input], zoom_start=11, tiles='https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr='Esri')
+# ==========================================
+# TAB 1: تقييم موقع فردي
+# ==========================================
+with tab1:
+    col_input, col_map = st.columns([1, 2])
+    
+    with col_input:
+        st.markdown("<h4 class='section-header'>⚙️ المدخلات الجيولوجية والهيدرولوجية</h4>", unsafe_allow_html=True)
+        
+        search_query = st.text_input("🔍 البحث بالاسم عن موقع/منجم:", value="أبوحمد, السودان")
+        if st.button("انتقال للموقع"):
+            geolocator = Nominatim(user_agent="smart_mining_app")
+            try:
+                loc = geolocator.geocode(search_query)
+                if loc:
+                    st.session_state['lat'] = loc.latitude
+                    st.session_state['lon'] = loc.longitude
+                    st.success("تم تحديد الموقع بنجاح.")
+                else:
+                    st.error("لم يتم العثور على الموقع.")
+            except Exception:
+                st.error("تعذر الاتصال بخدمة الخرائط.")
+                
+        lat = st.number_input("خط العرض (Latitude):", value=st.session_state.get('lat', 19.5333), format="%.4f")
+        lon = st.number_input("خط الطول (Longitude):", value=st.session_state.get('lon', 33.3167), format="%.4f")
+        
+        depth = st.slider("عمق المياه الجوفية (متر):", 1, 100, 15)
+        soil = st.selectbox("نوع التربة السطحية:", ["تربة رملية هشّة (نفاذية عالية)", "تربة طمية مختلطة (نفاذية متوسطة)", "تربة صخرية صلبة (نفاذية منخفضة)"])
+        recharge = st.selectbox("معدل التغذية المائية (Recharge):", ["منخفضة (مناطق جافة)", "متوسطة", "عالية (أمطار/سيول)"])
+        slope = st.slider("انحدار السطح (Topography Slope %):", 0, 20, 2)
+        cyanide = st.slider("تركيز الملوث الملاحظ (Cyanide mg/L):", 0.00, 2.00, 0.45, step=0.01)
 
-# إدراج شريط البحث الجغرافي
-Geocoder(collapsed=False, placeholder="🔍 ابحث عن أي موقع...").add_to(m)
+        score, category, color = calculate_drastic_index(depth, recharge, soil, slope, cyanide)
 
-# 1. إضافة الخريطة الحرارية GIS Heatmap (تعديل 3)
-heat_data = [[lat_input, lon_input, risk_current / 100.0]]
-if bulk_df is not None and 'Latitude' in bulk_df.columns and 'Longitude' in bulk_df.columns:
-    for _, r in bulk_df.iterrows():
-        heat_data.append([r['Latitude'], r['Longitude'], r.get('DRASTIC_Risk_%', 50) / 100.0])
+    with col_map:
+        st.markdown("<h4 class='section-header'>📌 المخرجات واللوحة الجيومكانية</h4>", unsafe_allow_html=True)
+        
+        # Dashboard Cards
+        kpi1, kpi2, kpi3 = st.columns(3)
+        with kpi1:
+            st.metric("مؤشر DRASTIC", f"{score} pts")
+        with kpi2:
+            st.metric("درجة هشاشة الخزان الجوفي", category)
+        with kpi3:
+            st.metric("تركيز السيانيد", f"{cyanide} mg/L", delta="يتجاوز المعايير" if cyanide > 0.05 else "ضمن المعايير الآمنة", delta_color="inverse" if cyanide > 0.05 else "normal")
+            
+        # Folium Map
+        m = folium.Map(location=[lat, lon], zoom_start=11, tiles="OpenStreetMap")
+        
+        folium.Marker(
+            [lat, lon],
+            popup=f"موقع المنجم<br>DRASTIC: {score}<br>الوضع: {category}",
+            tooltip="موقع المنجم الخاضع للفحص",
+            icon=folium.Icon(color="red" if score >= 65 else "orange" if score >= 45 else "green", icon="warning")
+        ).add_to(m)
+        
+        # Buffer Zone Safety Boundary (500m)
+        folium.Circle(
+            [lat, lon],
+            radius=1000,
+            color=color,
+            fill=True,
+            fill_opacity=0.25,
+            popup="حرم الأمان البيئي المقترح (1000 متر)"
+        ).add_to(m)
+        
+        st_folium(m, width="100%", height=420)
 
-HeatMap(heat_data, radius=25, blur=15, min_opacity=0.4).add_to(m)
+# ==========================================
+# TAB 2: التقييم الجماعي والخرائط الحرارية
+# ==========================================
+with tab2:
+    st.markdown("<h4 class='section-header'>📤 رفع وتقييم بيانات الولايات (Bulk Analysis & Spatial Heatmap)</h4>", unsafe_allow_html=True)
+    uploaded_file = st.file_uploader("قم برفع ملف Excel أو CSV يحتوي على أحداثيات ومواصفات المناجم:", type=["xlsx", "csv"])
+    
+    if uploaded_file is not None:
+        try:
+            if uploaded_file.name.endswith('.csv'):
+                df_bulk = pd.read_csv(uploaded_file)
+            else:
+                df_bulk = pd.read_excel(uploaded_file)
+                
+            st.success(f"تم تحميل {len(df_bulk)} موقع بنجاح.")
+            
+            # Display Data Frame Summary
+            col_tbl, col_heat = st.columns([1, 1])
+            with col_tbl:
+                st.dataframe(df_bulk.head(10), use_container_width=True)
+                
+            with col_heat:
+                # Generate Heatmap
+                map_center = [df_bulk['Latitude'].mean(), df_bulk['Longitude'].mean()]
+                m_heat = folium.Map(location=map_center, zoom_start=6)
+                
+                heat_data = [[row['Latitude'], row['Longitude'], row['Cyanide']] for index, row in df_bulk.iterrows()]
+                HeatMap(heat_data, radius=15).add_to(m_heat)
+                
+                st_folium(m_heat, width="100%", height=350)
+        except Exception as e:
+            st.error(f"حدث خطأ أثناء قراءة الملف: {e}")
 
-# 2. نطاقات التأثير وسريان المياه الجوفية Groundwater Flow Direction Buffer (تعديل 3)
-marker_color = "red" if risk_current >= 70 else ("orange" if risk_current >= 40 else "green")
-
-folium.Marker(
-    location=[lat_input, lon_input],
-    popup=f"<b>الموقع:</b> {site_name}<br><b>مؤشر DRASTIC:</b> {risk_current}%",
-    tooltip=site_name,
-    icon=folium.Icon(color=marker_color, icon="info-sign")
-).add_to(m)
-
-# دائرة نطاق الخطر المباشر
-folium.Circle(
-    location=[lat_input, lon_input],
-    radius=river_dist + add_distance,
-    color=marker_color,
-    fill=True,
-    fill_opacity=0.15,
-    popup="نطاق الأمان الانتطاقي المطور"
-).add_to(m)
-
-# إسقاط الخريطة على Streamlit
-st_folium(m, width="100%", height=500)
+# ==========================================
+# TAB 3: محاكي الحلول الهندسية
+# ==========================================
+with tab3:
+    st.markdown("<h4 class='section-header'>🛡️ محاكاة الحلول والتدابير الهندسية الوقائية (Mitigation Scenarios)</h4>", unsafe_allow_html=True)
+    
+    st.info("تسمح هذه الأداة بتقدير مدى انخفاض نسبة خطر التسرب عند تطبيق تقنيات عزل حديثة في أحواض التعدين.")
+    
+    col_sc1, col_sc2 = st.columns(2)
+    
+    with col_sc1:
+        st.subheader("الوضع الحالي (بدون عزل)")
+        curr_score = score
+        st.error(f"مؤشر الخطر الحقيقي: {curr_score} pts ({category})")
+        
+    with col_sc2:
+        st.subheader("الوضع بعد تطبيق الحل الهندسي")
+        liner = st.checkbox("تركيب بطانة عازلة مزدوجة High-Density Polyethylene (HDPE Liner)")
+        treatment = st.checkbox("تطبيق وحدة المعالجة بالكيميائيات (INCO SO2/Air Cyanide Destruction)")
+        
+        mitigated_score = curr_score
+        if liner:
+            mitigated_score *= 0.35  # تخفيض الخطر بنسبة 65%
+        if treatment:
+            mitigated_score *= 0.50  # تخفيض الخطر بنسبة 50%
+            
+        mitigated_score = round(mitigated_score, 1)
+        st.success(f"مؤشر الخطر المتوقع بعد التدابير: {mitigated_score} pts")
+        
+        reduction = round(((curr_score - mitigated_score) / curr_score) * 100, 1) if curr_score > 0 else 0
+        st.metric("نسبة خفض المخاطر البيئية", f"{reduction}%")
