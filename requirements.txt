@@ -2,5 +2,8 @@ streamlit
 pandas
 folium
 streamlit-folium
-google-genai
+google-generativeai
 geopy
+fpdf2
+reportlab
+matplotlib
