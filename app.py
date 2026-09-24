@@ -19,23 +19,18 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# التهيئة المباشرة لمفتاح Gemini API
 API_KEY = st.secrets.get("GEMINI_API_KEY", None)
 if API_KEY:
   genai.configure(api_key=API_KEY)
 
-# تطبيق ثيم التصميم الأخضر العصري (Eco-Modern Theme)
 st.markdown(
     """
 <style>
-    /* خلفية التطبيق العامة */
     .stApp {
         background: linear-gradient(180deg, #eaf4ed 0%, #f4f9f5 300px, #f8faf7 100%);
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
         color: #1e3a29;
     }
-    
-    /* الهيدر الرئيسي */
     .header-card {
         background-color: #ffffff;
         border-radius: 20px;
@@ -67,8 +62,6 @@ st.markdown(
         font-weight: 700;
         display: inline-block;
     }
-
-    /* بطاقات القياس والمؤشرات */
     div[data-testid="stMetric"] {
         background: #ffffff !important;
         border: 1px solid #e8f0e9 !important;
@@ -86,8 +79,6 @@ st.markdown(
         font-size: 1.8rem !important;
         font-weight: 800 !important;
     }
-
-    /* كروت التنبيهات */
     .alert-card-warning {
         background-color: #fff8f0;
         border-right: 5px solid #f39c12;
@@ -104,8 +95,6 @@ st.markdown(
         margin-bottom: 12px;
         box-shadow: 0 2px 8px rgba(0,0,0,0.02);
     }
-
-    /* الشريط الجانبي */
     [data-testid="stSidebar"] {
         background-color: #1b4332 !important;
     }
@@ -116,8 +105,6 @@ st.markdown(
         color: #1b4332 !important;
         border-radius: 10px !important;
     }
-    
-    /* الأزرار الخضراء العصرية */
     .stButton>button {
         width: 100%;
         border-radius: 12px !important;
@@ -133,7 +120,6 @@ st.markdown(
         background: #1b4332 !important;
         transform: translateY(-1px);
     }
-
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
 </style>
@@ -279,20 +265,39 @@ preset_locations = {
     },
 }
 
+# تهيئة القيم في session_state إذا لم تكن موجودة
+default_site = "سوق طواحين أبو حمد (نهر النيل)"
 if "selected_site_name" not in st.session_state:
-  st.session_state.selected_site_name = "سوق طواحين أبو حمد (نهر النيل)"
+  st.session_state.selected_site_name = default_site
 if "lat" not in st.session_state:
-  st.session_state.lat = 19.5333
+  st.session_state.lat = preset_locations[default_site]["coords"][0]
 if "lon" not in st.session_state:
-  st.session_state.lon = 33.3167
+  st.session_state.lon = preset_locations[default_site]["coords"][1]
+if "input_depth" not in st.session_state:
+  st.session_state.input_depth = preset_locations[default_site]["depth"]
+if "input_soil" not in st.session_state:
+  st.session_state.input_soil = preset_locations[default_site]["soil"]
+if "input_cyanide" not in st.session_state:
+  st.session_state.input_cyanide = preset_locations[default_site]["cyanide"]
+if "input_mercury" not in st.session_state:
+  st.session_state.input_mercury = preset_locations[default_site]["mercury"]
+if "input_ph" not in st.session_state:
+  st.session_state.input_ph = preset_locations[default_site]["ph"]
 
 
+# التعديل الرئيسي: تحديث جميع المعطيات الميدانية فور اختيار المنطقة
 def on_preset_change():
   site = st.session_state.preset_select
   if site in preset_locations:
+    data = preset_locations[site]
     st.session_state.selected_site_name = site
-    st.session_state.lat = preset_locations[site]["coords"][0]
-    st.session_state.lon = preset_locations[site]["coords"][1]
+    st.session_state.lat = data["coords"][0]
+    st.session_state.lon = data["coords"][1]
+    st.session_state.input_depth = data["depth"]
+    st.session_state.input_soil = data["soil"]
+    st.session_state.input_cyanide = data["cyanide"]
+    st.session_state.input_mercury = data["mercury"]
+    st.session_state.input_ph = data["ph"]
 
 
 # ==========================================
@@ -360,17 +365,22 @@ else:
 
 st.sidebar.markdown("---")
 st.sidebar.header("⚙️ المعطيات الميدانية")
-depth = st.sidebar.slider("عمق المياه الجوفية (متر):", 2, 120, 15)
+
+# ربط عناصر التحكم بـ keys لكي تستجيب للـ session_state تلقائياً
+depth = st.sidebar.slider(
+    "عمق المياه الجوفية (متر):", 2, 120, key="input_depth"
+)
 river_dist = st.sidebar.slider(
     "البعد عن أقرب مجرى مائي (متر):", 50, 5000, 300, step=50
 )
+
+soil_options = [
+    "تربة رملية هشّة (نفاذية عالية)",
+    "تربة طمية مختلطة (نفاذية متوسطة)",
+    "تربة صخرية صلبة (نفاذية منخفضة)",
+]
 soil = st.sidebar.selectbox(
-    "نوع التربة السطحية:",
-    [
-        "تربة رملية هشّة (نفاذية عالية)",
-        "تربة طمية مختلطة (نفاذية متوسطة)",
-        "تربة صخرية صلبة (نفاذية منخفضة)",
-    ],
+    "نوع التربة السطحية:", soil_options, key="input_soil"
 )
 
 col_sb1, col_sb2 = st.sidebar.columns(2)
@@ -379,19 +389,21 @@ with col_sb1:
       "السيانيد (mg/L):",
       min_value=0.01,
       max_value=5.00,
-      value=0.45,
       step=0.05,
+      key="input_cyanide",
   )
 with col_sb2:
   mercury = st.number_input(
       "الزئبق (mg/L):",
       min_value=0.000,
       max_value=1.000,
-      value=0.080,
       step=0.005,
+      key="input_mercury",
   )
 
-ph_level = st.sidebar.slider("مستوى الحموضة (pH Level):", 1.0, 14.0, 7.4, 0.1)
+ph_level = st.sidebar.slider(
+    "مستوى الحموضة (pH Level):", 1.0, 14.0, step=0.1, key="input_ph"
+)
 
 # الحسابات الهيدروجيولوجية (DRASTIC Model)
 perm = 0.95 if "رملية" in soil else (0.50 if "طمية" in soil else 0.10)
@@ -456,7 +468,6 @@ tab1, tab2, tab3 = st.tabs([
 # TAB 1: Dashboard & AI Report
 # ==========================================
 with tab1:
-  # بطاقات المؤشرات المباشرة
   k1, k2, k3, k4 = st.columns(4)
   with k1:
     st.metric(
@@ -486,7 +497,6 @@ with tab1:
 
   st.markdown("<br>", unsafe_allow_html=True)
 
-  # خريطة الأقمار الصناعية
   st.markdown("### 🗺️ Water Contamination & Impact Map")
   m = folium.Map(
       location=[st.session_state.lat, st.session_state.lon],
@@ -527,7 +537,6 @@ with tab1:
 
   st.markdown("<br>", unsafe_allow_html=True)
 
-  # تنبيهات السلامة والتقرير
   st.markdown("### 🚨 Safety Alerts & Advisory Report")
 
   if cyanide > 0.20 or mercury > 0.006:
