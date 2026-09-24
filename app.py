@@ -55,14 +55,14 @@ with col_title:
 st.markdown("---")
 
 # ==========================================
-# 3. قائمة المناطق المجهزة مسبقاً
+# 3. قاعدة البيانات المحلية للمناطق الشهيرة
 # ==========================================
 preset_locations = {
     "سوق طواحين أبو حمد (نهر النيل)": {"coords": (19.5333, 33.3167), "depth": 15, "soil": "تربة رملية هشّة (نفاذية عالية)", "cyanide": 0.45},
     "عطبرة - النيل الكبرى (نهر النيل)": {"coords": (17.6833, 33.9833), "depth": 8, "soil": "تربة رملية هشّة (نفاذية عالية)", "cyanide": 0.80},
     "سوق العبيدية (نهر النيل)": {"coords": (18.1234, 33.9876), "depth": 10, "soil": "تربة رملية هشّة (نفاذية عالية)", "cyanide": 0.65},
     "مناجم بربر (نهر النيل)": {"coords": (18.0167, 33.9833), "depth": 12, "soil": "تربة طمية مختلطة (نفاذية متوسطة)", "cyanide": 0.30},
-    "قبقبة / وادي العشاري (الشمالية)": {"coords": (21.8000, 34.5000), "depth": 60, "soil": "تربة صخرية صلبة (نفاذية منخفضة)", "cyanide": 0.10},
+    "وادي العشاري / قبقبة (الشمالية)": {"coords": (21.8000, 34.5000), "depth": 60, "soil": "تربة صخرية صلبة (نفاذية منخفضة)", "cyanide": 0.10},
     "وادي حلفا - كرمة (الشمالية)": {"coords": (21.7950, 31.3700), "depth": 25, "soil": "تربة رملية هشّة (نفاذية عالية)", "cyanide": 0.50},
     "مناجم أرياب (البحر الأحمر)": {"coords": (18.3333, 36.3500), "depth": 45, "soil": "تربة صخرية صلبة (نفاذية منخفضة)", "cyanide": 0.05},
     "سوق دلقو (الشمالية)": {"coords": (20.3000, 30.5500), "depth": 35, "soil": "تربة صخرية صلبة (نفاذية منخفضة)", "cyanide": 0.15},
@@ -106,23 +106,39 @@ with tab1:
         # اختيار جاهز
         st.selectbox("اختر من المناطق الجاهزة:", list(preset_locations.keys()), key="preset_select", on_change=on_preset_change)
         
-        # بحث بالاسم
-        custom_search = st.text_input("أو ابحث باسم أي مدينة/منجم:", placeholder="مثال: Port Sudan أو الكباشي")
+        # بحث بالاسم مع تحسين الاتصال والأمان
+        custom_search = st.text_input("أو ابحث باسم أي مدينة/منجم:", placeholder="مثال: Port Sudan أو العبيدية")
         if st.button("🔍 بحث وانتقال الخريطة", use_container_width=True):
-            if custom_search.strip() != "":
-                geolocator = Nominatim(user_agent="smart_mining_app_sudan")
-                try:
-                    query = f"{custom_search}, Sudan" if "sudan" not in custom_search.lower() else custom_search
-                    loc = geolocator.geocode(query, timeout=10)
-                    if loc:
-                        st.session_state.lat = loc.latitude
-                        st.session_state.lon = loc.longitude
-                        st.session_state.selected_site_name = custom_search
-                        st.success(f"تم العثور على: {loc.address.split(',')[0]}")
-                    else:
-                        st.error("لم يتم العثور على الموقع، حاول كتابة الاسم بالإنجليزية أو التدقيق في الإملاء.")
-                except Exception:
-                    st.error("تعذر الاتصال بخدمة البحث عن المواقع.")
+            query_str = custom_search.strip()
+            if query_str != "":
+                # 1. الفحص أولاً في القائمة المحلية المحفوظة
+                found_in_preset = False
+                for name, data in preset_locations.items():
+                    if query_str.lower() in name.lower():
+                        st.session_state.lat = data["coords"][0]
+                        st.session_state.lon = data["coords"][1]
+                        st.session_state.selected_site_name = name
+                        found_in_preset = True
+                        st.success(f"تم العثور على: {name}")
+                        st.rerun()
+                        break
+                
+                # 2. إذا لم يوجد في المحليات، يتم الاستعلام عبر الإنترنت بـ User-Agent آمن
+                if not found_in_preset:
+                    geolocator = Nominatim(user_agent="uofk_smart_mining_geocoder_v3")
+                    try:
+                        q = f"{query_str}, Sudan" if "sudan" not in query_str.lower() else query_str
+                        loc = geolocator.geocode(q, timeout=8)
+                        if loc:
+                            st.session_state.lat = loc.latitude
+                            st.session_state.lon = loc.longitude
+                            st.session_state.selected_site_name = query_str
+                            st.success(f"تم العثور على: {loc.address.split(',')[0]}")
+                            st.rerun()
+                        else:
+                            st.warning("لم يتم العثور على الموقع، حاول تجربة الاسم بالإنجليزية (مثال: Berber) أو اختر من القائمة أعلاه.")
+                    except Exception:
+                        st.error("تنبيه: خدمة الخرائط الخارجية غير متاحة الآن، يمكنك إدخال الإحداثيات يدوياً أو اختيار القائمة الجاهزة.")
 
         st.markdown("---")
         st.markdown("<h4 class='section-header'>⚙️ المعطيات الجيولوجية والملوثات</h4>", unsafe_allow_html=True)
@@ -181,7 +197,7 @@ with tab1:
             popup="نطاق التأثير الهيدروجيولوجي المتوقع"
         ).add_to(m)
         
-        st_folium(m, width="100%", height=380)
+        st_folium(m, width="100%", height=380, key="main_map")
 
         # قسم الذكاء الاصطناعي لتوليد التقرير
         st.markdown("---")
@@ -249,7 +265,7 @@ with tab2:
                 heat_data = [[row['Latitude'], row['Longitude'], row['Cyanide']] for index, row in df_bulk.iterrows() if 'Latitude' in row and 'Longitude' in row and 'Cyanide' in row]
                 HeatMap(heat_data, radius=15).add_to(m_heat)
                 
-                st_folium(m_heat, width="100%", height=380)
+                st_folium(m_heat, width="100%", height=380, key="heat_map")
         except Exception as e:
             st.error(f"تأكد من اختيار الملف الصحيح وتطابق أسماء الأعمدة: {e}")
 
