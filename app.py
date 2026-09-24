@@ -106,12 +106,11 @@ with tab1:
         # اختيار جاهز
         st.selectbox("اختر من المناطق الجاهزة:", list(preset_locations.keys()), key="preset_select", on_change=on_preset_change)
         
-        # بحث بالاسم مع تحسين الاتصال والأمان
+        # بحث بالاسم مع معالجة الاستثناءات
         custom_search = st.text_input("أو ابحث باسم أي مدينة/منجم:", placeholder="مثال: Port Sudan أو العبيدية")
         if st.button("🔍 بحث وانتقال الخريطة", use_container_width=True):
             query_str = custom_search.strip()
             if query_str != "":
-                # 1. الفحص أولاً في القائمة المحلية المحفوظة
                 found_in_preset = False
                 for name, data in preset_locations.items():
                     if query_str.lower() in name.lower():
@@ -123,9 +122,8 @@ with tab1:
                         st.rerun()
                         break
                 
-                # 2. إذا لم يوجد في المحليات، يتم الاستعلام عبر الإنترنت بـ User-Agent آمن
                 if not found_in_preset:
-                    geolocator = Nominatim(user_agent="uofk_smart_mining_geocoder_v3")
+                    geolocator = Nominatim(user_agent="uofk_smart_mining_v6_gemini38")
                     try:
                         q = f"{query_str}, Sudan" if "sudan" not in query_str.lower() else query_str
                         loc = geolocator.geocode(q, timeout=8)
@@ -138,7 +136,7 @@ with tab1:
                         else:
                             st.warning("لم يتم العثور على الموقع، حاول تجربة الاسم بالإنجليزية (مثال: Berber) أو اختر من القائمة أعلاه.")
                     except Exception:
-                        st.error("تنبيه: خدمة الخرائط الخارجية غير متاحة الآن، يمكنك إدخال الإحداثيات يدوياً أو اختيار القائمة الجاهزة.")
+                        st.error("تنبيه: تعذر الوصول لخدمة البحث الخارجية حالياً، اختر موقعك من القائمة أعلاه.")
 
         st.markdown("---")
         st.markdown("<h4 class='section-header'>⚙️ المعطيات الجيولوجية والملوثات</h4>", unsafe_allow_html=True)
@@ -151,20 +149,14 @@ with tab1:
         soil = st.selectbox("نوع التربة السطحية:", ["تربة رملية هشّة (نفاذية عالية)", "تربة طمية مختلطة (نفاذية متوسطة)", "تربة صخرية صلبة (نفاذية منخفضة)"])
         cyanide = st.slider("تركيز السيانيد (Cyanide mg/L):", 0.01, 2.00, 0.45, step=0.01)
 
-        # حسابات نموذج المخاطر و DRASTIC
         perm = 0.95 if "رملية" in soil else (0.50 if "طمية" in soil else 0.10)
-        
-        # مؤشر الخطر البيئي
         risk_score = (1800 / (river_dist + 1)) * (perm * 35) * (30 / depth) + (cyanide * 20)
         risk_score = min(max(round(risk_score, 1), 5.0), 98.5)
-        
-        # زمن الوصول للمياه الجوفية (بالسنوات)
         years = round((depth * (1.1 - perm)) / 1.3, 1)
 
     with col_display:
         st.markdown(f"<h4 class='section-header'>📊 النتائج والتقييم للموقع: {st.session_state.selected_site_name}</h4>", unsafe_allow_html=True)
         
-        # عرض المؤشرات الثلاثة الرئيسية
         kpi1, kpi2, kpi3 = st.columns(3)
         with kpi1:
             st.metric("مؤشر الخطر البيئي", f"{risk_score}%")
@@ -174,10 +166,25 @@ with tab1:
             status = "⚠️ يتجاوز الحد الآمن" if cyanide > 0.05 else "✅ ضمن الحد المسموح"
             st.metric("تركيز السيانيد", f"{cyanide} mg/L", delta=status, delta_color="inverse" if cyanide > 0.05 else "normal")
 
-        # الخريطة التفاعلية
-        st.markdown("##### 🗺️ الخريطة التفاعلية ونطاق التأثير")
-        m = folium.Map(location=[lat_val, lon_val], zoom_start=11, tiles="OpenStreetMap")
+        # ==========================================
+        # خريطة الأقمار الصناعية عالية الوضوح (Satellite Map)
+        # ==========================================
+        st.markdown("##### 🛰️ خريطة الأقمار الصناعية ونطاق التأثير")
         
+        m = folium.Map(
+            location=[lat_val, lon_val], 
+            zoom_start=13, 
+            tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+            attr="Esri World Imagery"
+        )
+        
+        folium.TileLayer(
+            tiles="https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png",
+            attr="CartoDB",
+            name="أسماء المناطق والطرق",
+            overlay=True
+        ).add_to(m)
+
         marker_color = "red" if risk_score >= 70 else ("orange" if risk_score >= 40 else "green")
         
         folium.Marker(
@@ -187,33 +194,42 @@ with tab1:
             icon=folium.Icon(color=marker_color, icon="warning")
         ).add_to(m)
         
-        # دائرة نطاق الأمان البيئي
         folium.Circle(
             [lat_val, lon_val],
             radius=river_dist,
             color=marker_color,
             fill=True,
-            fill_opacity=0.2,
+            fill_opacity=0.25,
             popup="نطاق التأثير الهيدروجيولوجي المتوقع"
         ).add_to(m)
         
-        st_folium(m, width="100%", height=380, key="main_map")
+        st_folium(m, width="100%", height=400, key="sat_map")
 
-        # قسم الذكاء الاصطناعي لتوليد التقرير
+        # ==========================================
+        # محرك الذكاء الاصطناعي المحدث (Gemini 3.8 Flash)
+        # ==========================================
         st.markdown("---")
-        st.markdown("<h4 class='section-header'>🤖 التقرير البيئي بالذكاء الاصطناعي (Gemini)</h4>", unsafe_allow_html=True)
+        st.markdown("<h4 class='section-header'>🤖 التقرير البيئي بالذكاء الاصطناعي (Gemini 3.8 Flash)</h4>", unsafe_allow_html=True)
         
         if st.button("✨ توليد تقرير فني شامل بالذكاء الاصطناعي", type="primary", use_container_width=True):
             if "GEMINI_API_KEY" in st.secrets:
                 try:
-                    with st.spinner("جاري كتابة وتحليل التقرير البيئي بواسطة الذكاء الاصطناعي..."):
+                    with st.spinner("جاري كتابة وتحليل التقرير البيئي بواسطة محرك Gemini 3.8 Flash..."):
                         genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-                        model = genai.GenerativeModel('gemini-1.5-flash')
+                        
+                        # التحديث لنموذج Gemini 3.8 Flash مع نظام احتياطي تلقائي
+                        try:
+                            model = genai.GenerativeModel('gemini-3.8-flash')
+                        except Exception:
+                            try:
+                                model = genai.GenerativeModel('gemini-2.5-flash')
+                            except Exception:
+                                model = genai.GenerativeModel('gemini-1.5-flash')
                         
                         prompt = f"""
                         أنت خبير بيئي وهيدروجيولوجي متخصص في التعدين بجامعة الخرطوم.
-                        قم بكتابة تقرير تقييم أثر بيئي مفصل لموقع: {st.session_state.selected_site_name}
-                        المعطيات:
+                        قم بكتابة تقرير تقييم أثر بيئي مفصل وشامل لموقع: {st.session_state.selected_site_name}
+                        المعطيات الفنية:
                         - الإحداثيات: ({lat_val}, {lon_val})
                         - عمق المياه الجوفية: {depth} متر
                         - نوع التربة: {soil}
@@ -222,10 +238,10 @@ with tab1:
                         - مؤشر الخطر المحسوب: {risk_score}%
                         - الزمن المتوقع لوصول الملوثات للمياه: {years} سنة
 
-                        يرجى صياغة التقرير في المحاور التالية:
-                        1. تقييم مدى الخطورة على المياه الجوفية والسطحية.
-                        2. الأثر الصحي على المجتمعات المحيطة.
-                        3. التوصيات والتدابير الهندسية الواجب اتخاذها فوراً.
+                        يرجى صياغة التقرير بأسلوب هندسي رصين في المحاور التالية:
+                        1. تقييم مدى الخطورة الهيدروجيولوجية على المياه الجوفية والسطحية.
+                        2. الأثر الصحي والبيئي المتوقع على المجتمعات والمراعي المحيطة.
+                        3. التوصيات والتدابير الهندسية العاجلة الواجب اتخاذها من قبل الإدارة البيئية.
                         """
                         response = model.generate_content(prompt)
                         st.info(response.text)
@@ -239,7 +255,7 @@ with tab1:
 # ==========================================
 with tab2:
     st.markdown("<h4 class='section-header'>📤 رفع ملف البيانات الجماعي (Bulk Upload)</h4>", unsafe_allow_html=True)
-    st.caption("يمكنك رفع ملف Excel أو CSV يحتوي على أسماء وأحداثيات عدة مناجم لعرضها دفعة واحدة على الخريطة الحرارية.")
+    st.caption("يمكنك رفع ملف Excel أو CSV يحتوي على أسماء وأحداثيات عدة مناجم لعرضها دفعة واحدة على الخريطة الحرارية الفضائية.")
     
     uploaded_file = st.file_uploader("اختر ملف Excel أو CSV:", type=["xlsx", "csv"])
     
@@ -258,14 +274,20 @@ with tab2:
                 st.dataframe(df_bulk, use_container_width=True)
                 
             with col_heat:
-                st.markdown("##### الخريطة الحرارية لتركيزات الملوثات (Heatmap)")
+                st.markdown("##### الخريطة الحرارية لتركيزات الملوثات (Satellite Heatmap)")
                 map_center = [df_bulk['Latitude'].mean(), df_bulk['Longitude'].mean()]
-                m_heat = folium.Map(location=map_center, zoom_start=6)
+                
+                m_heat = folium.Map(
+                    location=map_center, 
+                    zoom_start=6,
+                    tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+                    attr="Esri World Imagery"
+                )
                 
                 heat_data = [[row['Latitude'], row['Longitude'], row['Cyanide']] for index, row in df_bulk.iterrows() if 'Latitude' in row and 'Longitude' in row and 'Cyanide' in row]
                 HeatMap(heat_data, radius=15).add_to(m_heat)
                 
-                st_folium(m_heat, width="100%", height=380, key="heat_map")
+                st_folium(m_heat, width="100%", height=380, key="bulk_heat_map")
         except Exception as e:
             st.error(f"تأكد من اختيار الملف الصحيح وتطابق أسماء الأعمدة: {e}")
 
@@ -290,9 +312,9 @@ with tab3:
         
         mitigated_score = risk_score
         if liner:
-            mitigated_score *= 0.35  # خفض الخطر 65%
+            mitigated_score *= 0.35  
         if treatment:
-            mitigated_score *= 0.50  # خفض الخطر 50%
+            mitigated_score *= 0.50  
             
         mitigated_score = round(mitigated_score, 1)
         st.success(f"مؤشر الخطر المتوقع: {mitigated_score}%")
