@@ -7,3 +7,4 @@ geopy
 fpdf2
 reportlab
 matplotlib
+pyproj
