@@ -1,733 +1,376 @@
-import math
-import random
-from datetime import datetime
+import streamlit as st
+import pandas as pd
 import folium
+from streamlit_folium import st_folium
 from folium.plugins import HeatMap
 import google.generativeai as genai
 from geopy.geocoders import Nominatim
-import pandas as pd
-import streamlit as st
-from streamlit_folium import st_folium
 
 # ==========================================
-# 1. إعدادات الصفحة والتنسيق البصري الموحد
+# 1. إعدادات الصفحة والتنسيق البصري المؤسسي
 # ==========================================
 st.set_page_config(
-    page_title="Cyanide & Mining Risk Assessment System",
-    page_icon="🌿",
-    layout="wide",
-    initial_sidebar_state="expanded",
+    page_title="نظام النمذجة والتقييم البيئي للتعدين - DRASTIC",
+    page_icon="⛏️",
+    layout="wide"
 )
 
-API_KEY = st.secrets.get("GEMINI_API_KEY", None)
-if API_KEY:
-  genai.configure(api_key=API_KEY)
-
-st.markdown(
-    """
+st.markdown("""
 <style>
     .stApp {
-        background: linear-gradient(180deg, #eaf4ed 0%, #f4f9f5 300px, #f8faf7 100%);
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        color: #1e3a29;
-    }
-    .header-card {
-        background-color: #ffffff;
-        border-radius: 20px;
-        padding: 18px 26px;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.03);
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 20px;
-    }
-    .header-title {
-        font-size: 24px;
-        font-weight: 800;
-        color: #1b4332;
-        margin: 0;
-    }
-    .header-subtitle {
-        font-size: 14px;
-        color: #2d6a4f;
-        font-weight: 600;
-        margin-top: 4px;
-    }
-    .status-badge {
-        background-color: #d8f3dc;
-        color: #1b4332;
-        padding: 8px 16px;
-        border-radius: 20px;
-        font-size: 13px;
-        font-weight: 700;
-        display: inline-block;
+        background-color: #f8f9fa;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     }
     div[data-testid="stMetric"] {
-        background: #ffffff !important;
-        border: 1px solid #e8f0e9 !important;
-        border-radius: 18px !important;
-        padding: 16px 20px !important;
-        box-shadow: 0 4px 12px rgba(45, 106, 79, 0.04) !important;
-    }
-    div[data-testid="stMetricLabel"] {
-        color: #52796f !important;
-        font-size: 0.9rem !important;
-        font-weight: 600 !important;
-    }
-    div[data-testid="stMetricValue"] {
-        color: #1b4332 !important;
-        font-size: 1.8rem !important;
-        font-weight: 800 !important;
-    }
-    .alert-card-warning {
-        background-color: #fff8f0;
-        border-right: 5px solid #f39c12;
-        border-radius: 14px;
-        padding: 14px 18px;
-        margin-bottom: 12px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.02);
-    }
-    .alert-card-success {
-        background-color: #f4fbf7;
-        border-right: 5px solid #2ea44f;
-        border-radius: 14px;
-        padding: 14px 18px;
-        margin-bottom: 12px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+        background-color: #ffffff !important;
+        border: 1px solid #d4af37;
+        border-radius: 10px;
+        padding: 12px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
     [data-testid="stSidebar"] {
-        background-color: #1b4332 !important;
+        background-color: #f5eedc !important;
+        border-right: 2px solid #c19a6b;
     }
-    [data-testid="stSidebar"] * {
-        color: #e8f0e9 !important;
+    .section-header {
+        color: #5c2c16;
+        border-bottom: 2px solid #c19a6b;
+        padding-bottom: 5px;
+        margin-bottom: 15px;
+        font-weight: bold;
     }
-    [data-testid="stSidebar"] input, [data-testid="stSidebar"] select {
-        color: #1b4332 !important;
-        border-radius: 10px !important;
-    }
-    .stButton>button {
-        width: 100%;
-        border-radius: 12px !important;
-        font-weight: 700 !important;
-        background: #2d6a4f !important;
-        color: #ffffff !important;
-        border: none !important;
-        padding: 10px 18px !important;
-        box-shadow: 0 4px 12px rgba(45, 106, 79, 0.2) !important;
-        transition: all 0.2s ease-in-out;
-    }
-    .stButton>button:hover {
-        background: #1b4332 !important;
-        transform: translateY(-1px);
-    }
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
 </style>
-""",
-    unsafe_allow_html=True,
-)
-
+""", unsafe_allow_html=True)
 
 # ==========================================
-# 2. الدوال الحسابية المساعدة (UTM Conversion)
+# 2. الهيدر الرئيسي
 # ==========================================
-def utm_to_latlon(easting, northing, zone=36, northern_hemisphere=True):
-  a = 6378137.0
-  f = 1 / 298.257223563
-  k0 = 0.9996
-  e = math.sqrt(2 * f - f**2)
-  e1sq = e**2 / (1 - e**2)
+col_logo, col_title = st.columns([1, 6])
+with col_logo:
+    st.image("https://upload.wikimedia.org/wikipedia/en/thumb/8/82/University_of_Khartoum_logo.png/220px-University_of_Khartoum_logo.png", width=90)
+with col_title:
+    st.markdown("<h2 style='color: #5c2c16; margin-bottom:0;'>جامعة الخرطوم — كلية الهندسة</h2>", unsafe_allow_html=True)
+    st.markdown("<h4 style='color: #c19a6b; margin-top:0;'>نظام التقييم البيئي الذكي المعتمد (DRASTIC Standard Model)</h4>", unsafe_allow_html=True)
 
-  x = easting - 500000.0
-  y = northing if northern_hemisphere else northing - 10000000.0
-
-  long0 = (zone - 1) * 6 - 180 + 3
-
-  M = y / k0
-  mu = M / (a * (1 - (e**2) / 4 - 3 * (e**4) / 64 - 5 * (e**6) / 256))
-
-  phi1 = (
-      mu
-      + (3 * e1sq / 2 - 27 * (e1sq**3) / 32) * math.sin(2 * mu)
-      + (21 * (e1sq**2) / 16 - 55 * (e1sq**4) / 32) * math.sin(4 * mu)
-  )
-
-  N1 = a / math.sqrt(1 - (e * math.sin(phi1)) ** 2)
-  T1 = math.tan(phi1) ** 2
-  C1 = e1sq * math.cos(phi1) ** 2
-  R1 = a * (1 - e**2) / ((1 - (e * math.sin(phi1)) ** 2) ** 1.5)
-  D = x / (N1 * k0)
-
-  lat = phi1 - (N1 * math.tan(phi1) / R1) * (
-      D**2 / 2
-      - (5 + 3 * T1 + 10 * C1 - 4 * C1**2 - 9 * e1sq) * (D**4) / 24
-      + (61 + 90 * T1 + 298 * C1 + 45 * (T1**2) - 252 * e1sq - 3 * (C1**2))
-      * (D**6)
-      / 720
-  )
-  lat = math.degrees(lat)
-
-  lon = (
-      D
-      - (1 + 2 * T1 + C1) * (D**3) / 6
-      + (5 - 2 * C1 + 28 * T1 - 3 * (C1**2) + 8 * e1sq + 24 * (T1**2))
-      * (D**5)
-      / 120
-  ) / math.cos(phi1)
-  lon = long0 + math.degrees(lon)
-
-  return lat, lon
-
+st.markdown("---")
 
 # ==========================================
-# 3. إدارة المواقع وقواعد البيانات المضمنة
+# 3. قاعدة البيانات المحلية للمناطق الشهيرة
 # ==========================================
 preset_locations = {
-    "سوق طواحين أبو حمد (نهر النيل)": {
-        "coords": (19.5333, 33.3167),
-        "depth": 15,
-        "soil": "تربة رملية هشّة (نفاذية عالية)",
-        "cyanide": 0.45,
-        "mercury": 0.08,
-        "ph": 7.4,
-    },
-    "عطبرة - النيل الكبرى (نهر النيل)": {
-        "coords": (17.6833, 33.9833),
-        "depth": 8,
-        "soil": "تربة رملية هشّة (نفاذية عالية)",
-        "cyanide": 0.80,
-        "mercury": 0.12,
-        "ph": 7.2,
-    },
-    "سوق العبيدية (نهر النيل)": {
-        "coords": (18.1234, 33.9876),
-        "depth": 10,
-        "soil": "تربة رملية هشّة (نفاذية عالية)",
-        "cyanide": 0.65,
-        "mercury": 0.09,
-        "ph": 7.6,
-    },
-    "مناجم بربر (نهر النيل)": {
-        "coords": (18.0167, 33.9833),
-        "depth": 12,
-        "soil": "تربة طمية مختلطة (نفاذية متوسطة)",
-        "cyanide": 0.30,
-        "mercury": 0.04,
-        "ph": 7.8,
-    },
-    "وادي العشاري / قبقبة (الشمالية)": {
-        "coords": (21.8000, 34.5000),
-        "depth": 60,
-        "soil": "تربة صخرية صلبة (نفاذية منخفضة)",
-        "cyanide": 0.10,
-        "mercury": 0.02,
-        "ph": 8.0,
-    },
-    "وادي حلفا - كرمة (الشمالية)": {
-        "coords": (21.7950, 31.3700),
-        "depth": 25,
-        "soil": "تربة رملية هشّة (نفاذية عالية)",
-        "cyanide": 0.50,
-        "mercury": 0.06,
-        "ph": 7.5,
-    },
-    "مناجم أرياب (البحر الأحمر)": {
-        "coords": (18.3333, 36.3500),
-        "depth": 45,
-        "soil": "تربة صخرية صلبة (نفاذية منخفضة)",
-        "cyanide": 0.05,
-        "mercury": 0.01,
-        "ph": 8.1,
-    },
-    "سوق دلقو (الشمالية)": {
-        "coords": (20.3000, 30.5500),
-        "depth": 35,
-        "soil": "تربة صخرية صلبة (نفاذية منخفضة)",
-        "cyanide": 0.15,
-        "mercury": 0.03,
-        "ph": 7.9,
-    },
-    "تلودي / الليري (جبال النوبة)": {
-        "coords": (10.6333, 30.1167),
-        "depth": 18,
-        "soil": "تربة طمية مختلطة (نفاذية متوسطة)",
-        "cyanide": 0.70,
-        "mercury": 0.15,
-        "ph": 6.8,
-    },
-    "كادوقلي (جنوب كردفان)": {
-        "coords": (11.0167, 29.7167),
-        "depth": 20,
-        "soil": "تربة طمية مختلطة (نفاذية متوسطة)",
-        "cyanide": 0.20,
-        "mercury": 0.05,
-        "ph": 7.1,
-    },
+    "سوق طواحين أبو حمد (نهر النيل)": {"coords": (19.5333, 33.3167), "depth": 15.0, "cyanide": 0.45},
+    "عطبرة - النيل الكبرى (نهر النيل)": {"coords": (17.6833, 33.9833), "depth": 8.0, "cyanide": 0.80},
+    "سوق العبيدية (نهر النيل)": {"coords": (18.1234, 33.9876), "depth": 10.0, "cyanide": 0.65},
+    "مناجم بربر (نهر النيل)": {"coords": (18.0167, 33.9833), "depth": 12.0, "cyanide": 0.30},
+    "وادي العشاري / قبقبة (الشمالية)": {"coords": (21.8000, 34.5000), "depth": 45.0, "cyanide": 0.10},
+    "وادي حلفا - كرمة (الشمالية)": {"coords": (21.7950, 31.3700), "depth": 25.0, "cyanide": 0.50},
+    "مناجم أرياب (البحر الأحمر)": {"coords": (18.3333, 36.3500), "depth": 40.0, "cyanide": 0.05},
+    "سوق دلقو (الشمالية)": {"coords": (20.3000, 30.5500), "depth": 35.0, "cyanide": 0.15},
+    "تلودي / الليري (جبال النوبة)": {"coords": (10.6333, 30.1167), "depth": 18.0, "cyanide": 0.70},
+    "كادوقلي (جنوب كردفان)": {"coords": (11.0167, 29.7167), "depth": 20.0, "cyanide": 0.20}
 }
 
-# تهيئة القيم في session_state إذا لم تكن موجودة
-default_site = "سوق طواحين أبو حمد (نهر النيل)"
+# إدارة الحالات (Session State)
 if "selected_site_name" not in st.session_state:
-  st.session_state.selected_site_name = default_site
+    st.session_state.selected_site_name = "سوق طواحين أبو حمد (نهر النيل)"
+
 if "lat" not in st.session_state:
-  st.session_state.lat = preset_locations[default_site]["coords"][0]
+    st.session_state.lat = 19.5333
 if "lon" not in st.session_state:
-  st.session_state.lon = preset_locations[default_site]["coords"][1]
-if "input_depth" not in st.session_state:
-  st.session_state.input_depth = preset_locations[default_site]["depth"]
-if "input_soil" not in st.session_state:
-  st.session_state.input_soil = preset_locations[default_site]["soil"]
-if "input_cyanide" not in st.session_state:
-  st.session_state.input_cyanide = preset_locations[default_site]["cyanide"]
-if "input_mercury" not in st.session_state:
-  st.session_state.input_mercury = preset_locations[default_site]["mercury"]
-if "input_ph" not in st.session_state:
-  st.session_state.input_ph = preset_locations[default_site]["ph"]
+    st.session_state.lon = 33.3167
 
-
-# التعديل الرئيسي: تحديث جميع المعطيات الميدانية فور اختيار المنطقة
 def on_preset_change():
-  site = st.session_state.preset_select
-  if site in preset_locations:
-    data = preset_locations[site]
+    site = st.session_state.preset_select
     st.session_state.selected_site_name = site
-    st.session_state.lat = data["coords"][0]
-    st.session_state.lon = data["coords"][1]
-    st.session_state.input_depth = data["depth"]
-    st.session_state.input_soil = data["soil"]
-    st.session_state.input_cyanide = data["cyanide"]
-    st.session_state.input_mercury = data["mercury"]
-    st.session_state.input_ph = data["ph"]
-
+    st.session_state.lat = preset_locations[site]["coords"][0]
+    st.session_state.lon = preset_locations[site]["coords"][1]
 
 # ==========================================
-# 4. الشريط الجانبي (Sidebar Setup)
-# ==========================================
-st.sidebar.image(
-    "https://upload.wikimedia.org/wikipedia/en/thumb/8/82/University_of_Khartoum_logo.png/220px-University_of_Khartoum_logo.png",
-    width=110,
-)
-st.sidebar.markdown("### ⛏️ جامعة الخرطوم\n**قسم هندسة التعدين**")
-
-st.sidebar.markdown("---")
-st.sidebar.header("🌍 البحث والتحويل الإحداثي")
-
-coord_mode = st.sidebar.radio(
-    "نظام التحديد:",
-    ["اسم المنطقة / Lat-Lon", "إحداثيات متريّة (UTM Zone 36N/37N)"],
-)
-
-if coord_mode == "اسم المنطقة / Lat-Lon":
-  st.sidebar.selectbox(
-      "مواقع مسجلة جاهزة:",
-      list(preset_locations.keys()),
-      key="preset_select",
-      on_change=on_preset_change,
-  )
-  custom_search = st.sidebar.text_input(
-      "أو ابحث عن موقع:", placeholder="مثال: Port Sudan أو العبيدية"
-  )
-  if st.sidebar.button("بحث 🧭"):
-    q = custom_search.strip()
-    if q:
-      geolocator = Nominatim(
-          user_agent=f"uofk_mining_app_{random.randint(1000, 9999)}"
-      )
-      try:
-        loc = geolocator.geocode(
-            f"{q}, Sudan", timeout=8
-        ) or geolocator.geocode(q, timeout=8)
-        if loc:
-          st.session_state.lat = loc.latitude
-          st.session_state.lon = loc.longitude
-          st.session_state.selected_site_name = q
-          st.sidebar.success(f"📍 {loc.address[:30]}...")
-          st.rerun()
-        else:
-          st.sidebar.error("❌ لم يتم العثور على الموقع")
-      except Exception:
-        st.sidebar.error("تعذر الاتصال بخدمة الخرائط")
-else:
-  utm_easting = st.sidebar.number_input("Easting (X - متر):", value=533200.0)
-  utm_northing = st.sidebar.number_input("Northing (Y - متر):", value=2159800.0)
-  utm_zone = st.sidebar.selectbox("النطاق (UTM Zone):", [36, 37], index=0)
-  if st.sidebar.button("تحويل الإحداثيات 🔄"):
-    try:
-      lat_v, lon_v = utm_to_latlon(utm_easting, utm_northing, zone=utm_zone)
-      st.session_state.lat = lat_v
-      st.session_state.lon = lon_v
-      st.session_state.selected_site_name = (
-          f"UTM ({utm_easting}, {utm_northing})"
-      )
-      st.rerun()
-    except Exception as e:
-      st.sidebar.error(f"خطأ في التحويل: {e}")
-
-st.sidebar.markdown("---")
-st.sidebar.header("⚙️ المعطيات الميدانية")
-
-# ربط عناصر التحكم بـ keys لكي تستجيب للـ session_state تلقائياً
-depth = st.sidebar.slider(
-    "عمق المياه الجوفية (متر):", 2, 120, key="input_depth"
-)
-river_dist = st.sidebar.slider(
-    "البعد عن أقرب مجرى مائي (متر):", 50, 5000, 300, step=50
-)
-
-soil_options = [
-    "تربة رملية هشّة (نفاذية عالية)",
-    "تربة طمية مختلطة (نفاذية متوسطة)",
-    "تربة صخرية صلبة (نفاذية منخفضة)",
-]
-soil = st.sidebar.selectbox(
-    "نوع التربة السطحية:", soil_options, key="input_soil"
-)
-
-col_sb1, col_sb2 = st.sidebar.columns(2)
-with col_sb1:
-  cyanide = st.number_input(
-      "السيانيد (mg/L):",
-      min_value=0.01,
-      max_value=5.00,
-      step=0.05,
-      key="input_cyanide",
-  )
-with col_sb2:
-  mercury = st.number_input(
-      "الزئبق (mg/L):",
-      min_value=0.000,
-      max_value=1.000,
-      step=0.005,
-      key="input_mercury",
-  )
-
-ph_level = st.sidebar.slider(
-    "مستوى الحموضة (pH Level):", 1.0, 14.0, step=0.1, key="input_ph"
-)
-
-# الحسابات الهيدروجيولوجية (DRASTIC Model)
-perm = 0.95 if "رملية" in soil else (0.50 if "طمية" in soil else 0.10)
-soil_rating = 9 if "رملية" in soil else (6 if "طمية" in soil else 2)
-d_rating = 10 if depth < 5 else (8 if depth < 15 else (5 if depth < 30 else 2))
-dist_rating = 10 if river_dist < 200 else (6 if river_dist < 1000 else 2)
-
-drastic_score = (
-    (d_rating * 5)
-    + (soil_rating * 3)
-    + (dist_rating * 4)
-    + (cyanide * 10)
-    + (mercury * 20)
-)
-risk_score = round(min(max((drastic_score / 130.0) * 100, 5.0), 98.5), 1)
-years = round((depth * (1.1 - perm)) / 1.3, 1)
-
-risk_status = "LOW" if risk_score < 40 else ("MEDIUM" if risk_score < 70 else "HIGH")
-badge_color = (
-    "#d8f3dc"
-    if risk_status == "LOW"
-    else ("#ffe8d6" if risk_status == "MEDIUM" else "#ffccd5")
-)
-badge_text_color = (
-    "#1b4332"
-    if risk_status == "LOW"
-    else ("#a71e1c" if risk_status == "HIGH" else "#9c6644")
-)
-current_time = datetime.now().strftime("%b %d, %Y • %I:%M %p")
-
-# ==========================================
-# 5. الهيدر العريض العلوي (Top Header)
-# ==========================================
-st.markdown(
-    f"""
-<div class="header-card">
-    <div>
-        <div class="header-title">🌿 Cyanide & Environmental Risk Assessment</div>
-        <div class="header-subtitle">جامعة الخرطوم — كلية الهندسة وقسم هندسة التعدين</div>
-        <div style="font-size: 12px; color: #52796f; margin-top: 4px;">الموقع: <b>{st.session_state.selected_site_name}</b> | {current_time}</div>
-    </div>
-    <div>
-        <span class="status-badge" style="background-color: {badge_color}; color: {badge_text_color};">
-            ● Overall Risk • {risk_status} ({risk_score}%)
-        </span>
-    </div>
-</div>
-""",
-    unsafe_allow_html=True,
-)
-
-# ==========================================
-# 6. التبويبات الرئيسية (Tabs)
+# 4. التبويبات الرئيسية
 # ==========================================
 tab1, tab2, tab3 = st.tabs([
-    "📊 لوحة المراقبة والتقرير الذكي (Dashboard & AI)",
-    "📤 التقييم الجماعي والخرائط الحرارية (Bulk Upload)",
-    "🛡️ محاكاة الحلول الهندسية (Mitigation Simulation)",
+    "📍 التقييم الفردي ونموذج DRASTIC الكامل",
+    "📊 التقييم الجماعي والخرائط الحرارية (Bulk Upload)",
+    "🛡️ محاكاة الحلول الهندسية"
 ])
 
 # ==========================================
-# TAB 1: Dashboard & AI Report
+# TAB 1: التقييم الفردي + نموذج DRASTIC القياسي + AI
 # ==========================================
 with tab1:
-  k1, k2, k3, k4 = st.columns(4)
-  with k1:
-    st.metric(
-        "🧪 Cyanide Concentration",
-        f"{cyanide} mg/L",
-        delta="Safe Limit: 0.20 mg/L",
-        delta_color="normal" if cyanide <= 0.20 else "inverse",
-    )
-  with k2:
-    st.metric(
-        "💧 pH Level",
-        f"{ph_level}",
-        delta="Optimal: 6.5 - 8.5",
-        delta_color="normal" if 6.5 <= ph_level <= 8.5 else "inverse",
-    )
-  with k3:
-    st.metric(
-        "⚗️ Mercury (Hg)",
-        f"{mercury} mg/L",
-        delta="Safe Limit: 0.006 mg/L",
-        delta_color="normal" if mercury <= 0.006 else "inverse",
-    )
-  with k4:
-    st.metric(
-        "⏳ زمن الوصول للجوف", f"{years} سنة", delta=f"العمق: {depth}m"
-    )
+    col_input, col_display = st.columns([1, 2])
 
-  st.markdown("<br>", unsafe_allow_html=True)
-
-  st.markdown("### 🗺️ Water Contamination & Impact Map")
-  m = folium.Map(
-      location=[st.session_state.lat, st.session_state.lon],
-      zoom_start=12,
-      tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-      attr="Esri World Imagery",
-  )
-  folium.TileLayer(
-      tiles="https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png",
-      attr="CartoDB",
-      name="أسماء المناطق والطرق",
-      overlay=True,
-  ).add_to(m)
-
-  marker_color = (
-      "green" if risk_score < 40 else ("orange" if risk_score < 70 else "red")
-  )
-
-  folium.Marker(
-      [st.session_state.lat, st.session_state.lon],
-      popup=(
-          f"<b>الموقع:</b> {st.session_state.selected_site_name}<br><b>درجة"
-          f" الخطر:</b> {risk_score}%"
-      ),
-      tooltip=st.session_state.selected_site_name,
-      icon=folium.Icon(color=marker_color, icon="leaf", prefix="fa"),
-  ).add_to(m)
-
-  folium.Circle(
-      [st.session_state.lat, st.session_state.lon],
-      radius=river_dist,
-      color="#2d6a4f" if risk_score < 40 else "#e67e22",
-      fill=True,
-      fill_opacity=0.20,
-  ).add_to(m)
-
-  st_folium(m, width="100%", height=380, key="main_map")
-
-  st.markdown("<br>", unsafe_allow_html=True)
-
-  st.markdown("### 🚨 Safety Alerts & Advisory Report")
-
-  if cyanide > 0.20 or mercury > 0.006:
-    st.markdown(
-        """
-        <div class="alert-card-warning">
-            <div class="alert-title">⚠️ Warning: Contaminant Limits Exceeded</div>
-            <div class="alert-desc">مستويات السيانيد أو الزئبق تتجاوز الحدود الآمنة المعتمدة. يُوصى بفحص أغطية وأحواض المعالجة بشكل عاجل.</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-  else:
-    st.markdown(
-        """
-        <div class="alert-card-success">
-            <div class="alert-title">✅ All Parameters Within Safe Limits</div>
-            <div class="alert-desc">جميع المؤشرات تقيم ضمن الحدود المسموح بها بيئياً للظروف الميدانية الحالية.</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-  if st.button(
-      "📄 توليد تقرير استشاري فني فوري (AI Report)", type="primary"
-  ):
-    report_container = st.empty()
-
-    prompt = f"""
-        أنت استشاري بيئي بهيئة الأبحاث الجيولوجية وجامعة الخرطوم. صغ تقريراً فنياً لموقع {st.session_state.selected_site_name}:
-        المعطيات الميدانية:
-        - عمق المياه: {depth} متر
-        - نوع التربة: {soil}
-        - البعد عن المجرى المائي: {river_dist} متر
-        - تركيز السيانيد: {cyanide} mg/L (الحد المسموح 0.20)
-        - تركيز الزئبق: {mercury} mg/L (الحد المسموح 0.006)
-        - مستوى الحموضة pH: {ph_level}
-        - مؤشر DRASTIC للخطورة: {risk_score}%
+    with col_input:
+        st.markdown("<h4 class='section-header'>🔍 اختيار أو البحث عن موقع</h4>", unsafe_allow_html=True)
         
-        قم بكتابة التقرير في 3 محاور محددة:
-        1. **التقييم الجيوهيدرولوجي والمخاطر.**
-        2. **الأثر البيئي والصحي المباشر.**
-        3. **التوصيات الهندسية الميدانية العاجلة.**
-        """
+        # اختيار جاهز
+        st.selectbox("اختر من المناطق الجاهزة:", list(preset_locations.keys()), key="preset_select", on_change=on_preset_change)
+        
+        # بحث بالاسم
+        custom_search = st.text_input("أو ابحث باسم أي مدينة/منجم:", placeholder="مثال: Port Sudan أو العبيدية")
+        if st.button("🔍 بحث وانتقال الخريطة", use_container_width=True):
+            query_str = custom_search.strip()
+            if query_str != "":
+                found_in_preset = False
+                for name, data in preset_locations.items():
+                    if query_str.lower() in name.lower():
+                        st.session_state.lat = data["coords"][0]
+                        st.session_state.lon = data["coords"][1]
+                        st.session_state.selected_site_name = name
+                        found_in_preset = True
+                        st.success(f"تم العثور على: {name}")
+                        st.rerun()
+                        break
+                
+                if not found_in_preset:
+                    geolocator = Nominatim(user_agent="uofk_smart_mining_v8_drastic")
+                    try:
+                        q = f"{query_str}, Sudan" if "sudan" not in query_str.lower() else query_str
+                        loc = geolocator.geocode(q, timeout=8)
+                        if loc:
+                            st.session_state.lat = loc.latitude
+                            st.session_state.lon = loc.longitude
+                            st.session_state.selected_site_name = query_str
+                            st.success(f"تم العثور على: {loc.address.split(',')[0]}")
+                            st.rerun()
+                        else:
+                            st.warning("لم يتم العثور على الموقع، حاول تجربة الاسم بالإنجليزية (مثال: Berber).")
+                    except Exception:
+                        st.error("تنبيه: تعذر الوصول لخدمة البحث الخارجية حالياً، اختر موقعك من القائمة أعلاه.")
 
-    ai_generated = False
-    if API_KEY:
-      for model_name in [
-          "gemini-1.5-flash",
-          "gemini-1.5-pro",
-          "gemini-2.0-flash",
-      ]:
-        if ai_generated:
-          break
-        try:
-          model = genai.GenerativeModel(model_name)
-          response = model.generate_content(prompt, stream=True)
-          full_text = ""
-          for chunk in response:
-            full_text += chunk.text
-            report_container.markdown(f"{full_text}▌")
-          report_container.markdown(f"{full_text}")
-          ai_generated = True
-        except Exception:
-          continue
+        st.markdown("---")
+        st.markdown("<h4 class='section-header'>⚙️ مدخلات نموذج DRASTIC القياسي (US EPA)</h4>", unsafe_allow_html=True)
+        
+        lat_val = st.number_input("خط العرض (Latitude):", value=st.session_state.lat, format="%.4f")
+        lon_val = st.number_input("خط الطول (Longitude):", value=st.session_state.lon, format="%.4f")
+        
+        # --- 1. Depth to Water (D) - الوزن: 5 ---
+        depth = st.slider("1. عمق المياه الجوفية D (متر):", 0.5, 60.0, 15.0, step=0.5)
+        if depth < 1.5: r_D = 10
+        elif depth < 4.5: r_D = 9
+        elif depth < 9.1: r_D = 7
+        elif depth < 15.2: r_D = 5
+        elif depth < 22.9: r_D = 3
+        else: r_D = 1
 
-    if not ai_generated:
-      c_eval = (
-          "يتجاوز المعايير العالمية بشكل حاد (حد USEPA هو 0.20 mg/L)"
-          if cyanide > 0.20
-          else "ضمن الحدود المسموح بها"
-      )
-      m_eval = (
-          "شديد الخطورة ويشكل تهديداً بيئياً وجوفياً"
-          if mercury > 0.006
-          else "ضمن الحدود المقبولة"
-      )
+        # --- 2. Recharge (R) - الوزن: 4 ---
+        recharge = st.selectbox("2. معدل التغذية السنوية R (مم/سنة):", ["منخفض (< 50 مم)", "متوسط (50 - 100 مم)", "عالي (> 100 مم)"])
+        r_R = 1 if "منخفض" in recharge else (6 if "متوسط" in recharge else 9)
 
-      fallback_text = f"""
-### 📄 تقرير التقييم الفني الميداني (جامعة الخرطوم - قسم التعدين)
-**الموقع:** {st.session_state.selected_site_name} | **درجة الخطر:** {risk_score}%
+        # --- 3. Aquifer Media (A) - الوزن: 3 ---
+        aquifer = st.selectbox("3. نوع صخور الخزان الجوفي A:", ["صخور صماء / باسالتي (Basalt)", "حجر رملي (Sandstone)", "حصى ورمل مشبع (Gravel & Sand)"])
+        r_A = 3 if "صخور" in aquifer else (6 if "حجر" in aquifer else 8)
 
----
+        # --- 4. Soil Media (S) - الوزن: 2 ---
+        soil = st.selectbox("4. نوع التربة السطحية S:", ["طين عازل (Clay)", "سلت / طمي (Silt)", "تربة رملية هشّة (Sand/Gravel)"])
+        r_S = 1 if "طين" in soil else (4 if "سلت" in soil else 9)
 
-#### 1. **التقييم الجيوهيدرولوجي والمخاطر:**
-- تقييم نموذج DRASTIC يشير إلى خطر بدرجة **({risk_status})**.
-- زمن الوصول المتوقع للملوثات إلى المياه الجوفية بعمق **{depth} متر** هو **{years} سنة**.
+        # --- 5. Topography (T) - الوزن: 1 ---
+        topo = st.slider("5. نسبة انحدار الأرض T (%):", 0, 30, 4)
+        if topo < 2: r_T = 10
+        elif topo < 6: r_T = 9
+        elif topo < 12: r_T = 5
+        else: r_T = 1
 
-#### 2. **الأثر البيئي والصحي المباشر:**
-- **السيانيد:** `{cyanide} mg/L` — {c_eval}.
-- **الزئبق:** `{mercury} mg/L` — {m_eval}.
-- **مستوى الحموضة (pH):** `{ph_level}`.
-- قرب الموقع (**{river_dist} متر**) من المجاري المائية يتطلب احتياطات عزل إضافية.
+        # --- 6. Impact of Vadose Zone (I) - الوزن: 5 ---
+        vadose = st.selectbox("6. طبيعة المنطقة غير المشبعة I:", ["طبقات طينية متماسكة", "حجر رملي / متشقق", "حصى ورمل نفاذ"])
+        r_I = 3 if "طينية" in vadose else (6 if "رملي" in vadose else 8)
 
-#### 3. **التوصيات الهندسية الميدانية العاجلة:**
-- الإلزام الفوري بتركيب بطانات عازلة من نوع **(HDPE Liner)** بتركيب عالي الكثافة.
-- حفر آبار مراقبة اختبارية لمتابعة حركة المياه الجوفية وتدفق الملوثات.
-"""
-      report_container.markdown(fallback_text)
+        # --- 7. Conductivity (C) - الوزن: 3 ---
+        cond = st.selectbox("7. النفاذية الهيدروليكية C:", ["منخفضة جداً", "متوسطة", "عالية جداً"])
+        r_C = 1 if "منخفضة" in cond else (4 if "متوسطة" in cond else 8)
+
+        st.markdown("---")
+        st.markdown("<h4 class='section-header'>🧪 الملوثات والمسافات الميدانية</h4>", unsafe_allow_html=True)
+        river_dist = st.slider("البعد عن أقرب مجرى مائي / وادي (متر):", 50, 5000, 300, step=50)
+        cyanide = st.slider("تركيز السيانide (Cyanide mg/L):", 0.01, 2.00, 0.45, step=0.01)
+
+        # ==========================================
+        # حساب معادلة DRASTIC Index القياسية
+        # ==========================================
+        w_D, w_R, w_A, w_S, w_T, w_I, w_C = 5, 4, 3, 2, 1, 5, 3
+        drastic_index = (r_D * w_D) + (r_R * w_R) + (r_A * w_A) + (r_S * w_S) + (r_T * w_T) + (r_I * w_I) + (r_C * w_C)
+        
+        # تحويل المؤشر إلى نسبة مئوية وزمن وصول متوقع
+        risk_score = round((drastic_index / 230) * 100, 1)
+        perm_factor = 0.95 if "رملية" in soil else (0.50 if "سلت" in soil else 0.10)
+        years = round((depth * (1.1 - perm_factor)) / 1.3, 1)
+
+    with col_display:
+        st.markdown(f"<h4 class='section-header'>📊 النتائج ومؤشر DRASTIC القياسي للموقع: {st.session_state.selected_site_name}</h4>", unsafe_allow_html=True)
+        
+        kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+        with kpi1:
+            st.metric("مؤشر DRASTIC الإجمالي", f"{drastic_index} / 230")
+        with kpi2:
+            st.metric("نسبة الخطر البيئي", f"{risk_score}%")
+        with kpi3:
+            st.metric("زمن وصول التسرب", f"{years} سنة")
+        with kpi4:
+            status = "⚠️ يتجاوز الحد" if cyanide > 0.05 else "✅ ضمن المسموح"
+            st.metric("تركيز السيانيد", f"{cyanide} mg/L", delta=status, delta_color="inverse" if cyanide > 0.05 else "normal")
+
+        # ==========================================
+        # خريطة الأقمار الصناعية عالية الوضوح (Satellite Map)
+        # ==========================================
+        st.markdown("##### 🛰️ خريطة الأقمار الصناعية ونطاق التأثير الهيدروجيولوجي")
+        
+        m = folium.Map(
+            location=[lat_val, lon_val], 
+            zoom_start=13, 
+            tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+            attr="Esri World Imagery"
+        )
+        
+        folium.TileLayer(
+            tiles="https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png",
+            attr="CartoDB",
+            name="أسماء المناطق والطرق",
+            overlay=True
+        ).add_to(m)
+
+        marker_color = "red" if drastic_index >= 160 else ("orange" if drastic_index >= 120 else "green")
+        
+        folium.Marker(
+            [lat_val, lon_val],
+            popup=f"موقع المنجم: {st.session_state.selected_site_name}<br>مؤشر DRASTIC: {drastic_index}",
+            tooltip=st.session_state.selected_site_name,
+            icon=folium.Icon(color=marker_color, icon="warning")
+        ).add_to(m)
+        
+        folium.Circle(
+            [lat_val, lon_val],
+            radius=river_dist,
+            color=marker_color,
+            fill=True,
+            fill_opacity=0.25,
+            popup="نطاق التأثير الهيدروجيولوجي المتوقع"
+        ).add_to(m)
+        
+        st_folium(m, width="100%", height=380, key="sat_map")
+
+        # ==========================================
+        # محرك الذكاء الاصطناعي السريع (فوري عبر Streaming)
+        # ==========================================
+        st.markdown("---")
+        st.markdown("<h4 class='section-header'>⚡ التقرير البيئي المعتمد (الذكاء الاصطناعي - Gemini)</h4>", unsafe_allow_html=True)
+        
+        if st.button("✨ إصدار تقرير هيدروجيولوجي معتمد بناءً على DRASTIC", type="primary", use_container_width=True):
+            if "GEMINI_API_KEY" in st.secrets:
+                try:
+                    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+                    
+                    model = genai.GenerativeModel(
+                        'gemini-2.5-flash',
+                        generation_config={
+                            "temperature": 0.2,
+                            "max_output_tokens": 400
+                        }
+                    )
+                    
+                    prompt = f"""
+                    أنت خبير هيدروجيولوجي بجامعة الخرطوم. اكتب تقريراً هندسياً موجزاً لموقع {st.session_state.selected_site_name} بناءً على نموذج DRASTIC المعياري لـ US EPA:
+                    المعطيات: 
+                    - مؤشر DRASTIC الإجمالي: {drastic_index} من 230 (نسبة الخطر: {risk_score}%)
+                    - عمق المياه (D): {depth}m (التقييم: {r_D}/10)، التغذية (R): {recharge}، التربة (S): {soil}
+                    - البعد عن المجرى المائي: {river_dist}m، تركيز السيانيد: {cyanide} mg/L.
+                    
+                    صاغ التقرير في 3 نقاط مركزة:
+                    1. **التقييم الهيدروجيولوجي لمؤشر DRASTIC:** (تفسير الرقم وعلاقته بالطبقات)
+                    2. **تقييم أثر السيانيد وتسرب المياه:** (موجز)
+                    3. **توصيتين هندسيتين واضحتين:** (بناءً على اشتراطات الحماية)
+                    """
+                    
+                    st.markdown("##### 📄 التقرير الفني المباشر:")
+                    
+                    response = model.generate_content(prompt, stream=True)
+                    
+                    def stream_generator():
+                        for chunk in response:
+                            if chunk.text:
+                                yield chunk.text
+
+                    st.write_stream(stream_generator)
+
+                except Exception as e:
+                    if "429" in str(e):
+                        st.warning("⏳ تم الوصول للحد الأقصى للطلبات المجانية في الدقيقة. يرجى الانتظار دقيقة واحدة ثم الضغط على الزر مجدداً.")
+                    else:
+                        st.error(f"حدث خطأ أثناء الاتصال بالذكاء الاصطناعي: {e}")
+            else:
+                st.warning("⚠️ يرجى إضافة مفتاح GEMINI_API_KEY في صفحة Secrets على Streamlit Cloud.")
 
 # ==========================================
-# TAB 2: Bulk Upload & HeatMap
+# TAB 2: التقييم الجماعي والخرائط الحرارية
 # ==========================================
 with tab2:
-  st.markdown("### 📤 رفع البيانات الجماعية والخرائط الحرارية")
-  uploaded_file = st.file_uploader(
-      "اختر ملف CSV أو Excel يحتوي على الإحداثيات والملوثات:",
-      type=["xlsx", "csv"],
-  )
-
-  if uploaded_file is not None:
-    try:
-      df_bulk = (
-          pd.read_csv(uploaded_file)
-          if uploaded_file.name.endswith(".csv")
-          else pd.read_excel(uploaded_file)
-      )
-      st.success(f"تم تحميل {len(df_bulk)} موقع بنجاح.")
-
-      c_tbl, c_heat = st.columns([1, 1])
-      with c_tbl:
-        st.dataframe(df_bulk, use_container_width=True)
-      with c_heat:
-        if "Latitude" in df_bulk.columns and "Longitude" in df_bulk.columns:
-          map_center = [
-              df_bulk["Latitude"].mean(),
-              df_bulk["Longitude"].mean(),
-          ]
-          m_heat = folium.Map(
-              location=map_center,
-              zoom_start=6,
-              tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-              attr="Esri",
-          )
-
-          heat_val = (
-              "Cyanide"
-              if "Cyanide" in df_bulk.columns
-              else df_bulk.columns[2]
-          )
-          heat_data = [
-              [row["Latitude"], row["Longitude"], row[heat_val]]
-              for index, row in df_bulk.iterrows()
-          ]
-          HeatMap(heat_data, radius=15).add_to(m_heat)
-          st_folium(m_heat, width="100%", height=380, key="bulk_heat_map")
-        else:
-          st.error(
-              "الملف يحتاج إلى ألوح تحوي أعمدة 'Latitude' و 'Longitude'"
-          )
-    except Exception as e:
-      st.error(f"حدث خطأ أثناء قراءة الملف: {e}")
+    st.markdown("<h4 class='section-header'>📤 رفع ملف البيانات الجماعي (Bulk Upload)</h4>", unsafe_allow_html=True)
+    st.caption("يمكنك رفع ملف Excel أو CSV يحتوي على أسماء وأحداثيات عدة مناجم لعرضها دفعة واحدة على الخريطة الحرارية الفضائية.")
+    
+    uploaded_file = st.file_uploader("اختر ملف Excel أو CSV:", type=["xlsx", "csv"])
+    
+    if uploaded_file is not None:
+        try:
+            if uploaded_file.name.endswith('.csv'):
+                df_bulk = pd.read_csv(uploaded_file)
+            else:
+                df_bulk = pd.read_excel(uploaded_file)
+                
+            st.success(f"تم تحميل {len(df_bulk)} موقع بنجاح من الملف.")
+            
+            col_tbl, col_heat = st.columns([1, 1])
+            with col_tbl:
+                st.markdown("##### جدول المواقع المرفوعة")
+                st.dataframe(df_bulk, use_container_width=True)
+                
+            with col_heat:
+                st.markdown("##### الخريطة الحرارية لتركيزات الملوثات (Satellite Heatmap)")
+                map_center = [df_bulk['Latitude'].mean(), df_bulk['Longitude'].mean()]
+                
+                m_heat = folium.Map(
+                    location=map_center, 
+                    zoom_start=6,
+                    tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+                    attr="Esri World Imagery"
+                )
+                
+                heat_data = [[row['Latitude'], row['Longitude'], row['Cyanide']] for index, row in df_bulk.iterrows() if 'Latitude' in row and 'Longitude' in row and 'Cyanide' in row]
+                HeatMap(heat_data, radius=15).add_to(m_heat)
+                
+                st_folium(m_heat, width="100%", height=380, key="bulk_heat_map")
+        except Exception as e:
+            st.error(f"تأكد من اختيار الملف الصحيح وتطابق أسماء الأعمدة: {e}")
 
 # ==========================================
-# TAB 3: Mitigation Simulation
+# TAB 3: محاكي الحلول الهندسية
 # ==========================================
 with tab3:
-  st.markdown("### 🛡️ محاكاة تأثير التدابير الهندسية والوقائية")
-  col_sc1, col_sc2 = st.columns(2)
-
-  with col_sc1:
-    st.subheader("الوضع الحالي (بدون تدابير)")
-    st.error(f"مؤشر الخطر الحقيقي: {risk_score}%")
-    st.warning(f"زمن وصول الملوث للجوف: {years} سنة")
-
-  with col_sc2:
-    st.subheader("الوضع المتوقع بعد التطبيق")
-    liner = st.checkbox(
-        "تركيب بطانة عازلة مزدوجة عالية الكثافة (HDPE Liner)"
-    )
-    treatment = st.checkbox(
-        "تطبيق وحدة معالجة وتفكيك السيانيد بالكيميائيات (Cyanide Destruction)"
-    )
-    mercury_stop = st.checkbox(
-        "استبدال الزئبق بتقنيات إعادة التدوير والخضخضة العازلة"
-    )
-
-    mitigated_score = risk_score
-    if liner:
-      mitigated_score *= 0.35
-    if treatment:
-      mitigated_score *= 0.50
-    if mercury_stop:
-      mitigated_score *= 0.70
-
-    mitigated_score = round(mitigated_score, 1)
-    st.success(f"مؤشر الخطر المحاكى: {mitigated_score}%")
-
-    reduction = (
-        round(((risk_score - mitigated_score) / risk_score) * 100, 1)
-        if risk_score > 0
-        else 0
-    )
-    st.metric("نسبة الانخفاض الإجمالية في مخاطر التلوث", f"{reduction}%")
+    st.markdown("<h4 class='section-header'>🛡️ محاكاة تأثير الحلول الهندسية الوقائية</h4>", unsafe_allow_html=True)
+    st.info("قياس نسبة الانخفاض في مؤشر DRASTIC والخطورة البيئية عند استخدام تقنيات العزل والمعالجة الحديثة.")
+    
+    col_sc1, col_sc2 = st.columns(2)
+    
+    with col_sc1:
+        st.subheader("الوضع الحالي (بدون عزل)")
+        st.error(f"مؤشر DRASTIC الحالي: {drastic_index} / 230")
+        st.warning(f"نسبة الخطر الحالية: {risk_score}%")
+        st.caption(f"زمن وصول الملوثات المتوقع: {years} سنة")
+        
+    with col_sc2:
+        st.subheader("الوضع المتوقع بعد التدابير الهندسية")
+        liner = st.checkbox("تركيب بطانة عازلة مزدوجة عالية الكثافة (HDPE Liner)")
+        treatment = st.checkbox("تطبيق وحدة معالجة السيانيد بالكيميائيات (Cyanide Destruction Unit)")
+        
+        mitigated_drastic = drastic_index
+        if liner:
+            mitigated_drastic *= 0.40  # خفض نفاذية المنطقة غير المشبعة والتربة
+        if treatment:
+            mitigated_drastic *= 0.60  # تقليل تركيز الملوثات
+            
+        mitigated_drastic = round(mitigated_drastic, 1)
+        mitigated_score = round((mitigated_drastic / 230) * 100, 1)
+        
+        st.success(f"مؤشر DRASTIC المتوقع: {mitigated_drastic} / 230")
+        
+        reduction = round(((drastic_index - mitigated_drastic) / drastic_index) * 100, 1) if drastic_index > 0 else 0
+        st.metric("نسبة انخفاض الخطر البيئي الإجمالية", f"{reduction}%")
