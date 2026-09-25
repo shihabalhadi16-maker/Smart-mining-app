@@ -1,9 +1,12 @@
 """
 نظام التقييم البيئي للتعدين — DRASTIC Sudan
 جامعة الخرطوم — كلية الهندسة
-مكتب الاستشارات الهندسية
+الإصدار: 4.0 (A + C + القوالب الثابتة)
 
-الإصدار: 2.0 (يدمج data_sources.py)
+الميزات:
+    A — التقييم الجماعي (Bulk Upload)
+    C — محاكي الحلول الهندسية
+    D — تقارير من قوالب ثابتة (معتمدة)
 
 References:
     - Aller et al. (1987). EPA/600/2-87/035
@@ -15,29 +18,35 @@ References:
 import streamlit as st
 import folium
 from streamlit_folium import st_folium
+import pandas as pd
+import datetime
 
 # ============================================================
-# استيراد وحدة البيانات
+# الاستيرادات
 # ============================================================
 try:
     from data_sources import (
         get_preset_locations_for_app,
-        get_climate_for_region,
-        compare_with_who_limits,
         get_data_summary,
         KNOWN_MINING_SITES,
         NARIS_WELLS,
         DARFUR_WELLS,
         KHARTOUM_LOCALITIES,
-        CLIMATE_DATA,
     )
     DATA_SOURCES_AVAILABLE = True
 except ImportError:
     DATA_SOURCES_AVAILABLE = False
-    st.warning(
-        "⚠️ لم يتم العثور على ملف data_sources.py — "
-        "سيتم استخدام بيانات أساسية فقط."
+
+try:
+    from templates import (
+        generate_report,
+        get_templates_summary,
+        get_template_key,
+        TEMPLATE_METADATA,
     )
+    TEMPLATES_AVAILABLE = True
+except ImportError:
+    TEMPLATES_AVAILABLE = False
 
 
 # ============================================================
@@ -49,9 +58,6 @@ st.set_page_config(
     layout="wide",
 )
 
-# ============================================================
-# التنسيق البصري
-# ============================================================
 st.markdown("""
 <style>
     .stApp { background-color: #f8f9fa; }
@@ -73,13 +79,11 @@ st.markdown("""
 
 
 # ============================================================
-# دوال DRASTIC — EPA/600/2-87/035
+# دوال DRASTIC
 # ============================================================
 
 def get_d_rating(depth_m):
-    """Depth to Water rating — Aller et al. (1987), Table 6, p.19."""
-    if depth_m < 0:
-        raise ValueError("عمق المياه لا يمكن أن يكون سالباً")
+    if depth_m < 0: raise ValueError("العمق سالب")
     if depth_m <= 1.5: return 10
     if depth_m <= 4.6: return 9
     if depth_m <= 9.1: return 7
@@ -90,9 +94,7 @@ def get_d_rating(depth_m):
 
 
 def get_r_rating(recharge_mm):
-    """Net Recharge rating — Aller et al. (1987), Table 7, p.21."""
-    if recharge_mm < 0:
-        raise ValueError("التغذية لا يمكن أن تكون سالبة")
+    if recharge_mm < 0: raise ValueError("التغذية سالبة")
     if recharge_mm <= 50.8: return 1
     if recharge_mm <= 101.6: return 3
     if recharge_mm <= 177.8: return 6
@@ -101,22 +103,16 @@ def get_r_rating(recharge_mm):
 
 
 def get_a_rating(aquifer_type):
-    """Aquifer Media rating — Aller et al. (1987), Table 8, p.23."""
     type_map = {
-        "massive_shale": 2,
-        "metamorphic_igneous": 3,
-        "thin_bedded_sequences": 6,
-        "massive_sandstone": 6,
-        "massive_limestone": 6,
-        "sand_and_gravel": 8,
-        "basalt": 9,
-        "karst_limestone": 10,
+        "massive_shale": 2, "metamorphic_igneous": 3,
+        "thin_bedded_sequences": 6, "massive_sandstone": 6,
+        "massive_limestone": 6, "sand_and_gravel": 8,
+        "basalt": 9, "karst_limestone": 10,
     }
     return type_map.get(aquifer_type, 6)
 
 
 def get_s_rating(soil_type):
-    """Soil Media rating — Aller et al. (1987), Table 9, p.25."""
     type_map = {
         "thin_or_absent": 10, "gravel": 10, "sand": 9, "peat": 8,
         "sandy_loam": 6, "loam": 5, "silty_loam": 4,
@@ -126,9 +122,7 @@ def get_s_rating(soil_type):
 
 
 def get_t_rating(slope_percent):
-    """Topography rating — Aller et al. (1987), Table 10, p.27."""
-    if slope_percent < 0:
-        raise ValueError("الانحدار لا يمكن أن يكون سالباً")
+    if slope_percent < 0: raise ValueError("الانحدار سالب")
     if slope_percent <= 2.0: return 10
     if slope_percent <= 6.0: return 9
     if slope_percent <= 12.0: return 5
@@ -137,7 +131,6 @@ def get_t_rating(slope_percent):
 
 
 def get_i_rating(vadose_type):
-    """Vadose Zone rating — Aller et al. (1987), Table 11, p.29."""
     type_map = {
         "silt_clay": 1, "shale": 3, "limestone": 6, "sandstone": 6,
         "sand_gravel_silt_clay": 6, "sand_gravel": 8,
@@ -147,9 +140,7 @@ def get_i_rating(vadose_type):
 
 
 def get_c_rating(conductivity_m_day):
-    """Hydraulic Conductivity rating — Aller et al. (1987), Table 12, p.31."""
-    if conductivity_m_day < 0:
-        raise ValueError("النفاذية لا يمكن أن تكون سالبة")
+    if conductivity_m_day < 0: raise ValueError("النفاذية سالبة")
     if conductivity_m_day <= 4.074: return 1
     if conductivity_m_day <= 12.222: return 2
     if conductivity_m_day <= 28.518: return 4
@@ -159,12 +150,10 @@ def get_c_rating(conductivity_m_day):
 
 
 def calculate_drastic_index(D, R, A, S, T, I, C):
-    """DRASTIC Index — Aller et al. (1987, p.16). Range: 23-230."""
     return (D * 5) + (R * 4) + (A * 3) + (S * 2) + (T * 1) + (I * 5) + (C * 3)
 
 
 def classify_drastic_risk(index):
-    """تصنيف الخطورة — Rahman (2008)."""
     if index >= 180:
         return {"level": "مرتفع جداً", "color": "red", "action": "معالجة فورية"}
     if index >= 140:
@@ -175,83 +164,76 @@ def classify_drastic_risk(index):
 
 
 def calculate_travel_time(depth_m, porosity, K_m_day, gradient=1.0):
-    """زمن وصول الملوثات — Fetter (2001), pp.132-136."""
-    if depth_m <= 0:
-        raise ValueError("العمق يجب أن يكون أكبر من صفر")
-    if not (0.01 < porosity < 0.60):
-        raise ValueError("المسامية خارج النطاق الجيولوجي (0.01-0.60)")
-    if K_m_day <= 0:
-        raise ValueError("النفاذية يجب أن تكون أكبر من صفر")
+    if depth_m <= 0: raise ValueError("العمق > 0")
+    if not (0.01 < porosity < 0.60): raise ValueError("المسامية خارج النطاق")
+    if K_m_day <= 0: raise ValueError("النفاذية > 0")
     velocity = (K_m_day * gradient) / porosity
     days = depth_m / velocity
+    return {"days": days, "years": days / 365.25, "velocity": velocity}
+
+
+def apply_engineering_mitigation(drastic_index, hdpe=False, 
+                                   treatment=False, monitoring=False):
+    """المسار C — محاكي الحلول."""
+    mitigated = drastic_index
+    if hdpe: mitigated *= 0.40
+    if treatment: mitigated *= 0.60
+    if monitoring: mitigated *= 0.85
+    reduction = ((drastic_index - mitigated) / drastic_index * 100) if drastic_index > 0 else 0
     return {
-        "days": days,
-        "years": days / 365.25,
-        "velocity": velocity,
-        "warnings": [] if days / 365.25 < 1000 else [
-            "⚠️ الزمن > 1000 سنة — قد يكون K منخفضاً جداً."
-        ],
+        "mitigated_index": round(mitigated, 1),
+        "reduction_pct": round(reduction, 1),
+        "methods": [m for m, v in [
+            ("HDPE Liner", hdpe),
+            ("Cyanide Treatment", treatment),
+            ("Monitoring Wells", monitoring)
+        ] if v],
     }
 
 
 # ============================================================
 # الترويسة
 # ============================================================
-col_logo, col_title = st.columns([1, 6])
-with col_logo:
-    st.markdown("# ⛏️")
-with col_title:
-    st.title("نظام التقييم البيئي للتعدين")
-    st.markdown("### جامعة الخرطوم — كلية الهندسة")
-    st.markdown("#### مكتب الاستشارات الهندسية — DRASTIC Model")
-
+st.title("⛏️ نظام التقييم البيئي للتعدين")
+st.markdown("### جامعة الخرطوم — كلية الهندسة")
+st.markdown("#### مكتب الاستشارات الهندسية — DRASTIC Sudan v4.0")
 st.markdown("---")
 
 
 # ============================================================
-# تحميل المواقع المسبقة
+# تحميل المواقع
 # ============================================================
 if DATA_SOURCES_AVAILABLE:
     preset_locations = get_preset_locations_for_app()
     summary = get_data_summary()
-    
-    # عرض ملخص البيانات في الشريط الجانبي
     with st.sidebar:
-        st.markdown("### 📊 ملخص البيانات المتاحة")
-        st.metric("المواقع المسبقة", summary["Total Data Points"])
+        st.markdown("### 📊 ملخص البيانات")
+        st.metric("إجمالي المواقع", summary["Total Data Points"])
         st.metric("آبار NARIS", summary["NARIS Wells"])
         st.metric("آبار دارفور", summary["Darfur Wells"])
-        st.metric("محليات الخرطوم", summary["Khartoum Localities"])
         st.metric("مواقع تعدين", summary["Known Mining Sites"])
-        
         st.markdown("---")
-        st.caption(
-            "المصادر: NARIS, UNEP, Elsheikh et al. (2023), WHO (2022)"
-        )
+        if TEMPLATES_AVAILABLE:
+            st.success("✅ القوالب الثابتة مُحمّلة")
+        st.caption("المصادر: NARIS, UNEP, WHO, Elsheikh (2023)")
 else:
-    # بيانات احتياطية إذا لم يوجد الملف
     preset_locations = {
-        "سوق طواحين أبو حمد": {
-            "coords": (19.5333, 33.3167),
-            "depth": 15.0,
-            "conductivity": 5.0,
-        },
-        "سوق العبيدية": {
-            "coords": (18.1234, 33.9876),
-            "depth": 10.0,
-            "conductivity": 5.0,
+        "موقع تجريبي": {
+            "coords": (19.53, 33.32),
+            "depth": 15.0, "conductivity": 5.0,
         },
     }
 
 
 # ============================================================
-# التبويبات
+# التبويبات — 5 تبويبات
 # ============================================================
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📍 التقييم الفردي",
-    "🗺️ الخريطة التفاعلية",
-    "📚 المنهجية والمراجع",
-    "💡 مصادر البيانات",
+    "📊 التقييم الجماعي (A)",
+    "🛡️ محاكي الحلول (C)",
+    "📄 توليد التقرير (قوالب)",
+    "🗺️ الخريطة",
 ])
 
 
@@ -261,109 +243,42 @@ tab1, tab2, tab3, tab4 = st.tabs([
 with tab1:
     st.header("⚙️ اختيار الموقع والمدخلات")
 
-    # اختيار الموقع
     col_site, col_info = st.columns([2, 1])
-
     with col_site:
         selected_site = st.selectbox(
             "🔍 اختر الموقع:",
             options=list(preset_locations.keys()),
-            help="المواقع من NARIS, UNEP, ومواقع تعدين معروفة"
         )
         site_data = preset_locations[selected_site]
         st.caption(f"📌 المصدر: {site_data.get('source', 'غير محدد')}")
-
     with col_info:
-        st.metric("الإحداثيات", 
+        st.metric("الإحداثيات",
                   f"{site_data['coords'][0]:.3f}, {site_data['coords'][1]:.3f}")
         st.metric("العمق المرجعي", f"{site_data['depth']:.1f} م")
 
     st.markdown("---")
 
-    # المدخلات
     col_left, col_right = st.columns(2)
-
     with col_left:
         st.subheader("🔬 البيانات الهيدروجيولوجية")
-
-        depth = st.slider(
-            "1️⃣ عمق المياه الجوفية D (متر):",
-            0.5, 100.0, float(site_data["depth"]), 0.5
-        )
-
-        # اقتراح التغذية تلقائياً من المنطقة
-        region_default = 150.0
-        if DATA_SOURCES_AVAILABLE:
-            # محاولة استنتاج المنطقة من اسم الموقع
-            for region in CLIMATE_DATA.keys():
-                if region in selected_site:
-                    region_default = CLIMATE_DATA[region]["rainfall_mm_year"]
-                    break
-
-        recharge = st.slider(
-            "2️⃣ التغذية السنوية R (مم/سنة):",
-            0.0, 400.0, region_default, 10.0
-        )
-
-        slope = st.slider(
-            "3️⃣ الانحدار T (%):",
-            0.0, 30.0, 4.0, 0.5
-        )
-
-        conductivity = st.slider(
-            "4️⃣ النفاذية C (م/يوم):",
-            0.01, 100.0, float(site_data["conductivity"]), 0.1
-        )
-
+        depth = st.slider("1️⃣ العمق D (م):", 0.5, 100.0,
+                          float(site_data["depth"]), 0.5)
+        recharge = st.slider("2️⃣ التغذية R (مم/سنة):", 0.0, 400.0, 150.0, 10.0)
+        slope = st.slider("3️⃣ الانحدار T (%):", 0.0, 30.0, 4.0, 0.5)
+        conductivity = st.slider("4️⃣ النفاذية C (م/يوم):", 0.01, 100.0,
+                                  float(site_data["conductivity"]), 0.1)
     with col_right:
         st.subheader("🪨 البيانات الجيولوجية")
-
-        aquifer = st.selectbox(
-            "5️⃣ نوع الخزان الجوفي A:",
+        aquifer = st.selectbox("5️⃣ الخزان A:",
             ["massive_sandstone", "sand_and_gravel", "karst_limestone",
-             "basalt", "massive_shale", "metamorphic_igneous"],
-            format_func=lambda x: {
-                "massive_sandstone": "حجر رملي ضخم (6)",
-                "sand_and_gravel": "رمل وحصى (8)",
-                "karst_limestone": "حجر جيري كارستي (10)",
-                "basalt": "بازلت (9)",
-                "massive_shale": "طفل ضخم (2)",
-                "metamorphic_igneous": "صخور متحولة (3)",
-            }.get(x, x),
-        )
-
-        soil = st.selectbox(
-            "6️⃣ نوع التربة S:",
+             "basalt", "massive_shale", "metamorphic_igneous"])
+        soil = st.selectbox("6️⃣ التربة S:",
             ["sand", "sandy_loam", "loam", "silty_loam",
-             "clay_loam", "nonshrinking_clay"],
-            format_func=lambda x: {
-                "sand": "رمل (9)",
-                "sandy_loam": "طمي رملي (6)",
-                "loam": "طمي (5)",
-                "silty_loam": "طمي غريني (4)",
-                "clay_loam": "طمي طيني (3)",
-                "nonshrinking_clay": "طين غير متقلص (1)",
-            }.get(x, x),
-        )
+             "clay_loam", "nonshrinking_clay"])
+        vadose = st.selectbox("7️⃣ المنطقة غير المشبعة I:",
+            ["sand_gravel", "sandstone", "limestone", "silt_clay", "shale"])
+        porosity = st.slider("المسامية θ:", 0.02, 0.55, 0.25, 0.01)
 
-        vadose = st.selectbox(
-            "7️⃣ المنطقة غير المشبعة I:",
-            ["sand_gravel", "sandstone", "limestone", "silt_clay", "shale"],
-            format_func=lambda x: {
-                "sand_gravel": "رمل وحصى (8)",
-                "sandstone": "حجر رملي (6)",
-                "limestone": "حجر جيري (6)",
-                "silt_clay": "غرين وطين (1)",
-                "shale": "طفل (3)",
-            }.get(x, x),
-        )
-
-        porosity = st.slider(
-            "المسامية الفعالة θ:",
-            0.02, 0.55, 0.25, 0.01
-        )
-
-    # الحسابات
     try:
         D_r = get_d_rating(depth)
         R_r = get_r_rating(recharge)
@@ -372,32 +287,39 @@ with tab1:
         T_r = get_t_rating(slope)
         I_r = get_i_rating(vadose)
         C_r = get_c_rating(conductivity)
-
         index = calculate_drastic_index(D_r, R_r, A_r, S_r, T_r, I_r, C_r)
         risk = classify_drastic_risk(index)
+
+        # حفظ في session_state
+        st.session_state.update({
+            "current_index": index,
+            "current_site": selected_site,
+            "current_coords": site_data["coords"],
+            "current_depth": depth,
+            "current_recharge": recharge,
+            "current_slope": slope,
+            "current_conductivity": conductivity,
+            "current_aquifer": aquifer,
+            "current_soil": soil,
+            "current_vadose": vadose,
+            "current_ratings": {"D": D_r, "R": R_r, "A": A_r, "S": S_r,
+                                 "T": T_r, "I": I_r, "C": C_r},
+            "current_porosity": porosity,
+        })
 
         st.markdown("---")
         st.header("🎯 نتائج التقييم")
 
-        # التقييمات الفردية
-        st.subheader("التقييمات الفردية")
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("D — العمق", D_r)
-        c2.metric("R — التغذية", R_r)
-        c3.metric("A — الخزان", A_r)
-        c4.metric("S — التربة", S_r)
-
+        c1.metric("D", D_r); c2.metric("R", R_r)
+        c3.metric("A", A_r); c4.metric("S", S_r)
         c5, c6, c7, c8 = st.columns(4)
-        c5.metric("T — الانحدار", T_r)
-        c6.metric("I — غير المشبعة", I_r)
-        c7.metric("C — النفاذية", C_r)
-        c8.metric("θ — المسامية", f"{porosity:.2f}")
+        c5.metric("T", T_r); c6.metric("I", I_r)
+        c7.metric("C", C_r); c8.metric("θ", f"{porosity:.2f}")
 
-        # المؤشر الإجمالي
-        st.markdown("---")
-        col_x, col_y = st.columns(2)
-        col_x.metric("📊 مؤشر DRASTIC", f"{index} / 230")
-        col_y.metric("⚠️ مستوى الخطورة", risk["level"])
+        cx, cy = st.columns(2)
+        cx.metric("📊 مؤشر DRASTIC", f"{index} / 230")
+        cy.metric("⚠️ الخطورة", risk["level"])
 
         if risk["color"] == "red":
             st.error(f"🔴 {risk['level']} — {risk['action']}")
@@ -408,203 +330,113 @@ with tab1:
         else:
             st.success(f"🟢 {risk['level']} — {risk['action']}")
 
-        # زمن وصول الملوثات
         st.markdown("---")
-        st.header("⏱️ زمن وصول الملوثات (تقديري)")
-
+        st.subheader("⏱️ زمن وصول الملوثات")
         travel = calculate_travel_time(depth, porosity, conductivity)
+        st.session_state["current_travel_years"] = travel["years"]
         tc1, tc2, tc3 = st.columns(3)
         tc1.metric("الزمن (سنوات)", f"{travel['years']:.2f}")
         tc2.metric("الزمن (أيام)", f"{travel['days']:.1f}")
-        tc3.metric("سرعة التسرب (م/يوم)", f"{travel['velocity']:.6f}")
+        tc3.metric("سرعة التسرب", f"{travel['velocity']:.6f}")
 
-        for w in travel["warnings"]:
-            st.warning(w)
-
-        with st.expander("⚠️ حدود النموذج"):
-            st.markdown("""
-            **المرجع:** US EPA (1993). EPA/600/R-93/174
-            
-            **الافتراضات:** وسط متجانس، سرعة ثابتة، ملوث محافظ.
-            
-            **لا يأخذ في الحسبان:** الشقوق، عدم التجانس، 
-            الانتشار، الامتزاز، التفاعلات الكيميائية.
-            
-            **تفسير النتيجة:** زمن وصول الجبهة الأمامية فقط.
-            
-            ⚠️ للقرارات النهائية: معايرة ميدانية إلزامية.
-            """)
-
+        st.info("ℹ️ انتقل إلى تبويب 'توليد التقرير' لإنشاء تقرير فني كامل.")
     except ValueError as e:
         st.error(f"❌ خطأ: {e}")
 
 
 # ============================================================
-# TAB 2: الخريطة التفاعلية
+# TAB 2 (A): التقييم الجماعي
 # ============================================================
 with tab2:
-    st.header("🗺️ الخريطة التفاعلية للمواقع")
-
-    if DATA_SOURCES_AVAILABLE:
-        # إنشاء الخريطة
-        m = folium.Map(
-            location=[15.5, 32.5],  # السودان
-            zoom_start=6,
-            tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-            attr="Esri World Imagery",
-        )
-
-        # إضافة مواقع NARIS (أزرق)
-        for name, data in NARIS_WELLS.items():
-            folium.Marker(
-                [data["coords"][1], data["coords"][0]],
-                popup=f"<b>{name}</b><br>NARIS Well<br>K = {data.get('hydraulic_conductivity_m_day', 'N/A')} m/day",
-                icon=folium.Icon(color="blue", icon="tint"),
-            ).add_to(m)
-
-        # إضافة آبار دارفور (أخضر)
-        for name, data in DARFUR_WELLS.items():
-            folium.Marker(
-                [data["coords"][1], data["coords"][0]],
-                popup=f"<b>{name}</b><br>Darfur Well<br>Depth = {data.get('depth_m', 'N/A')} m",
-                icon=folium.Icon(color="green", icon="tint"),
-            ).add_to(m)
-
-        # إضافة مواقع التعدين (أحمر)
-        for name, data in KNOWN_MINING_SITES.items():
-            color = "red" if data.get("cyanide_use") else "orange"
-            folium.Marker(
-                [data["coords"][1], data["coords"][0]],
-                popup=f"<b>{name}</b><br>{data.get('activity', '')}<br>Source: {data.get('source', '')}",
-                icon=folium.Icon(color=color, icon="warning"),
-            ).add_to(m)
-
-        # إضافة محليات الخرطوم (بنفسجي)
-        for name, data in KHARTOUM_LOCALITIES.items():
-            folium.CircleMarker(
-                [data["coords"][1], data["coords"][0]],
-                radius=8,
-                color="purple",
-                fill=True,
-                fill_opacity=0.5,
-                popup=f"<b>{name}</b><br>Wells: {data['wells_sampled']}",
-            ).add_to(m)
-
-        st_folium(m, width="100%", height=600, key="main_map")
-
-        st.caption(
-            "🔵 آبار NARIS | 🟢 آبار دارفور | 🔴 مواقع تعدين | 🟣 محليات الخرطوم"
-        )
-    else:
-        st.warning("⚠️ ملف data_sources.py غير متوفر — لا يمكن عرض الخريطة.")
-
-
-# ============================================================
-# TAB 3: المنهجية والمراجع
-# ============================================================
-with tab3:
-    st.header("📚 المنهجية العلمية والمراجع")
-
+    st.header("📊 التقييم الجماعي — Bulk Upload")
     st.markdown("""
-    ### 1. نموذج DRASTIC
+    **ارفع ملف Excel أو CSV** لحساب DRASTIC لكل موقع دفعة واحدة.
     
-    **المرجع:** Aller et al. (1987). EPA/600/2-87/035.
-    
-    **المعادلة:**
-    ```
-    DI = D×5 + R×4 + A×3 + S×2 + T×1 + I×5 + C×3
-    ```
-    المدى: 23 (منخفض) إلى 230 (مرتفع).
-    
-    ### 2. زمن وصول الملوثات
-    
-    **المرجع:** Fetter (2001), Applied Hydrogeology, 4th ed., pp.132-136.
-    
-    **المعادلة:** t = (θ · L) / (K · i)
-    
-    ### 3. المراجع الدولية
-    
-    - WHO (2022). Drinking-water Quality Guidelines.
-    - US EPA (1993). EPA/600/R-93/174.
-    - Minamata Convention on Mercury.
-    
-    ### 4. مصادر البيانات الحالية
-    
-    - NARIS (2005) — الحجر الرملي النوبي
-    - UNEP (2007) — دارفور
-    - Elsheikh et al. (2023) — الخرطوم
-    
-    ⚠️ **تنبيه:** جميع البيانات تحتاج تحققاً ميدانياً قبل الاستخدام الرسمي.
+    **الأعمدة المطلوبة:** `name`, `lat`, `lon`, `depth_m`, 
+    `recharge_mm`, `slope_pct`, `conductivity`, `aquifer`, 
+    `soil`, `vadose`.
     """)
 
+    sample_df = pd.DataFrame({
+        "name": ["موقع 1", "موقع 2"],
+        "lat": [19.53, 18.12], "lon": [33.32, 33.99],
+        "depth_m": [15.0, 10.0], "recharge_mm": [80.0, 120.0],
+        "slope_pct": [4.0, 8.0], "conductivity": [5.0, 10.0],
+        "aquifer": ["massive_sandstone", "sand_and_gravel"],
+        "soil": ["sand", "sandy_loam"],
+        "vadose": ["sand_gravel", "sandstone"],
+    })
+    st.download_button(
+        "📥 تحميل نموذج CSV",
+        data=sample_df.to_csv(index=False).encode("utf-8-sig"),
+        file_name="drastic_template.csv",
+        mime="text/csv",
+    )
 
-# ============================================================
-# TAB 4: مصادر البيانات
-# ============================================================
-with tab4:
-    st.header("💡 مصادر البيانات المجانية")
+    uploaded_file = st.file_uploader(
+        "📤 ارفع ملف (CSV / Excel):",
+        type=["csv", "xlsx"],
+    )
 
-    if DATA_SOURCES_AVAILABLE:
-        summary = get_data_summary()
+    if uploaded_file is not None:
+        try:
+            df = (pd.read_csv(uploaded_file) if uploaded_file.name.endswith(".csv")
+                  else pd.read_excel(uploaded_file))
 
-        col1, col2, col3 = st.columns(3)
-        col1.metric("إجمالي نقاط البيانات", summary["Total Data Points"])
-        col2.metric("المصادر المتاحة", "3")
-        col3.metric("نسبة الاكتمال", "32%")
+            results = []
+            for i, row in df.iterrows():
+                try:
+                    D_r = get_d_rating(float(row.get("depth_m", 15)))
+                    R_r = get_r_rating(float(row.get("recharge_mm", 100)))
+                    A_r = get_a_rating(str(row.get("aquifer", "massive_sandstone")))
+                    S_r = get_s_rating(str(row.get("soil", "sand")))
+                    T_r = get_t_rating(float(row.get("slope_pct", 4)))
+                    I_r = get_i_rating(str(row.get("vadose", "sand_gravel")))
+                    C_r = get_c_rating(float(row.get("conductivity", 5)))
+                    index = calculate_drastic_index(D_r, R_r, A_r, S_r, T_r, I_r, C_r)
+                    risk = classify_drastic_risk(index)
+                    results.append({
+                        "الموقع": row.get("name", f"موقع {i}"),
+                        "lat": row.get("lat", 0), "lon": row.get("lon", 0),
+                        "المؤشر": index, "المستوى": risk["level"],
+                        "التوصية": risk["action"],
+                    })
+                except Exception as e:
+                    st.warning(f"خطأ في السطر {i}: {e}")
 
-        st.markdown("---")
+            if results:
+                df_res = pd.DataFrame(results)
+                st.markdown("---")
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("إجمالي المواقع", len(df_res))
+                c2.metric("متوسط المؤشر", f"{df_res['المؤشر'].mean():.1f}")
+                c3.metric("أعلى مؤشر", df_res["المؤشر"].max())
+                c4.metric("مواقع خطرة",
+                          len(df_res[df_res["المؤشر"] >= 140]))
 
-        st.markdown("""
-        ### 📊 المصادر المدمجة
-        
-        #### 1. NARIS — نظام الحجر الرملي النوبي
-        - **المصدر:** CEDARE (2005)
-        - **البيانات:** 11 بئراً بإحداثيات، أعماق، نفاذية
-        - **الرابط:** `web.cedare.org`
-        
-        #### 2. UNEP — المياه الجوفية في دارفور
-        - **المصدر:** UNEP (2007)
-        - **البيانات:** 3 آبار بمناسيب مُراقَبة
-        - **الرابط:** `wedocs.unep.org`
-        
-        #### 3. Elsheikh et al. (2023) — الخرطوم
-        - **المصدر:** Nature Environment & Pollution Technology
-        - **البيانات:** 279 بئراً في 7 محليات
-        - **DOI:** 10.46488/NEPT.2023.v22i04.033
-        
-        #### 4. WHO (2022) — حدود جودة المياه
-        - **البيانات:** حدود السيانيد والزئبق والمعادن الثقيلة
-        
-        ### ⚠️ ما هو غير متوفر
-        
-        - ❌ بيانات ميدانية حديثة لمواقع التعدين التقليدي
-        - ❌ تحاليل مختبرية للزئبق والسيانيد
-        - ❌ معايرة النموذج على بيانات سودانية حديثة
-        - ❌ اعتماد رسمي من GRAS
-        
-        ### 📋 خطة استكمال البيانات (68% المتبقية)
-        
-        1. **زيارات ميدانية لـ 20-30 موقع تعدين** (-25%)
-        2. **تحاليل مختبرية** (-15%)
-        3. **معايرة النموذج** (-10%)
-        4. **التحقق والـ Validation** (-8%)
-        5. **ورقة علمية** (-5%)
-        6. **اتفاقية GRAS** (-5%)
-        
-        ### 🎯 نسبة الاعتماد الحالية: **32%**
-        
-        بعد استكمال البيانات الميدانية: **60%**
-        بعد المعايرة والورقة العلمية: **85%**
-        بعد اتفاقية GRAS: **95%+**
-        """)
+                st.dataframe(df_res, use_container_width=True)
 
+                st.download_button(
+                    "📥 تحميل النتائج CSV",
+                    data=df_res.to_csv(index=False).encode("utf-8-sig"),
+                    file_name="drastic_results.csv",
+                    mime="text/csv",
+                )
 
-# ============================================================
-# التذييل
-# ============================================================
-st.markdown("---")
-st.caption(
-    "© 2026 جامعة الخرطوم — مكتب الاستشارات الهندسية | "
-    "DRASTIC Sudan v2.0 | "
-    "البيانات من NARIS, UNEP, WHO, Elsheikh et al. (2023)"
-)
+                # خريطة
+                if "lat" in df_res.columns and "lon" in df_res.columns:
+                    st.markdown("---")
+                    st.subheader("🗺️ خريطة النتائج")
+                    m_bulk = folium.Map(
+                        location=[df_res["lat"].mean(), df_res["lon"].mean()],
+                        zoom_start=6, tiles="OpenStreetMap",
+                    )
+                    for _, r in df_res.iterrows():
+                        color = ("red" if r["المؤشر"] >= 160 else
+                                 "orange" if r["المؤشر"] >= 120 else "green")
+                        folium.Marker(
+                            [r["lat"], r["lon"]],
+                            popup=f"<b>{r['الموقع']}</b><br>DRASTIC: {r['المؤشر']}",
+                            icon=folium.Icon(color=color),
+                        ).add_to(m_bulk)
+                    st_folium(m_bulk
