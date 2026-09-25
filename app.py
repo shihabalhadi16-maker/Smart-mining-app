@@ -89,10 +89,8 @@ def on_preset_change():
     st.session_state.lon = preset_locations[site]["coords"][1]
     st.session_state.ai_report_text = ""
 
-# دالة حساب مؤشر DRASTIC لكل صف في التقييم الجماعي
 def calculate_row_drastic(row):
     try:
-        # جلب القيم مع تعيين أرقام افتراضية في حال عدم وجود العمود
         d = float(row.get('D', row.get('Depth', row.get('العمق', 15))))
         r = float(row.get('R', row.get('Recharge', row.get('التغذية', 5))))
         a = float(row.get('A', row.get('Aquifer', row.get('الخزان', 6))))
@@ -101,7 +99,6 @@ def calculate_row_drastic(row):
         i = float(row.get('I', row.get('Impact_Vadose', row.get('غير_المشبعة', 6))))
         c = float(row.get('C', row.get('Conductivity', row.get('النفاذية', 4))))
         
-        # الحساب بخصائص الوزن القياسي المعياري
         index = (d * 5) + (r * 4) + (a * 3) + (s * 2) + (t * 1) + (i * 5) + (c * 3)
         return round(index, 1)
     except Exception:
@@ -130,7 +127,7 @@ with tab1:
         if st.button("🔍 بحث وانتقال الخريطة", use_container_width=True):
             query_str = custom_search.strip()
             if query_str != "":
-                geolocator = Nominatim(user_agent="uofk_smart_mining_v12")
+                geolocator = Nominatim(user_agent="uofk_smart_mining_v13")
                 try:
                     q = f"{query_str}, Sudan" if "sudan" not in query_str.lower() else query_str
                     loc = geolocator.geocode(q, timeout=8)
@@ -184,7 +181,6 @@ with tab1:
         river_dist = st.slider("البعد عن أقرب مجرى مائي / وادي (متر):", 50, 5000, 300, step=50)
         cyanide = st.slider("تركيز السيانيد (Cyanide mg/L):", 0.01, 2.00, 0.45, step=0.01)
 
-        # حساب نموذج DRASTIC
         w_D, w_R, w_A, w_S, w_T, w_I, w_C = 5, 4, 3, 2, 1, 5, 3
         drastic_index = (r_D * w_D) + (r_R * w_R) + (r_A * w_A) + (r_S * w_S) + (r_T * w_T) + (r_I * w_I) + (r_C * w_C)
         risk_score = round((drastic_index / 230) * 100, 1)
@@ -201,7 +197,6 @@ with tab1:
         status = "⚠️ يتجاوز الحد" if cyanide > 0.05 else "✅ ضمن المسموح"
         kpi4.metric("تركيز السيانيد", f"{cyanide} mg/L", delta=status, delta_color="inverse" if cyanide > 0.05 else "normal")
 
-        # الخريطة الفضائية
         st.markdown("##### 🛰️ خريطة الأقمار الصناعية")
         m = folium.Map(
             location=[lat_val, lon_val], 
@@ -234,48 +229,54 @@ with tab1:
         st_folium(m, width="100%", height=350, key="sat_map")
 
         # ==========================================
-        # الذكاء الاصطناعي (Gemini 3.8 Flash) وتصدير التقرير
+        # الذكاء الاصطناعي مع آلية التبديل المزدوج لتفادي خطأ 429
         # ==========================================
         st.markdown("---")
-        st.markdown("<h4 class='section-header'>⚡ توليد التقرير المعتمد وتصديره (Gemini 3.8 Flash)</h4>", unsafe_allow_html=True)
+        st.markdown("<h4 class='section-header'>⚡ توليد التقرير المعتمد وتصديره</h4>", unsafe_allow_html=True)
         
         col_btn1, col_btn2 = st.columns([2, 1])
         
         with col_btn1:
-            if st.button("✨ توليد التقرير المعتمد عبر Gemini 3.8 Flash", type="primary", use_container_width=True):
+            if st.button("✨ توليد التقرير المعتمد عبر الذكاء الاصطناعي", type="primary", use_container_width=True):
                 if "GEMINI_API_KEY" in st.secrets:
-                    try:
-                        genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-                        model = genai.GenerativeModel(
-                            'gemini-3.8-flash',
-                            generation_config={"temperature": 0.2, "max_output_tokens": 2048}
-                        )
-
-                        prompt = f"""
-                        بصفتك خبير استشاري في هيدروجيولوجيا التعدين بجامعة الخرطوم، قم بإعداد تقرير هندسي وتقييمي متكامل وبند بـ بند لموقع: {st.session_state.selected_site_name}.
-                        
-                        المعطيات الفنية الميدانية:
-                        - مؤشر DRASTIC الإجمالي: {drastic_index} من 230 (نسبة الخطر البيئي: {risk_score}%)
-                        - عمق المياه الجوفية (D): {depth} متر
-                        - معدل التغذية السنوية (R): {recharge}
-                        - نوع التربة السطحية (S): {soil}
-                        - البعد عن المجرى المائي: {river_dist} متر
-                        - تركيز السيانيد/الزئبق الميداني: {cyanide} mg/L (الحد المسموح به من الصحة العالمية WHO هو 0.05 mg/L)
-                        - زمن وصول التسرب المتوقع: {years} سنة
-                        
-                        يرجى كتابة التقرير باللغة العربية بتنسيق منظم يغطي النقاط التالية بشكل كافٍ ومكتمل:
-                        1. **التقييم الهيدروجيولوجي الشامل ومستوى الخطورة:**
-                        2. **تحليل انتشار ملوثات السيانيد وأثرها على المياه الجوفية:**
-                        3. **التوصيات والتدابير الهندسية العاجلة الواجب اتخاذها في الموقع:**
-                        """
-                        
-                        with st.spinner("جاري صياغة التقرير الفني المكتمل..."):
-                            response = model.generate_content(prompt)
-                            st.session_state.ai_report_text = response.text
-                            st.success("تم توليد التقرير المكتمل بنجاح!")
-                            
-                    except Exception as e:
-                        st.error(f"خطأ في الاتصال بالنموذج: {e}")
+                    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+                    
+                    # نماذج احتياطية يتم تجربتها متسلسلاً في حال حدوث Quota Exceeded (429)
+                    candidate_models = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-1.0-pro']
+                    
+                    prompt = f"""
+                    بصفتك خبير استشاري في هيدروجيولوجيا التعدين بجامعة الخرطوم، قم بإعداد تقرير هندسي وتقييمي متكامل وبند بـ بند لموقع: {st.session_state.selected_site_name}.
+                    
+                    المعطيات الفنية الميدانية:
+                    - مؤشر DRASTIC الإجمالي: {drastic_index} من 230 (نسبة الخطر البيئي: {risk_score}%)
+                    - عمق المياه الجوفية (D): {depth} متر
+                    - معدل التغذية السنوية (R): {recharge}
+                    - نوع التربة السطحية (S): {soil}
+                    - البعد عن المجرى المائي: {river_dist} متر
+                    - تركيز السيانيد/الزئبق الميداني: {cyanide} mg/L (الحد المسموح به من الصحة العالمية WHO هو 0.05 mg/L)
+                    - زمن وصول التسرب المتوقع: {years} سنة
+                    
+                    يرجى كتابة التقرير باللغة العربية بتنسيق منظم يغطي النقاط التالية بشكل كافٍ ومكتمل:
+                    1. **التقييم الهيدروجيولوجي الشامل ومستوى الخطورة:**
+                    2. **تحليل انتشار ملوثات السيانيد وأثرها على المياه الجوفية:**
+                    3. **التوصيات والتدابير الهندسية العاجلة الواجب اتخاذها في الموقع:**
+                    """
+                    
+                    success = False
+                    with st.spinner("جاري صياغة التقرير الفني..."):
+                        for m_name in candidate_models:
+                            try:
+                                model = genai.GenerativeModel(m_name)
+                                response = model.generate_content(prompt)
+                                st.session_state.ai_report_text = response.text
+                                success = True
+                                st.success(f"تم توليد التقرير بنجاح باستخدام النموذج ({m_name})!")
+                                break
+                            except Exception:
+                                continue
+                                
+                    if not success:
+                        st.error("⏳ تم استهلاك الحدود المجانية المؤقتة لجميع النماذج. انتظر 30 ثانية ثم اضغط مجدداً أو استخدم مفتاح API جديد.")
                 else:
                     st.warning("⚠️ يرجى إضافة مفتاح GEMINI_API_KEY في قسم Secrets على Streamlit Cloud.")
 
@@ -312,7 +313,7 @@ with tab1:
             )
 
 # ==========================================
-# TAB 2: التقييم الجماعي المحسن والمطور
+# TAB 2: التقييم الجماعي
 # ==========================================
 with tab2:
     st.markdown("<h4 class='section-header'>📤 رفع ملف البيانات الجماعي وحسابه دُفعة واحدة (Bulk Upload & Evaluation)</h4>", unsafe_allow_html=True)
@@ -322,18 +323,15 @@ with tab2:
         try:
             df_bulk = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
             
-            # توحيد مسميات الإحداثيات والسيانيد
             lat_col = next((c for c in df_bulk.columns if c.lower() in ['latitude', 'lat', 'خط_العرض']), None)
             lon_col = next((c for c in df_bulk.columns if c.lower() in ['longitude', 'lon', 'long', 'خط_الطول']), None)
             cy_col = next((c for c in df_bulk.columns if c.lower() in ['cyanide', 'cn', 'السيانيد']), None)
             name_col = next((c for c in df_bulk.columns if c.lower() in ['site', 'name', 'location', 'اسم_الموقع', 'الموقع']), None)
 
             if lat_col and lon_col:
-                # 1. حساب مؤشر DRASTIC ونسبة الخطر لكل صف في الملف
                 df_bulk['Calculated_DRASTIC'] = df_bulk.apply(calculate_row_drastic, axis=1)
                 df_bulk['Risk_Percentage (%)'] = ((df_bulk['Calculated_DRASTIC'] / 230) * 100).round(1)
                 
-                # تصنيف مستوى الخطورة
                 def assign_risk_label(val):
                     if val >= 160: return "🔴 خطر مرتفع جداً"
                     elif val >= 120: return "🟠 خطر متوسط"
@@ -343,7 +341,6 @@ with tab2:
                 
                 st.success(f"تم تحليل وترقيم {len(df_bulk)} موقع بنجاح بواسطة نموذج DRASTIC!")
 
-                # عرض المؤشرات السريعة للبيانات المرفوعة
                 m1, m2, m3 = st.columns(3)
                 m1.metric("إجمالي المواقع المرفوعة", len(df_bulk))
                 high_risk_count = len(df_bulk[df_bulk['Calculated_DRASTIC'] >= 160])
@@ -357,7 +354,6 @@ with tab2:
                     st.markdown("##### 📋 جدول التقييم المحسوب بالكامل:")
                     st.dataframe(df_bulk, use_container_width=True)
                     
-                    # زر تحميل CSV المعدل
                     csv_data = df_bulk.to_csv(index=False).encode('utf-8-sig')
                     st.download_button(
                         label="📥 تنزيل الجدول المحسوب (CSV)",
@@ -375,12 +371,10 @@ with tab2:
                         attr="Esri World Imagery"
                     )
                     
-                    # النقاط والخريطة الحرارية
                     heat_weight = cy_col if cy_col else 'Calculated_DRASTIC'
                     heat_data = [[row[lat_col], row[lon_col], float(row[heat_weight])] for _, row in df_bulk.iterrows()]
                     HeatMap(heat_data, radius=18).add_to(m_heat)
                     
-                    # إضافة علامات حية
                     for _, r in df_bulk.iterrows():
                         site_title = r[name_col] if name_col else "منجم"
                         m_color = "red" if r['Calculated_DRASTIC'] >= 160 else ("orange" if r['Calculated_DRASTIC'] >= 120 else "green")
@@ -395,46 +389,50 @@ with tab2:
                     st_folium(m_heat, width="100%", height=380, key="bulk_heat_map_v2")
 
                 # ==========================================
-                # توليد التقرير الجماعي بالذكاء الاصطناعي
+                # التقرير الجماعي بالذكاء الاصطناعي (مع التبديل التلقائي)
                 # ==========================================
                 st.markdown("---")
                 st.markdown("<h4 class='section-header'>⚡ توليد التقرير الموحد للبيانات الجماعية (Bulk AI Executive Report)</h4>", unsafe_allow_html=True)
                 
-                if st.button("✨ تحليل وتوليد التقرير التنفيذي الجماعي عبر Gemini 3.8 Flash", type="primary", use_container_width=True):
+                if st.button("✨ تحليل وتوليد التقرير التنفيذي الجماعي عبر الذكاء الاصطناعي", type="primary", use_container_width=True):
                     if "GEMINI_API_KEY" in st.secrets:
-                        try:
-                            genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-                            model = genai.GenerativeModel(
-                                'gemini-3.8-flash',
-                                generation_config={"temperature": 0.2, "max_output_tokens": 2048}
-                            )
+                        genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+                        candidate_models = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-1.0-pro']
 
-                            # إعداد الملخص الحسابي لإرساله للذكاء الاصطناعي
-                            summary_data = f"""
-                            - عدد المناجم والمواقع الكلي: {len(df_bulk)}
-                            - متوسط مؤشر DRASTIC: {round(df_bulk['Calculated_DRASTIC'].mean(), 1)}
-                            - أعلى مؤشر خطورة مسجل: {df_bulk['Calculated_DRASTIC'].max()}
-                            - عدد المواقع شديدة الخطورة (DRASTIC >= 160): {len(df_bulk[df_bulk['Calculated_DRASTIC'] >= 160])}
-                            - ملخص تركيزات السيانيد إن وجد: متوسط {round(df_bulk[cy_col].mean(), 2) if cy_col else 'غير محدد'} mg/L
-                            """
+                        summary_data = f"""
+                        - عدد المناجم والمواقع الكلي: {len(df_bulk)}
+                        - متوسط مؤشر DRASTIC: {round(df_bulk['Calculated_DRASTIC'].mean(), 1)}
+                        - أعلى مؤشر خطورة مسجل: {df_bulk['Calculated_DRASTIC'].max()}
+                        - عدد المواقع شديدة الخطورة (DRASTIC >= 160): {len(df_bulk[df_bulk['Calculated_DRASTIC'] >= 160])}
+                        - ملخص تركيزات السيانيد إن وجد: متوسط {round(df_bulk[cy_col].mean(), 2) if cy_col else 'غير محدد'} mg/L
+                        """
 
-                            prompt = f"""
-                            بصفتك المستشار البيئي الرئيسي لجامعة الخرطوم وهيئة الأبحاث الجيولوجية، قم بصياغة تقرير تقييمي جماعي تنفيذي موجه للوزارة والشركات بناءً على تحليل دفعة المناجم التالية:
-                            {summary_data}
-                            
-                            المطلوب في التقرير:
-                            1. **الملخص التنفيذي وتقييم الخطر الجماعي للمناجم المرفوعة.**
-                            2. **تحديد الأولويات والمناجم ذات الخطورة العالية التي تتطلب تدخلاً ميدانياً عاجلاً.**
-                            3. **خط الاستجابة الهندسية والتوصيات لحماية الخزانات الجوفية القريبة من هذه التجمعات.**
-                            """
+                        prompt = f"""
+                        بصفتك المستشار البيئي الرئيسي لجامعة الخرطوم وهيئة الأبحاث الجيولوجية، قم بصياغة تقرير تقييمي جماعي تنفيذي موجه للوزارة والشركات بناءً على تحليل دفعة المناجم التالية:
+                        {summary_data}
+                        
+                        المطلوب في التقرير:
+                        1. **الملخص التنفيذي وتقييم الخطر الجماعي للمناجم المرفوعة.**
+                        2. **تحديد الأولويات والمناجم ذات الخطورة العالية التي تتطلب تدخلاً ميدانياً عاجلاً.**
+                        3. **خط الاستجابة الهندسية والتوصيات لحماية الخزانات الجوفية القريبة من هذه التجمعات.**
+                        """
 
-                            with st.spinner("جاري تحليل كافة المناجم وصياغة التقرير التنفيذي الموحد..."):
-                                res = model.generate_content(prompt)
-                                st.session_state.bulk_ai_report = res.text
-                                st.success("تم توليد التقرير الجماعي بنجاح!")
+                        success_bulk = False
+                        with st.spinner("جاري تحليل كافة المناجم وصياغة التقرير التنفيذي..."):
+                            for m_name in candidate_models:
+                                try:
+                                    model = genai.GenerativeModel(m_name)
+                                    res = model.generate_content(prompt)
+                                    st.session_state.bulk_ai_report = res.text
+                                    success_bulk = True
+                                    st.success(f"تم توليد التقرير الجماعي بنجاح باستخدام النموذج ({m_name})!")
+                                    break
+                                except Exception:
+                                    continue
+                                    
+                        if not success_bulk:
+                            st.error("⏳ استُهلك الحد الأقصى المؤقت. انتظر 30 ثانية ثم أعد التوليد.")
 
-                        except Exception as e:
-                            st.error(f"خطأ في الاتصال بالنموذج: {e}")
                     else:
                         st.warning("⚠️ يرجى إدخال GEMINI_API_KEY في إعدادات Secrets.")
 
