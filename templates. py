@@ -62,8 +62,8 @@ TEMPLATE_METADATA = {
 
 CONTENT_LOW = {
     "hydro_assessment": """
-الموقع يُظهر مستوى خطورة منخفض للتلوث. عمق المياه الجوفية 
-والطبقات الجيولوجية توفر حماية طبيعية جيدة. النشاط التعديني 
+الموقع يُظهر مستوى خطورة منخفض للتلوث. عمق المياه الجوفية
+والطبقات الجيولوجية توفر حماية طبيعية جيدة. النشاط التعديني
 الحالي لا يُشكّل تهديداً مباشراً على المياه الجوفية.
 """.strip(),
     "recommendations": [
@@ -77,8 +77,8 @@ CONTENT_LOW = {
 
 CONTENT_MODERATE = {
     "hydro_assessment": """
-الموقع يُظهر مستوى خطورة متوسط. هناك احتمال لتسرب الملوثات 
-إلى المياه الجوفية في حال استمرار النشاط دون إجراءات وقائية. 
+الموقع يُظهر مستوى خطورة متوسط. هناك احتمال لتسرب الملوثات
+إلى المياه الجوفية في حال استمرار النشاط دون إجراءات وقائية.
 الطبقات الجيولوجية توفر حماية جزئية.
 """.strip(),
     "recommendations": [
@@ -93,8 +93,8 @@ CONTENT_MODERATE = {
 
 CONTENT_HIGH = {
     "hydro_assessment": """
-الموقع يُظهر مستوى خطورة مرتفع. الطبقات الجيولوجية لا توفر 
-حماية كافية. هناك خطر حقيقي لتسرب السيانيد والزئبق إلى المياه 
+الموقع يُظهر مستوى خطورة مرتفع. الطبقات الجيولوجية لا توفر
+حماية كافية. هناك خطر حقيقي لتسرب السيانيد والزئبق إلى المياه
 الجوفية خلال سنوات قليلة. التدخل الهندسي العاجل ضروري.
 """.strip(),
     "recommendations": [
@@ -110,8 +110,8 @@ CONTENT_HIGH = {
 
 CONTENT_VERY_HIGH = {
     "hydro_assessment": """
-الموقع يُظهر مستوى خطورة مرتفع جداً. الطبقات الجيولوجية ضعيفة 
-الحماية، وعمق المياه الجوفية قريب من السطح. هناك خطر داهم 
+الموقع يُظهر مستوى خطورة مرتفع جداً. الطبقات الجيولوجية ضعيفة
+الحماية، وعمق المياه الجوفية قريب من السطح. هناك خطر داهم
 لتلوث مصادر مياه الشرب خلال أشهر. التدخل الفوري إلزامي.
 """.strip(),
     "recommendations": [
@@ -128,7 +128,7 @@ CONTENT_VERY_HIGH = {
 
 
 # ============================================================
-# الدالة الرئيسية لتوليد التقرير
+# الدوال الرئيسية
 # ============================================================
 
 def get_template_key(drastic_index: int) -> str:
@@ -163,15 +163,15 @@ def generate_report(
 ) -> str:
     """
     توليد تقرير فني كامل من القالب.
-    
+
     Args:
         site_name: اسم الموقع
         coordinates: (lat, lon)
         drastic_index: مؤشر DRASTIC
-        ratings: قاموس التقييمات الفردية {"D": int, ...}
-        values: قاموس القيم المدخلة {"depth": float, ...}
+        ratings: قاموس التقييمات الفردية
+        values: قاموس القيم المدخلة
         travel_time_years: زمن وصول الملوثات (اختياري)
-    
+
     Returns:
         str: نص التقرير الكامل
     """
@@ -198,7 +198,7 @@ def generate_report(
     lines.append("-" * 68)
     lines.append(f"اسم الموقع: {site_name}")
     lines.append(f"الإحداثيات: {coordinates[0]:.4f}, {coordinates[1]:.4f}")
-    lines.append(f"نظام الإحداثيات: WGS84")
+    lines.append("نظام الإحداثيات: WGS84")
     lines.append("")
     lines.append("-" * 68)
     lines.append("القسم 2: نتائج التقييم — نموذج DRASTIC")
@@ -216,9 +216,11 @@ def generate_report(
     lines.append(f"  I — المنطقة غير المشبعة: {values.get('vadose', 'N/A')}   → التقييم: {ratings.get('I', 'N/A')}")
     lines.append(f"  C — النفاذية: {values.get('conductivity', 'N/A')} م/يوم   → التقييم: {ratings.get('C', 'N/A')}")
     lines.append("")
+
     if travel_time_years is not None:
         lines.append(f"زمن وصول الملوثات (تقديري): {travel_time_years:.2f} سنة")
         lines.append("")
+
     lines.append("-" * 68)
     lines.append("القسم 3: التقييم الهيدروجيولوجي")
     lines.append("-" * 68)
@@ -227,8 +229,10 @@ def generate_report(
     lines.append("-" * 68)
     lines.append("القسم 4: التوصيات الهندسية")
     lines.append("-" * 68)
+
     for i, rec in enumerate(content["recommendations"], 1):
         lines.append(f"{i}. {rec}")
+
     lines.append("")
     lines.append("-" * 68)
     lines.append("القسم 5: الامتثال التشريعي")
