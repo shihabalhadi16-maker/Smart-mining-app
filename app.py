@@ -183,7 +183,7 @@ with tab1:
         st.markdown("---")
         st.markdown("<h4 class='section-header'>🧪 الملوثات والمسافات الميدانية</h4>", unsafe_allow_html=True)
         river_dist = st.slider("البعد عن أقرب مجرى مائي / وادي (متر):", 50, 5000, 300, step=50)
-        cyanide = st.slider("تركيز السيانide (Cyanide mg/L):", 0.01, 2.00, 0.45, step=0.01)
+        cyanide = st.slider("تركيز السيانيد (Cyanide mg/L):", 0.01, 2.00, 0.45, step=0.01)
 
         # ==========================================
         # حساب معادلة DRASTIC Index القياسية
@@ -250,7 +250,7 @@ with tab1:
         st_folium(m, width="100%", height=380, key="sat_map")
 
         # ==========================================
-        # محرك الذكاء الاصطناعي السريع (فوري عبر Streaming)
+        # محرك الذكاء الاصطناعي الحديث (Gemini 3.x Series)
         # ==========================================
         st.markdown("---")
         st.markdown("<h4 class='section-header'>⚡ التقرير البيئي المعتمد (الذكاء الاصطناعي - Gemini)</h4>", unsafe_allow_html=True)
@@ -260,14 +260,31 @@ with tab1:
                 try:
                     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
                     
-                    model = genai.GenerativeModel(
-                        'gemini-2.5-flash',
-                        generation_config={
-                            "temperature": 0.2,
-                            "max_output_tokens": 400
-                        }
-                    )
+                    # قائمة بنماذج Gemini الأحدث لمنع أخطاء الانقطاع مستقبلاً
+                    candidate_models = [
+                        'gemini-3.8-flash',
+                        'gemini-3.6-flash',
+                        'gemini-1.5-flash',
+                        'gemini-pro'
+                    ]
                     
+                    model = None
+                    for model_name in candidate_models:
+                        try:
+                            model = genai.GenerativeModel(
+                                model_name,
+                                generation_config={
+                                    "temperature": 0.2,
+                                    "max_output_tokens": 400
+                                }
+                            )
+                            break
+                        except Exception:
+                            continue
+
+                    if model is None:
+                        model = genai.GenerativeModel('gemini-3.8-flash')
+
                     prompt = f"""
                     أنت خبير هيدروجيولوجي بجامعة الخرطوم. اكتب تقريراً هندسياً موجزاً لموقع {st.session_state.selected_site_name} بناءً على نموذج DRASTIC المعياري لـ US EPA:
                     المعطيات: 
