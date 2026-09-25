@@ -1,161 +1,151 @@
-"""
-Report Templates Module — قوالب التقارير الثابتة
-"""
+"""Templates Module - قوالب التقارير الثابتة"""
 import datetime
 
 TEMPLATE_METADATA = {
-    "low": {"id": "TMP-LOW-001", "version": "1.0", "level": "منخفض", "range": "23-99"},
-    "moderate": {"id": "TMP-MOD-001", "version": "1.0", "level": "متوسط", "range": "100-139"},
-    "high": {"id": "TMP-HIGH-001", "version": "1.0", "level": "مرتفع", "range": "140-179"},
-    "very_high": {"id": "TMP-VHIGH-001", "version": "1.0", "level": "مرتفع جداً", "range": "180-230"},
+    "low": {"id": "TMP-LOW", "level": "منخفض", "range": "23-99"},
+    "moderate": {"id": "TMP-MOD", "level": "متوسط", "range": "100-139"},
+    "high": {"id": "TMP-HIGH", "level": "مرتفع", "range": "140-179"},
+    "very_high": {"id": "TMP-VHIGH", "level": "مرتفع جداً", "range": "180-230"},
 }
 
-CONTENT_LOW = {
-    "hydro_assessment": "الموقع يُظهر مستوى خطورة منخفض. الطبقات الجيولوجية توفر حماية جيدة.",
-    "recommendations": [
-        "الاستمرار في النشاط مع المراقبة السنوية.",
-        "فحص سنوي لجودة المياه الجوفية.",
-        "توثيق أي تغيير.",
-        "التزام العمال بـ PPE.",
-        "الإبلاغ عن أي حادث.",
-    ],
+TEXT = {
+    "low": {
+        "assessment": "الموقع يُظهر خطورة منخفضة. الطبقات الجيولوجية توفر حماية جيدة.",
+        "recs": [
+            "الاستمرار مع المراقبة السنوية",
+            "فحص سنوي لجودة المياه",
+            "توثيق أي تغيير",
+            "التزام العمال بـ PPE",
+            "الإبلاغ عن أي حادث",
+        ],
+    },
+    "moderate": {
+        "assessment": "الموقع يُظهر خطورة متوسطة. حماية جزئية.",
+        "recs": [
+            "مراقبة ربع سنوية",
+            "تركيب آبار مراقبة (2-3)",
+            "تحسين إدارة المخلفات",
+            "معالجة السيانيد",
+            "خطة طوارئ",
+            "تدريب العمال",
+        ],
+    },
+    "high": {
+        "assessment": "الموقع يُظهر خطورة مرتفعة. حماية غير كافية.",
+        "recs": [
+            "تركيب HDPE Liner",
+            "وحدة معالجة السيانيد",
+            "4-6 آبار مراقبة",
+            "مراقبة شهرية",
+            "دراسة EIA",
+            "تقليل السيانيد",
+            "إبلاغ المجلس الأعلى للبيئة",
+        ],
+    },
+    "very_high": {
+        "assessment": "خطورة مرتفعة جداً. خطر داهم.",
+        "recs": [
+            "إيقاف النشاط مؤقتاً",
+            "HDPE + معالجة فورية",
+            "8-10 آبار مراقبة",
+            "مراقبة أسبوعية",
+            "إخلاء المناطق إذا لزم",
+            "تقرير طارئ",
+            "مصادر مياه بديلة",
+            "خطة إعادة تأهيل",
+        ],
+    },
 }
 
-CONTENT_MODERATE = {
-    "hydro_assessment": "الموقع يُظهر مستوى خطورة متوسط. حماية جزئية.",
-    "recommendations": [
-        "مراقبة ربع سنوية.",
-        "تركيب آبار مراقبة (2-3).",
-        "تحسين إدارة المخلفات.",
-        "معالجة السيانيد.",
-        "خطة طوارئ.",
-        "تدريب العمال.",
-    ],
-}
 
-CONTENT_HIGH = {
-    "hydro_assessment": "الموقع يُظهر مستوى خطورة مرتفع. حماية غير كافية.",
-    "recommendations": [
-        "تركيب HDPE Liner فوراً.",
-        "وحدة معالجة السيانيد.",
-        "4-6 آبار مراقبة.",
-        "مراقبة شهرية.",
-        "EIA شاملة.",
-        "تقليل السيانيد.",
-        "إبلاغ المجلس الأعلى للبيئة.",
-    ],
-}
-
-CONTENT_VERY_HIGH = {
-    "hydro_assessment": "خطورة مرتفعة جداً. خطر داهم.",
-    "recommendations": [
-        "إيقاف النشاط مؤقتاً.",
-        "HDPE + معالجة فورية.",
-        "8-10 آبار مراقبة.",
-        "مراقبة أسبوعية.",
-        "إخلاء المناطق إذا لزم.",
-        "تقرير طارئ للمجلس.",
-        "مصادر مياه بديلة.",
-        "خطة إعادة تأهيل.",
-    ],
-}
-
-
-def get_template_key(drastic_index):
-    if drastic_index >= 180: return "very_high"
-    if drastic_index >= 140: return "high"
-    if drastic_index >= 100: return "moderate"
+def get_template_key(index):
+    if index >= 180: return "very_high"
+    if index >= 140: return "high"
+    if index >= 100: return "moderate"
     return "low"
-
-
-def get_template_content(key):
-    m = {"low": CONTENT_LOW, "moderate": CONTENT_MODERATE,
-         "high": CONTENT_HIGH, "very_high": CONTENT_VERY_HIGH}
-    return m.get(key, CONTENT_LOW)
 
 
 def generate_report(site_name, coordinates, drastic_index, ratings, values, travel_time_years=None):
     key = get_template_key(drastic_index)
     meta = TEMPLATE_METADATA[key]
-    content = get_template_content(key)
+    text = TEXT[key]
     today = datetime.date.today()
-    ref = f"GRAS-ENV-{today.strftime('%Y%m%d')}-{key.upper()[:3]}"
     
-    L = []
-    L.append("=" * 68)
-    L.append("تقرير تقييم هشاشة المياه الجوفية")
-    L.append("جامعة الخرطوم — كلية الهندسة")
-    L.append("=" * 68)
-    L.append("")
-    L.append(f"الرقم المرجعي: {ref}")
-    L.append(f"التاريخ: {today.strftime('%Y-%m-%d')}")
-    L.append(f"القالب: {meta['id']} — الإصدار {meta['version']}")
-    L.append("")
-    L.append("-" * 68)
-    L.append("القسم 1: بيانات الموقع")
-    L.append("-" * 68)
-    L.append(f"اسم الموقع: {site_name}")
-    L.append(f"الإحداثيات: {coordinates[0]:.4f}, {coordinates[1]:.4f}")
-    L.append("")
-    L.append("-" * 68)
-    L.append("القسم 2: نتائج DRASTIC")
-    L.append("-" * 68)
-    L.append(f"مؤشر DRASTIC: {drastic_index} / 230")
-    L.append(f"مستوى الخطورة: {meta['level']}")
-    L.append("")
-    L.append(f"  D — عمق المياه: {values.get('depth', 'N/A')} م → {ratings.get('D', 'N/A')}")
-    L.append(f"  R — التغذية: {values.get('recharge', 'N/A')} مم/سنة → {ratings.get('R', 'N/A')}")
-    L.append(f"  A — الخزان: {values.get('aquifer', 'N/A')} → {ratings.get('A', 'N/A')}")
-    L.append(f"  S — التربة: {values.get('soil', 'N/A')} → {ratings.get('S', 'N/A')}")
-    L.append(f"  T — الانحدار: {values.get('slope', 'N/A')}% → {ratings.get('T', 'N/A')}")
-    L.append(f"  I — غير المشبعة: {values.get('vadose', 'N/A')} → {ratings.get('I', 'N/A')}")
-    L.append(f"  C — النفاذية: {values.get('conductivity', 'N/A')} م/يوم → {ratings.get('C', 'N/A')}")
-    L.append("")
+    lines = []
+    lines.append("=" * 60)
+    lines.append("تقرير تقييم هشاشة المياه الجوفية")
+    lines.append("جامعة الخرطوم - كلية الهندسة")
+    lines.append("=" * 60)
+    lines.append("")
+    lines.append(f"الرقم المرجعي: GRAS-{today.strftime('%Y%m%d')}-{key.upper()[:3]}")
+    lines.append(f"التاريخ: {today.strftime('%Y-%m-%d')}")
+    lines.append(f"القالب: {meta['id']}")
+    lines.append("")
+    lines.append("-" * 60)
+    lines.append("بيانات الموقع")
+    lines.append("-" * 60)
+    lines.append(f"الاسم: {site_name}")
+    lines.append(f"الإحداثيات: {coordinates[0]:.4f}, {coordinates[1]:.4f}")
+    lines.append("")
+    lines.append("-" * 60)
+    lines.append("نتائج DRASTIC")
+    lines.append("-" * 60)
+    lines.append(f"المؤشر: {drastic_index} / 230")
+    lines.append(f"المستوى: {meta['level']} ({meta['range']})")
+    lines.append("")
+    lines.append(f"D - العمق: {values.get('depth', 'N/A')} م → {ratings.get('D', 'N/A')}")
+    lines.append(f"R - التغذية: {values.get('recharge', 'N/A')} مم → {ratings.get('R', 'N/A')}")
+    lines.append(f"A - الخزان: {values.get('aquifer', 'N/A')} → {ratings.get('A', 'N/A')}")
+    lines.append(f"S - التربة: {values.get('soil', 'N/A')} → {ratings.get('S', 'N/A')}")
+    lines.append(f"T - الانحدار: {values.get('slope', 'N/A')}% → {ratings.get('T', 'N/A')}")
+    lines.append(f"I - غير المشبعة: {values.get('vadose', 'N/A')} → {ratings.get('I', 'N/A')}")
+    lines.append(f"C - النفاذية: {values.get('conductivity', 'N/A')} → {ratings.get('C', 'N/A')}")
+    lines.append("")
     
-    if travel_time_years is not None:
-        L.append(f"زمن وصول الملوثات: {travel_time_years:.2f} سنة")
-        L.append("")
+    if travel_time_years:
+        lines.append(f"زمن وصول الملوثات: {travel_time_years:.2f} سنة")
+        lines.append("")
     
-    L.append("-" * 68)
-    L.append("القسم 3: التقييم الهيدروجيولوجي")
-    L.append("-" * 68)
-    L.append(content["hydro_assessment"])
-    L.append("")
-    L.append("-" * 68)
-    L.append("القسم 4: التوصيات")
-    L.append("-" * 68)
-    for i, rec in enumerate(content["recommendations"], 1):
-        L.append(f"{i}. {rec}")
-    L.append("")
-    L.append("-" * 68)
-    L.append("القسم 5: الامتثال التشريعي")
-    L.append("-" * 68)
-    L.append("- المادة (26) من قانون التعدين 2015.")
-    L.append("- قانون حماية البيئة 2001 (رقم 18).")
-    L.append("- لائحة التعدين التقليدي 2016.")
-    L.append("- WHO (2022) لجودة المياه.")
-    L.append("")
-    L.append("-" * 68)
-    L.append("القسم 6: المراجع")
-    L.append("-" * 68)
-    L.append("1. Aller et al. (1987). EPA/600/2-87/035.")
-    L.append("2. Fetter (2001). Applied Hydrogeology, 4th ed.")
-    L.append("3. US EPA (1993). EPA/600/R-93/174.")
-    L.append("4. WHO (2022). Guidelines for Drinking-water Quality.")
-    L.append("")
-    L.append("-" * 68)
-    L.append("القسم 7: المراجعة والاعتماد")
-    L.append("-" * 68)
-    L.append("⚠️ هذا التقرير مُولَّد آلياً. لا يُعتمد رسمياً إلا بعد مراجعة")
-    L.append("   وتوقيع مهندس مختص.")
-    L.append("")
-    L.append("اسم المهندس المراجع: _____________________________")
-    L.append("الرقم الوظيفي: _____________________________")
-    L.append("التاريخ: ___ / ___ / ______")
-    L.append("التوقيع: _____________________________")
-    L.append("")
-    L.append("=" * 68)
-    L.append("© 2026 جامعة الخرطوم — مكتب الاستشارات الهندسية")
-    L.append("=" * 68)
+    lines.append("-" * 60)
+    lines.append("التقييم الهيدروجيولوجي")
+    lines.append("-" * 60)
+    lines.append(text["assessment"])
+    lines.append("")
+    lines.append("-" * 60)
+    lines.append("التوصيات")
+    lines.append("-" * 60)
+    for i, rec in enumerate(text["recs"], 1):
+        lines.append(f"{i}. {rec}")
+    lines.append("")
+    lines.append("-" * 60)
+    lines.append("الامتثال التشريعي")
+    lines.append("-" * 60)
+    lines.append("- المادة (26) قانون التعدين 2015")
+    lines.append("- قانون حماية البيئة 2001 (رقم 18)")
+    lines.append("- لائحة التعدين التقليدي 2016")
+    lines.append("- WHO (2022)")
+    lines.append("")
+    lines.append("-" * 60)
+    lines.append("المراجع")
+    lines.append("-" * 60)
+    lines.append("1. Aller et al. (1987). EPA/600/2-87/035")
+    lines.append("2. Fetter (2001). Applied Hydrogeology, 4th ed.")
+    lines.append("3. US EPA (1993). EPA/600/R-93/174")
+    lines.append("4. WHO (2022). Guidelines for Drinking-water Quality")
+    lines.append("")
+    lines.append("-" * 60)
+    lines.append("المراجعة والاعتماد")
+    lines.append("-" * 60)
+    lines.append("هذا التقرير مُولَّد آلياً. لا يُعتمد رسمياً")
+    lines.append("إلا بعد مراجعة وتوقيع مهندس مختص.")
+    lines.append("")
+    lines.append("اسم المهندس: _______________________")
+    lines.append("الرقم الوظيفي: _______________________")
+    lines.append("التاريخ: ___/___/______")
+    lines.append("التوقيع: _______________________")
+    lines.append("")
+    lines.append("=" * 60)
+    lines.append("© 2026 جامعة الخرطوم")
+    lines.append("=" * 60)
     
-    return "\n".join(L)
+    return "\n".join(lines)
