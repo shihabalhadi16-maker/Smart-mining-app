@@ -5,6 +5,7 @@ from streamlit_folium import st_folium
 from folium.plugins import HeatMap
 import google.generativeai as genai
 from geopy.geocoders import Nominatim
+import datetime
 
 # ==========================================
 # 1. إعدادات الصفحة والتنسيق البصري المؤسسي
@@ -38,6 +39,14 @@ st.markdown("""
         padding-bottom: 5px;
         margin-bottom: 15px;
         font-weight: bold;
+    }
+    .report-box {
+        background-color: #ffffff;
+        border-right: 4px solid #5c2c16;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+        margin-top: 15px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -89,13 +98,13 @@ def on_preset_change():
 # 4. التبويبات الرئيسية
 # ==========================================
 tab1, tab2, tab3 = st.tabs([
-    "📍 التقييم الفردي ونموذج DRASTIC الكامل",
+    "📍 التقييم الفردي وإصدار التقارير",
     "📊 التقييم الجماعي والخرائط الحرارية (Bulk Upload)",
     "🛡️ محاكاة الحلول الهندسية"
 ])
 
 # ==========================================
-# TAB 1: التقييم الفردي + نموذج DRASTIC القياسي + AI
+# TAB 1: التقييم الفردي + نموذج DRASTIC + AI + تصدير التقرير
 # ==========================================
 with tab1:
     col_input, col_display = st.columns([1, 2])
@@ -123,7 +132,7 @@ with tab1:
                         break
                 
                 if not found_in_preset:
-                    geolocator = Nominatim(user_agent="uofk_smart_mining_v8_drastic")
+                    geolocator = Nominatim(user_agent="uofk_smart_mining_v9_export")
                     try:
                         q = f"{query_str}, Sudan" if "sudan" not in query_str.lower() else query_str
                         loc = geolocator.geocode(q, timeout=8)
@@ -191,7 +200,6 @@ with tab1:
         w_D, w_R, w_A, w_S, w_T, w_I, w_C = 5, 4, 3, 2, 1, 5, 3
         drastic_index = (r_D * w_D) + (r_R * w_R) + (r_A * w_A) + (r_S * w_S) + (r_T * w_T) + (r_I * w_I) + (r_C * w_C)
         
-        # تحويل المؤشر إلى نسبة مئوية وزمن وصول متوقع
         risk_score = round((drastic_index / 230) * 100, 1)
         perm_factor = 0.95 if "رملية" in soil else (0.50 if "سلت" in soil else 0.10)
         years = round((depth * (1.1 - perm_factor)) / 1.3, 1)
@@ -211,7 +219,7 @@ with tab1:
             st.metric("تركيز السيانيد", f"{cyanide} mg/L", delta=status, delta_color="inverse" if cyanide > 0.05 else "normal")
 
         # ==========================================
-        # خريطة الأقمار الصناعية عالية الوضوح (Satellite Map)
+        # خريطة الأقمار الصناعية عالية الوضوح
         # ==========================================
         st.markdown("##### 🛰️ خريطة الأقمار الصناعية ونطاق التأثير الهيدروجيولوجي")
         
@@ -250,72 +258,103 @@ with tab1:
         st_folium(m, width="100%", height=380, key="sat_map")
 
         # ==========================================
-        # محرك الذكاء الاصطناعي الحديث (Gemini 3.x Series)
+        # محرك الذكاء الاصطناعي وتصدير الملفات
         # ==========================================
         st.markdown("---")
-        st.markdown("<h4 class='section-header'>⚡ التقرير البيئي المعتمد (الذكاء الاصطناعي - Gemini)</h4>", unsafe_allow_html=True)
+        st.markdown("<h4 class='section-header'>⚡ التقرير البيئي المعتمد وتصدير المستندات</h4>", unsafe_allow_html=True)
         
-        if st.button("✨ إصدار تقرير هيدروجيولوجي معتمد بناءً على DRASTIC", type="primary", use_container_width=True):
-            if "GEMINI_API_KEY" in st.secrets:
-                try:
-                    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-                    
-                    # قائمة بنماذج Gemini الأحدث لمنع أخطاء الانقطاع مستقبلاً
-                    candidate_models = [
-                        'gemini-3.8-flash',
-                        'gemini-3.6-flash',
-                        'gemini-1.5-flash',
-                        'gemini-pro'
-                    ]
-                    
-                    model = None
-                    for model_name in candidate_models:
-                        try:
-                            model = genai.GenerativeModel(
-                                model_name,
-                                generation_config={
-                                    "temperature": 0.2,
-                                    "max_output_tokens": 400
-                                }
-                            )
-                            break
-                        except Exception:
-                            continue
+        col_btn1, col_btn2 = st.columns([2, 1])
+        
+        # تجهيز نص التقرير المعتمد للتنزيل
+        today_date = datetime.date.today().strftime("%Y-%m-%d")
+        official_report_text = f"""====================================================================
+جامعة الخرطوم — كلية الهندسة — قسم هندسة التعدين
+وحدة التقييم والنمذجة البيئية الهيدروجيولوجية
+====================================================================
+تاريخ التقرير: {today_date}
+اسم الموقع المستهدف: {st.session_state.selected_site_name}
+الإحداثيات الجغرافية: Latitude {lat_val:.4f}, Longitude {lon_val:.4f}
+معيار النمذجة: US EPA DRASTIC Standard Model
+--------------------------------------------------------------------
 
-                    if model is None:
-                        model = genai.GenerativeModel('gemini-3.8-flash')
+1. نتائج النمذجة الهيدروجيولوجية والتقييم المخاطري:
+----------------------------------------------------
+* مؤشر DRASTIC الإجمالي: {drastic_index} / 230
+* نسبة الخطر البيئي التراكمية: {risk_score}%
+* زمن وصول التسرب للمياه الجوفية: {years} سنة
+* تركيز السيانيد الميداني: {cyanide} mg/L (الحد المسموح: 0.05 mg/L)
+* عمق المياه الجوفية (D): {depth} متر
+* نوع التربة السطحية (S): {soil}
+* البعد عن أقرب مجرى مائي/وادي: {river_dist} متر
 
-                    prompt = f"""
-                    أنت خبير هيدروجيولوجي بجامعة الخرطوم. اكتب تقريراً هندسياً موجزاً لموقع {st.session_state.selected_site_name} بناءً على نموذج DRASTIC المعياري لـ US EPA:
-                    المعطيات: 
-                    - مؤشر DRASTIC الإجمالي: {drastic_index} من 230 (نسبة الخطر: {risk_score}%)
-                    - عمق المياه (D): {depth}m (التقييم: {r_D}/10)، التغذية (R): {recharge}، التربة (S): {soil}
-                    - البعد عن المجرى المائي: {river_dist}m، تركيز السيانيد: {cyanide} mg/L.
-                    
-                    صاغ التقرير في 3 نقاط مركزة:
-                    1. **التقييم الهيدروجيولوجي لمؤشر DRASTIC:** (تفسير الرقم وعلاقته بالطبقات)
-                    2. **تقييم أثر السيانيد وتسرب المياه:** (موجز)
-                    3. **توصيتين هندسيتين واضحتين:** (بناءً على اشتراطات الحماية)
-                    """
-                    
-                    st.markdown("##### 📄 التقرير الفني المباشر:")
-                    
-                    response = model.generate_content(prompt, stream=True)
-                    
-                    def stream_generator():
-                        for chunk in response:
-                            if chunk.text:
-                                yield chunk.text
+2. التوصيات الهندسية والتدابير الوقائية العاجلة:
+----------------------------------------------------
+1. الإلزام بتركيب بطانات عازلة عالية الكثافة (HDPE Liner 2mm) في كافة أحواض المعالجة.
+2. حفر آبار مراقبة اختبارية (Monitoring Wells) على مسافات متدرجة للتدفق الجوفي.
+3. تركيبة وحدات تدمير وتحييد السيانيد الكيميائية قبل الصرف النهائي.
 
-                    st.write_stream(stream_generator)
+====================================================================
+صُدر هذا التقرير هندسياً عبر منصة النمذجة البيئية الذكية — جامعة الخرطوم
+====================================================================
+"""
 
-                except Exception as e:
-                    if "429" in str(e):
-                        st.warning("⏳ تم الوصول للحد الأقصى للطلبات المجانية في الدقيقة. يرجى الانتظار دقيقة واحدة ثم الضغط على الزر مجدداً.")
-                    else:
-                        st.error(f"حدث خطأ أثناء الاتصال بالذكاء الاصطناعي: {e}")
-            else:
-                st.warning("⚠️ يرجى إضافة مفتاح GEMINI_API_KEY في صفحة Secrets على Streamlit Cloud.")
+        with col_btn1:
+            if st.button("✨ إصدار تقرير هيدروجيولوجي معتمد (Gemini AI)", type="primary", use_container_width=True):
+                if "GEMINI_API_KEY" in st.secrets:
+                    try:
+                        genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+                        
+                        candidate_models = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-1.5-flash', 'gemini-pro']
+                        model = None
+                        for model_name in candidate_models:
+                            try:
+                                model = genai.GenerativeModel(model_name, generation_config={"temperature": 0.2, "max_output_tokens": 400})
+                                break
+                            except Exception:
+                                continue
+
+                        if model is None:
+                            model = genai.GenerativeModel('gemini-3.8-flash')
+
+                        prompt = f"""
+                        أنت خبير هيدروجيولوجي بجامعة الخرطوم. اكتب تقريراً هندسياً موجزاً لموقع {st.session_state.selected_site_name} بناءً على نموذج DRASTIC المعياري لـ US EPA:
+                        المعطيات: 
+                        - مؤشر DRASTIC الإجمالي: {drastic_index} من 230 (نسبة الخطر: {risk_score}%)
+                        - عمق المياه (D): {depth}m، التغذية (R): {recharge}، التربة (S): {soil}
+                        - البعد عن المجرى المائي: {river_dist}m، تركيز السيانيد: {cyanide} mg/L.
+                        
+                        صاغ التقرير في 3 نقاط مركزة:
+                        1. **التقييم الهيدروجيولوجي لمؤشر DRASTIC:**
+                        2. **تقييم أثر السيانيد وتسرب المياه:**
+                        3. **توصيتين هندسيتين واضحتين:**
+                        """
+                        
+                        st.markdown("##### 📄 التقرير الفني المباشر:")
+                        response = model.generate_content(prompt, stream=True)
+                        
+                        def stream_generator():
+                            for chunk in response:
+                                if chunk.text:
+                                    yield chunk.text
+
+                        st.write_stream(stream_generator)
+
+                    except Exception as e:
+                        if "429" in str(e):
+                            st.warning("⏳ تم الوصول للحد الأقصى للطلبات المجانية. يرجى الانتظار دقيقة واحدة ثم الضغط مجدداً.")
+                        else:
+                            st.error(f"حدث خطأ أثناء الاتصال بالذكاء الاصطناعي: {e}")
+                else:
+                    st.warning("⚠️ يرجى إضافة مفتاح GEMINI_API_KEY في صفحة Secrets على Streamlit Cloud.")
+
+        with col_btn2:
+            st.download_button(
+                label="📥 تصدير التقرير (DOC/TXT)",
+                data=official_report_text,
+                file_name=f"DRASTIC_Report_{st.session_state.selected_site_name}.txt",
+                mime="text/plain",
+                use_container_width=True
+            )
 
 # ==========================================
 # TAB 2: التقييم الجماعي والخرائط الحرارية
@@ -380,9 +419,9 @@ with tab3:
         
         mitigated_drastic = drastic_index
         if liner:
-            mitigated_drastic *= 0.40  # خفض نفاذية المنطقة غير المشبعة والتربة
+            mitigated_drastic *= 0.40  
         if treatment:
-            mitigated_drastic *= 0.60  # تقليل تركيز الملوثات
+            mitigated_drastic *= 0.60  
             
         mitigated_drastic = round(mitigated_drastic, 1)
         mitigated_score = round((mitigated_drastic / 230) * 100, 1)
