@@ -1,530 +1,582 @@
-import streamlit as st
-import pandas as pd
-import folium
-from streamlit_folium import st_folium
-from folium.plugins import HeatMap
-from geopy.geocoders import Nominatim
-import datetime
-
-# ==========================================
-# الجزء 1: نموذج DRASTIC (من drastic_model.py)
-# ==========================================
-MAX_DRASTIC = 226.0
-WEIGHTS = {"D": 5, "R": 4, "A": 3, "S": 2, "T": 1, "I": 5, "C": 3}
-WHO_CYANIDE_LIMIT = 0.07
-
-
-def rating_depth(depth_m):
-    if depth_m < 1.5: return 10
-    if depth_m < 4.6: return 9
-    if depth_m < 9.1: return 7
-    if depth_m < 15.2: return 5
-    if depth_m < 22.9: return 3
-    if depth_m < 30.5: return 2
-    return 1
-
-
-def rating_recharge(recharge_mm):
-    if recharge_mm < 51: return 1
-    if recharge_mm < 102: return 3
-    if recharge_mm < 178: return 6
-    if recharge_mm < 254: return 8
-    return 9
-
-
-def rating_aquifer(aquifer_type):
-    mapping = {
-        "massive_shale": 1, "metamorphic": 2, "igneous": 2,
-        "weathered_metamorphic": 3, "glacial_till": 4,
-        "bedded_sandstone": 6, "limestone": 6,
-        "sand_and_gravel": 8, "basalt": 9, "karst_limestone": 10
-    }
-    return mapping.get(aquifer_type, 6)
-
-
-def rating_soil(soil_type):
-    mapping = {
-        "thin_clay": 1, "clay": 3, "silty_clay": 4, "sandy_clay": 5,
-        "silt": 6, "sandy_loam": 7, "sand": 9, "gravel": 10, "thin_gravel": 10
-    }
-    return mapping.get(soil_type, 5)
-
-
-def rating_topography(slope_percent):
-    if slope_percent < 2: return 10
-    if slope_percent < 6: return 9
-    if slope_percent < 12: return 5
-    if slope_percent < 18: return 3
-    return 1
-
-
-def rating_vadose(vadose_type):
-    mapping = {
-        "confining_clay": 1, "silty_clay": 3, "shale": 2,
-        "sandy_silt": 5, "sandstone": 6, "limestone": 6,
-        "sand_gravel": 8, "karst": 10
-    }
-    return mapping.get(vadose_type, 6)
-
-
-def rating_conductivity(k_m_per_day):
-    if k_m_per_day < 0.04: return 1
-    if k_m_per_day < 0.4: return 2
-    if k_m_per_day < 4: return 4
-    if k_m_per_day < 12: return 6
-    if k_m_per_day < 28: return 8
-    return 10
-
-
-def calculate_drastic_index(ratings):
-    return round(sum(ratings[k] * WEIGHTS[k] for k in WEIGHTS), 1)
-
-
-def drastic_to_percentage(index):
-    return round((index / MAX_DRASTIC) * 100, 1)
-
-
-def classify_risk(index):
-    if index < 100: return ("🟢 منخفض", "low")
-    if index < 140: return ("🟡 متوسط", "medium")
-    if index < 180: return ("🟠 مرتفع", "high")
-    return ("🔴 مرتفع جداً", "very_high")
-
-
-def travel_time_darcy(depth_m, k_m_per_day, hydraulic_gradient=0.01, porosity=0.25):
-    if k_m_per_day <= 0 or porosity <= 0:
-        return float('inf')
-    v = (k_m_per_day * hydraulic_gradient) / porosity
-    days = depth_m / v
-    return round(days / 365.25, 2)
-
-
-def apply_mitigation(ratings, hdpe_liner=False, cyanide_treatment=False,
-                     clay_cap=False, drainage=False):
-    r = ratings.copy()
-    if hdpe_liner:
-        r["I"] = max(1, r["I"] - 4)
-        r["C"] = max(1, r["C"] - 4)
-    if clay_cap:
-        r["S"] = max(1, r["S"] - 5)
-        r["I"] = max(1, r["I"] - 2)
-    if drainage:
-        r["T"] = max(1, r["T"] - 3)
-    return r
-
-
-# ==========================================
-# الجزء 2: مساعد AI (من ai_helper.py)
-# ==========================================
-CANDIDATE_MODELS = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
-
-
-def _get_api_key():
-    try:
-        return st.secrets["GEMINI_API_KEY"]
-    except (KeyError, FileNotFoundError):
-        return None
-
-
-def generate_report(prompt, session_key, spinner_msg="جاري التوليد..."):
-    api_key = _get_api_key()
-    if not api_key:
-        st.warning("⚠️ لم يتم العثور على GEMINI_API_KEY في Secrets.")
-        return False
-
-    try:
-        from google import genai
-    except ImportError:
-        st.error("مكتبة `google-genai` غير مثبتة. أضفها في requirements.txt")
-        return False
-
-    client = genai.Client(api_key=api_key)
-    errors = []
-
-    with st.spinner(spinner_msg):
-        for model_name in CANDIDATE_MODELS:
-            try:
-                response = client.models.generate_content(
-                    model=model_name, contents=prompt,
-                )
-                st.session_state[session_key] = response.text
-                st.success(f"✅ تم التوليد باستخدام `{model_name}`")
-                return True
-            except Exception as e:
-                errors.append(f"{model_name}: {str(e)[:120]}")
-                continue
-
-    st.error("فشل جميع النماذج. التفاصيل:\n" + "\n".join(errors))
-    return False
-
-
-# ==========================================
-# الجزء 3: التطبيق الرئيسي (من app.py)
-# ==========================================
-st.set_page_config(
-    page_title="نظام DRASTIC لتقييم التعدين",
-    page_icon="⛏️", layout="wide"
-)
-
-st.markdown("""
-<style>
-    .stApp { background-color: #f8f9fa; }
-    div[data-testid="stMetric"] {
-        background-color: #ffffff !important;
-        border: 1px solid #d4af37;
-        border-radius: 10px;
-        padding: 12px;
-    }
-    .section-header {
-        color: #5c2c16;
-        border-bottom: 2px solid #c19a6b;
-        padding-bottom: 5px;
-        margin-bottom: 15px;
-        font-weight: bold;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-col_logo, col_title = st.columns([1, 6])
-with col_logo:
-    st.image(
-        "https://upload.wikimedia.org/wikipedia/en/thumb/8/82/University_of_Khartoum_logo.png/220px-University_of_Khartoum_logo.png",
-        width=90
-    )
-with col_title:
-    st.markdown("<h2 style='color: #5c2c16; margin-bottom:0;'>جامعة الخرطوم — كلية الهندسة</h2>",
-                unsafe_allow_html=True)
-    st.markdown(
-        f"<h4 style='color: #c19a6b; margin-top:0;'>نظام التقييم البيئي (DRASTIC — US EPA | MAX={int(MAX_DRASTIC)})</h4>",
-        unsafe_allow_html=True
-    )
-
-st.markdown("---")
-
-preset_locations = {
-    "سوق طواحين أبو حمد (نهر النيل)": {"coords": (19.5333, 33.3167), "depth": 15.0, "cyanide": 0.45, "recharge_mm": 60, "slope": 4, "k_m_day": 2.0},
-    "عطبرة - النيل الكبرى": {"coords": (17.6833, 33.9833), "depth": 8.0, "cyanide": 0.80, "recharge_mm": 80, "slope": 3, "k_m_day": 5.0},
-    "سوق العبيدية": {"coords": (18.1234, 33.9876), "depth": 10.0, "cyanide": 0.65, "recharge_mm": 70, "slope": 5, "k_m_day": 3.5},
-    "مناجم بربر": {"coords": (18.0167, 33.9833), "depth": 12.0, "cyanide": 0.30, "recharge_mm": 55, "slope": 6, "k_m_day": 2.5},
-    "وادي العشاري / قبقبة": {"coords": (21.8000, 34.5000), "depth": 45.0, "cyanide": 0.10, "recharge_mm": 20, "slope": 8, "k_m_day": 0.5},
-    "مناجم أرياب (البحر الأحمر)": {"coords": (18.3333, 36.3500), "depth": 40.0, "cyanide": 0.05, "recharge_mm": 30, "slope": 10, "k_m_day": 0.3},
-    "تلودي / الليري": {"coords": (10.6333, 30.1167), "depth": 18.0, "cyanide": 0.70, "recharge_mm": 90, "slope": 7, "k_m_day": 4.0},
-    "كادوقلي": {"coords": (11.0167, 29.7167), "depth": 20.0, "cyanide": 0.20, "recharge_mm": 75, "slope": 5, "k_m_day": 2.0}
-}
-
-defaults = {
-    "selected_site_name": "سوق طواحين أبو حمد (نهر النيل)",
-    "lat": 19.5333, "lon": 33.3167,
-    "depth": 15.0, "cyanide": 0.45,
-    "recharge_mm": 60, "slope": 4, "k_m_day": 2.0,
-    "ai_report_text": "", "bulk_ai_report": "",
-    "flash_message": None,
-}
-for k, v in defaults.items():
-    if k not in st.session_state:
-        st.session_state[k] = v
-
-if st.session_state.flash_message:
-    st.success(st.session_state.flash_message)
-    st.session_state.flash_message = None
-
-
-def on_preset_change():
-    site = st.session_state.preset_select
-    data = preset_locations[site]
-    st.session_state.selected_site_name = site
-    st.session_state.lat = data["coords"][0]
-    st.session_state.lon = data["coords"][1]
-    st.session_state.depth = data["depth"]
-    st.session_state.cyanide = data["cyanide"]
-    st.session_state.recharge_mm = data["recharge_mm"]
-    st.session_state.slope = data["slope"]
-    st.session_state.k_m_day = data["k_m_day"]
-    st.session_state.ai_report_text = ""
-
-
-tab1, tab2, tab3 = st.tabs([
-    "📍 التقييم الفردي",
-    "📊 التقييم الجماعي (Bulk)",
-    "🛡️ محاكاة الحلول الهندسية"
-])
-
-# ---------- TAB 1 ----------
-with tab1:
-    col_input, col_display = st.columns([1, 2])
-
-    with col_input:
-        st.markdown("<h4 class='section-header'>🔍 اختيار الموقع</h4>", unsafe_allow_html=True)
-        st.selectbox("مناطق جاهزة:", list(preset_locations.keys()),
-                     key="preset_select", on_change=on_preset_change)
-
-        custom_search = st.text_input("أو ابحث باسم مدينة/منجم:", placeholder="Berber")
-        if st.button("🔍 بحث", use_container_width=True):
-            query_str = custom_search.strip()
-            if query_str:
-                with st.spinner("جاري البحث..."):
-                    try:
-                        geolocator = Nominatim(user_agent="uofk_drastic_v2")
-                        q = f"{query_str}, Sudan" if "sudan" not in query_str.lower() else query_str
-                        loc = geolocator.geocode(q, timeout=10)
-                        if loc:
-                            st.session_state.lat = loc.latitude
-                            st.session_state.lon = loc.longitude
-                            st.session_state.selected_site_name = query_str
-                            st.session_state.ai_report_text = ""
-                            st.session_state.flash_message = f"✅ تم العثور على: {loc.address.split(',')[0]}"
-                            st.rerun()
-                        else:
-                            st.warning("لم يتم العثور على الموقع.")
-                    except Exception as e:
-                        st.error(f"خطأ في البحث: {e}")
-
-        st.markdown("---")
-        st.markdown("<h4 class='section-header'>⚙️ مدخلات DRASTIC</h4>", unsafe_allow_html=True)
-
-        lat_val = st.number_input("خط العرض:", value=st.session_state.lat,
-                                  min_value=-90.0, max_value=90.0, format="%.4f")
-        lon_val = st.number_input("خط الطول:", value=st.session_state.lon,
-                                  min_value=-180.0, max_value=180.0, format="%.4f")
-
-        depth = st.slider("1. عمق المياه D (متر):", 0.5, 60.0,
-                          value=float(st.session_state.depth), step=0.5)
-        r_D = rating_depth(depth)
-
-        recharge = st.slider("2. التغذية السنوية R (مم/سنة):", 0, 300,
-                             value=int(st.session_state.recharge_mm), step=5)
-        r_R = rating_recharge(recharge)
-
-        aquifer_map = {
-            "صخور صماء / بازلت": "basalt",
-            "حجر رملي": "bedded_sandstone",
-            "حصى ورمل مشبع": "sand_and_gravel",
-            "حجر جيري كارستي": "karst_limestone"
-        }
-        aquifer_label = st.selectbox("3. نوع الخزان A:", list(aquifer_map.keys()))
-        r_A = rating_aquifer(aquifer_map[aquifer_label])
-
-        soil_map = {
-            "طين عازل": "clay", "سلت / طمي": "silt",
-            "رملية": "sand", "حصى": "gravel"
-        }
-        soil_label = st.selectbox("4. التربة السطحية S:", list(soil_map.keys()))
-        r_S = rating_soil(soil_map[soil_label])
-
-        topo = st.slider("5. الانحدار T (%):", 0, 30, value=int(st.session_state.slope))
-        r_T = rating_topography(topo)
-
-        vadose_map = {
-            "طبقات طينية": "confining_clay", "حجر رملي / متشقق": "sandstone",
-            "حصى ورمل نفاذ": "sand_gravel", "كارست": "karst"
-        }
-        vadose_label = st.selectbox("6. المنطقة غير المشبعة I:", list(vadose_map.keys()))
-        r_I = rating_vadose(vadose_map[vadose_label])
-
-        k_value = st.slider("7. النفاذية C (متر/يوم):", 0.01, 30.0,
-                            value=float(st.session_state.k_m_day), step=0.1)
-        r_C = rating_conductivity(k_value)
-
-        st.markdown("---")
-        st.markdown("<h4 class='section-header'>🧪 الملوثات</h4>", unsafe_allow_html=True)
-        river_dist = st.slider("البعد عن مجرى مائي (م):", 50, 5000, 300, step=50)
-        cyanide = st.slider(f"تركيز السيانيد (mg/L) — حد WHO = {WHO_CYANIDE_LIMIT}",
-                            0.0, 2.00, value=float(st.session_state.cyanide), step=0.01)
-
-        ratings = {"D": r_D, "R": r_R, "A": r_A, "S": r_S,
-                   "T": r_T, "I": r_I, "C": r_C}
-        drastic_index = calculate_drastic_index(ratings)
-        risk_score = drastic_to_percentage(drastic_index)
-        risk_label, risk_level = classify_risk(drastic_index)
-        years = travel_time_darcy(depth, k_value)
-
-    with col_display:
-        st.markdown(f"<h4 class='section-header'>📊 النتائج: {st.session_state.selected_site_name}</h4>",
-                    unsafe_allow_html=True)
-
-        k1, k2, k3, k4 = st.columns(4)
-        k1.metric("DRASTIC", f"{drastic_index} / {int(MAX_DRASTIC)}")
-        k2.metric("نسبة الخطر", f"{risk_score}%", delta=risk_label)
-        k3.metric("زمن وصول التسرب", f"{years} سنة" if years != float('inf') else "—")
-        cyan_delta = "⚠️ يتجاوز" if cyanide > WHO_CYANIDE_LIMIT else "✅ آمن"
-        k4.metric("السيانيد", f"{cyanide:.2f} mg/L", delta=cyan_delta,
-                  delta_color="inverse" if cyanide > WHO_CYANIDE_LIMIT else "normal")
-
-        with st.expander("🔬 تفاصيل Ratings"):
-            ratings_df = pd.DataFrame([
-                {"المعامل": k, "Rating": ratings[k], "الوزن": WEIGHTS[k],
-                 "المساهمة": ratings[k] * WEIGHTS[k]}
-                for k in ratings
-            ])
-            st.dataframe(ratings_df, use_container_width=True, hide_index=True)
-
-        m = folium.Map(
-            location=[lat_val, lon_val], zoom_start=13,
-            tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-            attr="Esri"
-        )
-        color_map = {"low": "green", "medium": "orange",
-                     "high": "red", "very_high": "darkred"}
-        marker_color = color_map[risk_level]
-        folium.Marker([lat_val, lon_val],
-                      popup=f"{st.session_state.selected_site_name}<br>DRASTIC: {drastic_index}",
-                      icon=folium.Icon(color=marker_color, icon="warning")).add_to(m)
-        folium.Circle([lat_val, lon_val], radius=river_dist,
-                      color=marker_color, fill=True, fill_opacity=0.2).add_to(m)
-        st_folium(m, width="100%", height=350, key="sat_map")
-
-        st.markdown("---")
-        col_btn1, col_btn2 = st.columns([2, 1])
-        with col_btn1:
-            if st.button("✨ توليد التقرير", type="primary", use_container_width=True):
-                prompt = f"""بصفتك خبيراً استشارياً في هيدروجيولوجيا التعدين بجامعة الخرطوم، أعدّ تقريراً هندسياً متكاملاً للموقع: {st.session_state.selected_site_name}.
-المعطيات:
-- مؤشر DRASTIC: {drastic_index}/{int(MAX_DRASTIC)} (نسبة الخطر: {risk_score}%)
-- التصنيف: {risk_label}
-- Ratings: {ratings}
-- عمق المياه: {depth} م | التغذية: {recharge} مم/سنة | الانحدار: {topo}%
-- النفاذية: {k_value} م/يوم | السيانيد: {cyanide} mg/L (حد WHO = {WHO_CYANIDE_LIMIT})
-- زمن وصول التسرب (Darcy): {years} سنة
-
-اكتب التقرير بالعربية مع:
-1. التقييم الهيدروجيولوجي الشامل
-2. تحليل انتشار السيانيد وأثره
-3. توصيات هندسية عاجلة
 """
-                generate_report(prompt, "ai_report_text")
+DRASTIC Model & Hydrogeological Calculations Module
+وحدة حساب نموذج دراستيك والحسابات الهيدروجيولوجية
 
-        if st.session_state.ai_report_text:
-            st.markdown("##### 📄 التقرير:")
-            st.info(st.session_state.ai_report_text)
+References:
+    - Aller, L., Bennett, T., Lehr, J. H., Petty, R. J., & Hackett, G. (1987).
+      DRASTIC: A standardized system for evaluating ground water pollution 
+      potential using hydrogeologic settings.
+      U.S. Environmental Protection Agency, Washington, D.C., EPA/600/2-87/035.
+    - Fetter, C. W. (2001). Applied Hydrogeology (4th ed.). Prentice Hall.
+    - US EPA (1993). Ground Water Volume I: Ground Water and Contamination.
+      EPA/600/R-93/174, Section 7.3.3.2, pp. 356-358.
+    - Rahman, A. (2008). A GIS-based DRASTIC model for assessing groundwater 
+      vulnerability in shallow aquifer in Aligarh.
+      Environmental Monitoring and Assessment, 140(1-3), 225-238.
+"""
 
-        today = datetime.date.today().isoformat()
-        export_doc = f"""جامعة الخرطوم — تقرير DRASTIC
-================================================
-التاريخ: {today}
-الموقع: {st.session_state.selected_site_name}
-الإحداثيات: {lat_val:.4f}, {lon_val:.4f}
-DRASTIC: {drastic_index}/{int(MAX_DRASTIC)}
-Risk: {risk_score}% ({risk_label})
-Travel Time: {years} سنة
-Cyanide: {cyanide} mg/L (WHO: {WHO_CYANIDE_LIMIT})
-Ratings: {ratings}
-================================================
-{st.session_state.ai_report_text}"""
+from typing import Union, Tuple, Dict, Any, List
 
-        with col_btn2:
-            st.download_button("📥 تصدير التقرير", data=export_doc,
-                               file_name=f"DRASTIC_{st.session_state.selected_site_name}.txt",
-                               mime="text/plain", use_container_width=True)
+# ============================================================
+# [1] قاموس المسامية الفعالة الافتراضية
+# Reference: Fetter (2001), Table 3.4, p.78
+# ============================================================
+EFFECTIVE_POROSITY_DEFAULTS: Dict[str, float] = {
+    "clay": 0.03,
+    "silt": 0.10,
+    "silty_sand": 0.18,
+    "fine_sand": 0.22,
+    "medium_sand": 0.25,
+    "coarse_sand": 0.28,
+    "gravel": 0.30,
+    "sand_and_gravel": 0.28,
+    "sandstone": 0.20,
+    "limestone": 0.10,
+    "fractured_rock": 0.02
+}
 
-# ---------- TAB 2 ----------
-with tab2:
-    st.markdown("<h4 class='section-header'>📤 التقييم الجماعي (Bulk)</h4>", unsafe_allow_html=True)
-    st.caption("الأعمدة المطلوبة: Site, Latitude, Longitude, Cyanide + Ratings (D,R,A,S,T,I,C)")
+# ============================================================
+# [2] حدود نموذج حساب زمن وصول الملوثات
+# Reference: US EPA (1993). EPA/600/R-93/174, Section 7.3.3.2
+# ============================================================
+DRASTIC_MODEL_LIMITATIONS: Dict[str, Any] = {
+    "travel_time": {
+        "reference": "US EPA (1993). EPA/600/R-93/174, Section 7.3.3.2, pp. 356-358",
+        "assumptions": [
+            "Homogeneous porous medium (وسط مسامي متجانس)",
+            "Constant seepage velocity (سرعة تسرب ثابتة)",
+            "Non-reactive conservative solute (ملوث محافظ غير متفاعل)",
+            "No hydrodynamic dispersion (لا يوجد انتشار هيدروديناميكي)",
+            "No sorption/retardation (لا يوجد امتزاز أو تأخير)",
+            "Steady-state downward flow (تدفق مستقر لأسفل)"
+        ],
+        "does_not_account_for": [
+            "Fractures and preferential pathways (الشقوق والمسارات التفضيلية)",
+            "Heterogeneity in K and porosity (عدم التجانس في النفاذية والمسامية)",
+            "Chemical reactions and biodegradation (التفاعلات الكيميائية والتحلل)",
+            "Dispersion of the contaminant front (انتشار جبهة الملوث)",
+            "Transient recharge events (أحداث التغذية العابرة)"
+        ],
+        "result_interpretation": (
+            "النتيجة هي زمن وصول الجبهة الأمامية، وليس الزمن الكامل "
+            "لوصول الملوث."
+        ),
+        "intended_use": "Screening-level assessment only (تقييم أولي فقط)"
+    }
+}
 
-    uploaded_file = st.file_uploader("ارفع Excel/CSV:", type=["xlsx", "csv"])
 
-    if uploaded_file:
-        try:
-            df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') \
-                else pd.read_excel(uploaded_file)
+# ============================================================
+# [3] دوال التصنيف الأساسية (EPA/600/2-87/035)
+# ============================================================
 
-            lat_col = next((c for c in df.columns if c.lower() in ['latitude','lat','خط_العرض']), None)
-            lon_col = next((c for c in df.columns if c.lower() in ['longitude','lon','long','خط_الطول']), None)
-            cy_col = next((c for c in df.columns if c.lower() in ['cyanide','cn','السيانيد']), None)
-            name_col = next((c for c in df.columns if c.lower() in ['site','name','location','اسم_الموقع']), None)
+def get_d_rating(depth_m: float) -> int:
+    """
+    Depth to Water (D) rating based on EPA/600/2-87/035 
+    (Aller et al., 1987, Table 6, p. 19).
 
-            rating_cols = {}
-            for key in ['D','R','A','S','T','I','C']:
-                col = next((c for c in df.columns if c.upper() == key), None)
-                if col: rating_cols[key] = col
+    Ranges (converted from feet to meters):
+    - 0 to 1.5 m      -> Rating: 10
+    - 1.5 to 4.6 m    -> Rating: 9
+    - 4.6 to 9.1 m    -> Rating: 7
+    - 9.1 to 15.2 m   -> Rating: 5
+    - 15.2 to 22.9 m  -> Rating: 3
+    - 22.9 to 30.5 m  -> Rating: 2
+    - > 30.5 m        -> Rating: 1
+    """
+    if depth_m < 0:
+        raise ValueError(
+            "عمق المياه الجوفية لا يمكن أن يكون سالباً. / "
+            "Depth to water cannot be negative."
+        )
+    if depth_m <= 1.5:
+        return 10
+    elif depth_m <= 4.6:
+        return 9
+    elif depth_m <= 9.1:
+        return 7
+    elif depth_m <= 15.2:
+        return 5
+    elif depth_m <= 22.9:
+        return 3
+    elif depth_m <= 30.5:
+        return 2
+    else:
+        return 1
 
-            if not (lat_col and lon_col and len(rating_cols) == 7):
-                st.error("⚠️ يجب وجود: Latitude, Longitude + كل Ratings (D,R,A,S,T,I,C)")
-            else:
-                def calc_row(row):
-                    r = {k: float(row[v]) for k, v in rating_cols.items()}
-                    idx = calculate_drastic_index(r)
-                    return pd.Series({"DRASTIC": idx,
-                                      "Risk_%": drastic_to_percentage(idx),
-                                      "Risk_Level": classify_risk(idx)[0]})
-                df = pd.concat([df, df.apply(calc_row, axis=1)], axis=1)
 
-                m1, m2, m3 = st.columns(3)
-                m1.metric("عدد المواقع", len(df))
-                m2.metric("مواقع شديدة الخطورة", len(df[df["DRASTIC"] >= 180]))
-                m3.metric("متوسط DRASTIC", round(df["DRASTIC"].mean(), 1))
+def get_r_rating(recharge_mm: float) -> int:
+    """
+    Net Recharge (R) rating based on EPA/600/2-87/035 
+    (Aller et al., 1987, Table 7, p. 21).
 
-                col_tbl, col_heat = st.columns([1, 1])
-                with col_tbl:
-                    st.dataframe(df, use_container_width=True, height=400)
-                    st.download_button("📥 تنزيل CSV",
-                                       df.to_csv(index=False).encode('utf-8-sig'),
-                                       "Evaluated_Sites.csv", "text/csv")
+    Ranges (converted from inches/year to mm/year):
+    - 0 to 50.8 mm      -> Rating: 1
+    - 50.8 to 101.6 mm  -> Rating: 3
+    - 101.6 to 177.8 mm -> Rating: 6
+    - 177.8 to 254.0 mm -> Rating: 8
+    - > 254.0 mm        -> Rating: 9
+    """
+    if recharge_mm < 0:
+        raise ValueError(
+            "معدل التغذية السنوية لا يمكن أن يكون سالباً. / "
+            "Recharge cannot be negative."
+        )
+    if recharge_mm <= 50.8:
+        return 1
+    elif recharge_mm <= 101.6:
+        return 3
+    elif recharge_mm <= 177.8:
+        return 6
+    elif recharge_mm <= 254.0:
+        return 8
+    else:
+        return 9
 
-                with col_heat:
-                    m_heat = folium.Map(
-                        location=[df[lat_col].mean(), df[lon_col].mean()], zoom_start=6,
-                        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-                        attr="Esri"
-                    )
-                    weight_col = cy_col if cy_col else "DRASTIC"
-                    heat_data = [[r[lat_col], r[lon_col], float(r[weight_col])]
-                                 for _, r in df.iterrows()]
-                    HeatMap(heat_data, radius=18).add_to(m_heat)
-                    for _, r in df.iterrows():
-                        _, lvl = classify_risk(r["DRASTIC"])
-                        c = {"low":"green","medium":"orange","high":"red","very_high":"darkred"}[lvl]
-                        title = r[name_col] if name_col else "موقع"
-                        folium.CircleMarker([r[lat_col], r[lon_col]], radius=6,
-                                            popup=f"{title}<br>DRASTIC: {r['DRASTIC']}",
-                                            color=c, fill=True).add_to(m_heat)
-                    st_folium(m_heat, width="100%", height=400, key="bulk_map")
 
-                st.markdown("---")
-                if st.button("✨ توليد التقرير الجماعي", type="primary", use_container_width=True):
-                    summary = f"""- عدد المواقع: {len(df)}
-- متوسط DRASTIC: {round(df['DRASTIC'].mean(),1)}
-- أعلى مؤشر: {df['DRASTIC'].max()}
-- مواقع ≥180: {len(df[df['DRASTIC'] >= 180])}"""
-                    prompt = f"بصفتك المستشار البيئي لجامعة الخرطوم، اكتب تقريراً تنفيذياً موجزاً:\n{summary}\nالمطلوب: ملخص تنفيذي + أولويات + خطة استجابة."
-                    generate_report(prompt, "bulk_ai_report")
+def get_a_rating(
+    aquifer_type: str, use_range: bool = False
+) -> Union[int, Tuple[int, int]]:
+    """
+    Aquifer Media (A) rating based on EPA/600/2-87/035 
+    (Aller et al., 1987, Table 8, p. 23).
 
-                if st.session_state.bulk_ai_report:
-                    st.info(st.session_state.bulk_ai_report)
-                    st.download_button("📥 تصدير التقرير", st.session_state.bulk_ai_report,
-                                       "Bulk_Report.txt", "text/plain")
-        except Exception as e:
-            st.error(f"خطأ في الملف: {e}")
+    Values (min, typical, max):
+    - massive_shale: (1, 2, 3)
+    - metamorphic_igneous: (2, 3, 5)
+    - weathered_metamorphic_igneous: (3, 4, 5)
+    - thin_bedded_sequences: (5, 6, 9)
+    - massive_sandstone: (4, 6, 9)
+    - massive_limestone: (4, 6, 9)
+    - sand_and_gravel: (4, 8, 9)
+    - basalt: (2, 9, 10)
+    - karst_limestone: (9, 10, 10)
+    """
+    type_map: Dict[str, Tuple[int, int, int]] = {
+        "massive_shale": (1, 2, 3),
+        "metamorphic_igneous": (2, 3, 5),
+        "weathered_metamorphic_igneous": (3, 4, 5),
+        "thin_bedded_sequences": (5, 6, 9),
+        "massive_sandstone": (4, 6, 9),
+        "massive_limestone": (4, 6, 9),
+        "sand_and_gravel": (4, 8, 9),
+        "basalt": (2, 9, 10),
+        "karst_limestone": (9, 10, 10)
+    }
+    key = aquifer_type.strip().lower()
+    if key not in type_map:
+        raise ValueError(
+            f"نوع الخزان الجوفي غير صالح '{aquifer_type}'. "
+            f"الخيارات المتاحة: {list(type_map.keys())}"
+        )
+    min_val, typical_val, max_val = type_map[key]
+    if use_range:
+        return (min_val, max_val)
+    return typical_val
 
-# ---------- TAB 3 ----------
-with tab3:
-    st.markdown("<h4 class='section-header'>🛡️ محاكاة الحلول الهندسية</h4>", unsafe_allow_html=True)
 
-    c1, c2 = st.columns(2)
-    with c1:
-        st.subheader("الوضع الحالي")
-        st.metric("DRASTIC", f"{drastic_index}/{int(MAX_DRASTIC)}")
-        st.metric("نسبة الخطر", f"{risk_score}%")
-        st.info(f"Ratings: {ratings}")
+def get_s_rating(
+    soil_type: str, use_range: bool = False
+) -> Union[int, Tuple[int, int]]:
+    """
+    Soil Media (S) rating based on EPA/600/2-87/035 
+    (Aller et al., 1987, Table 9, p. 25).
 
-    with c2:
-        st.subheader("بعد التطبيق")
-        liner = st.checkbox("بطانة HDPE")
-        clay_cap = st.checkbox("غطاء طيني")
-        drainage = st.checkbox("نظام صرف")
-        treatment = st.checkbox("معالجة السيانيد")
+    Values (min, typical, max):
+    - thin_or_absent: (10, 10, 10)
+    - gravel: (10, 10, 10)
+    - sand: (9, 9, 9)
+    - peat: (8, 8, 8)
+    - aggregated_clay: (7, 7, 7)
+    - sandy_loam: (6, 6, 6)
+    - loam: (5, 5, 5)
+    - silty_loam: (4, 4, 4)
+    - clay_loam: (3, 3, 3)
+    - muck: (2, 2, 2)
+    - nonshrinking_clay: (1, 1, 1)
+    """
+    type_map: Dict[str, Tuple[int, int, int]] = {
+        "thin_or_absent": (10, 10, 10),
+        "gravel": (10, 10, 10),
+        "sand": (9, 9, 9),
+        "peat": (8, 8, 8),
+        "aggregated_clay": (7, 7, 7),
+        "sandy_loam": (6, 6, 6),
+        "loam": (5, 5, 5),
+        "silty_loam": (4, 4, 4),
+        "clay_loam": (3, 3, 3),
+        "muck": (2, 2, 2),
+        "nonshrinking_clay": (1, 1, 1)
+    }
+    key = soil_type.strip().lower()
+    if key not in type_map:
+        raise ValueError(
+            f"نوع التربة غير صالح '{soil_type}'. "
+            f"الخيارات المتاحة: {list(type_map.keys())}"
+        )
+    min_val, typical_val, max_val = type_map[key]
+    if use_range:
+        return (min_val, max_val)
+    return typical_val
 
-        mitigated = apply_mitigation(ratings, hdpe_liner=liner,
-                                     cyanide_treatment=treatment,
-                                     clay_cap=clay_cap, drainage=drainage)
-        new_idx = calculate_drastic_index(mitigated)
-        new_risk = drastic_to_percentage(new_idx)
-        new_label, _ = classify_risk(new_idx)
-        reduction = round(((drastic_index - new_idx) / drastic_index) * 100, 1) \
-            if drastic_index > 0 else 0
 
-        st.metric("DRASTIC الجديد", f"{new_idx}/{int(MAX_DRASTIC)}",
-                  delta=f"-{round(drastic_index - new_idx, 1)}")
-        st.metric("نسبة الخطر الجديدة", f"{new_risk}%", delta=new_label)
-        st.metric("نسبة خفض الخطر", f"{reduction}%")
-        st.info(f"Ratings بعد التطبيق: {mitigated}")
+def get_t_rating(slope_percent: float) -> int:
+    """
+    Topography/Slope (T) rating based on EPA/600/2-87/035 
+    (Aller et al., 1987, Table 10, p. 27).
+
+    Ranges:
+    - 0 to 2%   -> Rating: 10
+    - 2 to 6%   -> Rating: 9
+    - 6 to 12%  -> Rating: 5
+    - 12 to 18% -> Rating: 3
+    - > 18%     -> Rating: 1
+    """
+    if slope_percent < 0:
+        raise ValueError(
+            "نسبة الانحدار لا يمكن أن تكون سالبة. / "
+            "Slope percent cannot be negative."
+        )
+    if slope_percent <= 2.0:
+        return 10
+    elif slope_percent <= 6.0:
+        return 9
+    elif slope_percent <= 12.0:
+        return 5
+    elif slope_percent <= 18.0:
+        return 3
+    else:
+        return 1
+
+
+def get_i_rating(vadose_type: str) -> int:
+    """
+    Impact of Vadose Zone (I) rating based on EPA/600/2-87/035 
+    (Aller et al., 1987, Table 11, p. 29).
+    """
+    type_map: Dict[str, int] = {
+        "silt_clay": 1,
+        "shale": 3,
+        "limestone": 6,
+        "sandstone": 6,
+        "bedded_sequences": 6,
+        "metamorphic_igneous": 4,
+        "sand_gravel_silt_clay": 6,
+        "sand_gravel": 8,
+        "basalt": 9,
+        "karst_limestone": 10
+    }
+    key = vadose_type.strip().lower()
+    if key not in type_map:
+        raise ValueError(
+            f"نوع المنطقة غير المشبعة غير صالح '{vadose_type}'. "
+            f"الخيارات المتاحة: {list(type_map.keys())}"
+        )
+    return type_map[key]
+
+
+def get_c_rating(conductivity_m_day: float) -> int:
+    """
+    Hydraulic Conductivity (C) rating based on EPA/600/2-87/035 
+    (Aller et al., 1987, Table 12, p. 31).
+
+    Conversion factor: 1 gpd/ft^2 = 0.04074 m/day
+    """
+    if conductivity_m_day < 0:
+        raise ValueError(
+            "النفاذية الهيدروليكية لا يمكن أن تكون سالبة. / "
+            "Hydraulic conductivity cannot be negative."
+        )
+    if conductivity_m_day <= 4.074:
+        return 1
+    elif conductivity_m_day <= 12.222:
+        return 2
+    elif conductivity_m_day <= 28.518:
+        return 4
+    elif conductivity_m_day <= 40.740:
+        return 6
+    elif conductivity_m_day <= 81.480:
+        return 8
+    else:
+        return 10
+
+
+# ============================================================
+# [4] حساب مؤشر دراستيك الإجمالي
+# ============================================================
+
+def calculate_drastic_index(
+    D: int, R: int, A: int, S: int, T: int, I: int, C: int
+) -> int:
+    """
+    DRASTIC Index based on Aller et al. (1987, p. 16).
+
+    Formula:
+        DI = Dr·Dw + Rr·Rw + Ar·Aw + Sr·Sw + Tr·Tw + Ir·Iw + Cr·Cw
+
+    Weights: Dw=5, Rw=4, Aw=3, Sw=2, Tw=1, Iw=5, Cw=3
+    Range: 23 (min) to 230 (max)
+    """
+    ratings = [D, R, A, S, T, I, C]
+    if any(not isinstance(r, int) or r < 1 or r > 10 for r in ratings):
+        raise ValueError(
+            "جميع تقييمات دراستيك الفردية يجب أن تكون أعداداً صحيحة "
+            "بين 1 و 10."
+        )
+    Dw, Rw, Aw, Sw, Tw, Iw, Cw = 5, 4, 3, 2, 1, 5, 3
+    return (D * Dw) + (R * Rw) + (A * Aw) + (S * Sw) + (T * Tw) + (I * Iw) + (C * Cw)
+
+
+# ============================================================
+# [5] تصنيف مستوى الخطورة (مبني على Rahman 2008)
+# ============================================================
+
+def classify_drastic_risk(index: int) -> Dict[str, str]:
+    """
+    Classifies groundwater pollution risk based on DRASTIC Index.
+
+    Reference:
+        Thresholds are ADAPTED from Rahman (2008) vulnerability classification.
+        GRAS must calibrate locally before official use.
+    """
+    if not isinstance(index, int):
+        raise ValueError("المؤشر يجب أن يكون عدداً صحيحاً. / Index must be an integer.")
+
+    if index >= 180:
+        return {
+            "level": "Very High",
+            "color": "red",
+            "action": "Immediate remediation"
+        }
+    elif index >= 140:
+        return {
+            "level": "High",
+            "color": "orange",
+            "action": "Urgent monitoring"
+        }
+    elif index >= 100:
+        return {
+            "level": "Moderate",
+            "color": "yellow",
+            "action": "Regular monitoring"
+        }
+    else:
+        return {
+            "level": "Low",
+            "color": "green",
+            "action": "Routine surveillance"
+        }
+
+
+# ============================================================
+# [6] حساب زمن وصول الملوثات (معادلة Darcy)
+# ============================================================
+
+def calculate_travel_time(
+    depth_m: float,
+    porosity: float,
+    K_m_day: float,
+    gradient: float = 1.0,
+    zone: str = "unsaturated"
+) -> Dict[str, Any]:
+    """
+    Advective contaminant travel time using Darcy's seepage velocity.
+
+    Reference: Fetter (2001), Applied Hydrogeology 4th ed., pp. 132-136.
+
+    Formula:
+        seepage_velocity = (K_m_day * gradient) / porosity
+        travel_time_days = depth_m / seepage_velocity
+        travel_time_years = travel_time_days / 365.25
+
+    Limitations: See DRASTIC_MODEL_LIMITATIONS["travel_time"].
+    """
+    warnings: List[str] = []
+
+    if depth_m <= 0:
+        raise ValueError(
+            "العمق/المسافة يجب أن تكون أكبر من الصفر. / "
+            "depth_m must be greater than zero."
+        )
+    if not (0.01 < porosity < 0.60):
+        raise ValueError(
+            "المسامية خارج النطاق الجيولوجي / "
+            "Porosity outside geological range (0.01-0.60)."
+        )
+    if K_m_day <= 0 or K_m_day > 1000:
+        raise ValueError(
+            "النفاذية الهيدروليكية يجب أن تكون أكبر من 0 وأقل من أو "
+            "تساوي 1000 متر/يوم."
+        )
+    if gradient <= 0:
+        raise ValueError(
+            "الميل الهيدروليكي يجب أن يكون أكبر من الصفر. / "
+            "Gradient must be greater than zero."
+        )
+
+    zone_clean = zone.strip().lower()
+    if zone_clean not in ["unsaturated", "saturated"]:
+        raise ValueError(
+            "النطاق يجب أن يكون 'unsaturated' أو 'saturated'."
+        )
+
+    if zone_clean == "unsaturated" and gradient != 1.0:
+        warnings.append(
+            "⚠️ In unsaturated zone, i should equal 1.0 (gravity drainage)."
+        )
+    if zone_clean == "saturated" and gradient > 0.1:
+        warnings.append(
+            "⚠️ Gradient is high for saturated zone (typical: 0.001-0.05)."
+        )
+    if zone_clean == "unsaturated" and K_m_day > 10:
+        warnings.append(
+            "⚠️ K is high for unsaturated zone (typical: 0.001-1.0 m/day)."
+        )
+
+    seepage_velocity = (K_m_day * gradient) / porosity
+    travel_time_days = depth_m / seepage_velocity
+    travel_time_years = travel_time_days / 365.25
+
+    if travel_time_years > 1000:
+        warnings.append(
+            f"⚠️ Travel time = {travel_time_years:.0f} years. Extremely "
+            "low permeability medium (clay). Verify K value."
+        )
+
+    return {
+        "travel_time_days": float(travel_time_days),
+        "travel_time_years": float(travel_time_years),
+        "seepage_velocity_m_day": float(seepage_velocity),
+        "warnings": warnings,
+        "model_limitations": DRASTIC_MODEL_LIMITATIONS["travel_time"],
+        "disclaimer": generate_travel_time_disclaimer()
+    }
+
+
+# ============================================================
+# [7] تقييم مستوى الثقة في النتائج
+# ============================================================
+
+def assess_confidence_level(
+    has_measured_K: bool,
+    has_measured_porosity: bool,
+    has_tracer_data: bool,
+    has_borehole_logs: bool
+) -> Dict[str, str]:
+    """
+    Assess confidence level based on data quality tiers.
+
+    Reference:
+        Adapted from US EPA (1993) and Fetter (2001) guidance on
+        parameter uncertainty in hydrogeological assessments.
+    """
+    score = sum([
+        bool(has_measured_K),
+        bool(has_measured_porosity),
+        bool(has_tracer_data),
+        bool(has_borehole_logs)
+    ])
+
+    if score >= 4:
+        return {
+            "level": "High",
+            "color": "green",
+            "message": "النتيجة موثوقة للمراجعة الرسمية",
+            "message_en": "Result is reliable for official review"
+        }
+    elif score >= 2:
+        return {
+            "level": "Medium",
+            "color": "yellow",
+            "message": "النتيجة تقديرية، تحتاج تحققاً ميدانياً",
+            "message_en": "Result is estimated, requires field verification"
+        }
+    else:
+        return {
+            "level": "Low",
+            "color": "red",
+            "message": "النتيجة استدلالية فقط، لا تُعتمد رسمياً",
+            "message_en": "Result is indicative only, not for official use"
+        }
+
+
+# ============================================================
+# [8] حساب نطاق زمن وصول الملوثات (Range)
+# ============================================================
+
+def calculate_travel_time_range(
+    depth_m: float,
+    porosity_min: float,
+    porosity_max: float,
+    K_min_m_day: float,
+    K_max_m_day: float,
+    gradient: float = 1.0
+) -> Dict[str, Any]:
+    """
+    Range calculation reflects uncertainty in hydraulic conductivity
+    and effective porosity.
+
+    Reference:
+        US EPA (1993) guidance on parameter uncertainty in travel 
+        time estimates (EPA/600/R-93/174).
+    """
+    if not (0.01 < porosity_min < porosity_max < 0.60):
+        raise ValueError(
+            "المسامية يجب أن تكون بين 0.01 و 0.60 مع porosity_min < porosity_max."
+        )
+    if K_min_m_day <= 0 or K_max_m_day <= K_min_m_day:
+        raise ValueError(
+            "K_min يجب أن يكون > 0 و K_max > K_min."
+        )
+    if depth_m <= 0:
+        raise ValueError("العمق يجب أن يكون > 0.")
+    if gradient <= 0:
+        raise ValueError("الميل الهيدروليكي يجب أن يكون > 0.")
+
+    # أسوأ حالة: K_max + porosity_min (أسرع وصول)
+    v_min = (K_max_m_day * gradient) / porosity_min
+    t_min_days = depth_m / v_min
+
+    # أفضل حالة: K_min + porosity_max (أبطأ وصول)
+    v_max = (K_min_m_day * gradient) / porosity_max
+    t_max_days = depth_m / v_max
+
+    # تقدير مركزي
+    K_avg = (K_min_m_day + K_max_m_day) / 2.0
+    por_avg = (porosity_min + porosity_max) / 2.0
+    v_best = (K_avg * gradient) / por_avg
+    t_best_days = depth_m / v_best
+
+    return {
+        "travel_time_min_years": round(t_min_days / 365.25, 3),
+        "travel_time_max_years": round(t_max_days / 365.25, 3),
+        "travel_time_best_years": round(t_best_days / 365.25, 3),
+        "range_description": (
+            f"{round(t_min_days / 365.25, 1)} - "
+            f"{round(t_max_days / 365.25, 1)} سنة (تقديري)"
+        ),
+        "notes": (
+            "النطاق يعكس عدم اليقين في K والمسامية. "
+            "Reference: US EPA (1993), EPA/600/R-93/174."
+        )
+    }
+
+
+# ============================================================
+# [9] إخلاء المسؤولية لزمن وصول الملوثات
+# ============================================================
+
+def generate_travel_time_disclaimer() -> str:
+    """
+    Returns formatted Arabic disclaimer for travel time calculations.
+    """
+    return (
+        "⚠️ حدود حساب زمن وصول الملوثات:\n\n"
+        "1. هذا تقدير أولي (Screening-level) وفقاً لـ US EPA (1993).\n"
+        "2. يفترض وسطاً متجانساً، سرعة ثابتة، ملوثاً غير متفاعل.\n"
+        "3. لا يأخذ في الحسبان: الانتشار، الامتزاز، الشقوق، عدم التجانس.\n"
+        "4. دقة الحساب تعتمد على دقة K والمسامية المُدخلة.\n"
+        "5. النتيجة هي زمن وصول الجبهة الأمامية، وليس الزمن الكامل.\n"
+        "6. للقرارات النهائية: معايرة ميدانية إلزامية (Tracer Tests).\n\n"
+        "المرجع: US EPA/600/R-93/174, Section 7.3.3.2, pp. 356-358."
+    )
