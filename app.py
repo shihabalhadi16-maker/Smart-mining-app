@@ -79,6 +79,8 @@ if "lon" not in st.session_state:
     st.session_state.lon = 33.3167
 if "ai_report_text" not in st.session_state:
     st.session_state.ai_report_text = ""
+if "bulk_ai_report" not in st.session_state:
+    st.session_state.bulk_ai_report = ""
 
 def on_preset_change():
     site = st.session_state.preset_select
@@ -86,6 +88,24 @@ def on_preset_change():
     st.session_state.lat = preset_locations[site]["coords"][0]
     st.session_state.lon = preset_locations[site]["coords"][1]
     st.session_state.ai_report_text = ""
+
+# دالة حساب مؤشر DRASTIC لكل صف في التقييم الجماعي
+def calculate_row_drastic(row):
+    try:
+        # جلب القيم مع تعيين أرقام افتراضية في حال عدم وجود العمود
+        d = float(row.get('D', row.get('Depth', row.get('العمق', 15))))
+        r = float(row.get('R', row.get('Recharge', row.get('التغذية', 5))))
+        a = float(row.get('A', row.get('Aquifer', row.get('الخزان', 6))))
+        s = float(row.get('S', row.get('Soil', row.get('التربة', 5))))
+        t = float(row.get('T', row.get('Topography', row.get('الانحدار', 5))))
+        i = float(row.get('I', row.get('Impact_Vadose', row.get('غير_المشبعة', 6))))
+        c = float(row.get('C', row.get('Conductivity', row.get('النفاذية', 4))))
+        
+        # الحساب بخصائص الوزن القياسي المعياري
+        index = (d * 5) + (r * 4) + (a * 3) + (s * 2) + (t * 1) + (i * 5) + (c * 3)
+        return round(index, 1)
+    except Exception:
+        return 120.0
 
 # ==========================================
 # 4. التبويبات الرئيسية
@@ -110,7 +130,7 @@ with tab1:
         if st.button("🔍 بحث وانتقال الخريطة", use_container_width=True):
             query_str = custom_search.strip()
             if query_str != "":
-                geolocator = Nominatim(user_agent="uofk_smart_mining_v11")
+                geolocator = Nominatim(user_agent="uofk_smart_mining_v12")
                 try:
                     q = f"{query_str}, Sudan" if "sudan" not in query_str.lower() else query_str
                     loc = geolocator.geocode(q, timeout=8)
@@ -226,8 +246,6 @@ with tab1:
                 if "GEMINI_API_KEY" in st.secrets:
                     try:
                         genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-                        
-                        # اعتماد نموذج gemini-3.8-flash المحدث مباشرة
                         model = genai.GenerativeModel(
                             'gemini-3.8-flash',
                             generation_config={"temperature": 0.2, "max_output_tokens": 2048}
@@ -245,31 +263,26 @@ with tab1:
                         - تركيز السيانيد/الزئبق الميداني: {cyanide} mg/L (الحد المسموح به من الصحة العالمية WHO هو 0.05 mg/L)
                         - زمن وصول التسرب المتوقع: {years} سنة
                         
-                        يرجى كتابة التقرير باللغة العربية بتنسيق منظم يغطي النقاط التالية بشكل كافٍ ومكتمل دون أي اختصار:
+                        يرجى كتابة التقرير باللغة العربية بتنسيق منظم يغطي النقاط التالية بشكل كافٍ ومكتمل:
                         1. **التقييم الهيدروجيولوجي الشامل ومستوى الخطورة:**
                         2. **تحليل انتشار ملوثات السيانيد وأثرها على المياه الجوفية:**
                         3. **التوصيات والتدابير الهندسية العاجلة الواجب اتخاذها في الموقع:**
                         """
                         
-                        with st.spinner("جاري صياغة التقرير الفني المكتمل باستخدام Gemini 3.8 Flash..."):
+                        with st.spinner("جاري صياغة التقرير الفني المكتمل..."):
                             response = model.generate_content(prompt)
                             st.session_state.ai_report_text = response.text
                             st.success("تم توليد التقرير المكتمل بنجاح!")
                             
                     except Exception as e:
-                        if "429" in str(e):
-                            st.warning("⏳ تجاوزت الحد المسموح للطلبات. يرجى الانتظار بضع ثوانٍ ثم إعادة المحاولة.")
-                        else:
-                            st.error(f"خطأ في الاتصال بالنموذج: {e}")
+                        st.error(f"خطأ في الاتصال بالنموذج: {e}")
                 else:
                     st.warning("⚠️ يرجى إضافة مفتاح GEMINI_API_KEY في قسم Secrets على Streamlit Cloud.")
 
-        # عرض التقرير المتولد
         if st.session_state.ai_report_text:
             st.markdown("##### 📄 النص المعتمد للتقرير:")
             st.info(st.session_state.ai_report_text)
 
-        # تجهيز المستند النهائي المحمول للتصدير
         today_date = datetime.date.today().strftime("%Y-%m-%d")
         full_export_document = f"""====================================================================
 جامعة الخرطوم — كلية الهندسة — قسم هندسة التعدين
@@ -279,25 +292,13 @@ with tab1:
 الموقع المستهدف: {st.session_state.selected_site_name}
 الإحداثيات الجغرافية: Latitude {lat_val:.4f}, Longitude {lon_val:.4f}
 معيار النمذجة: US EPA DRASTIC Standard Model
-محرك التحليل الذكي: Gemini 3.8 Flash Engine
 --------------------------------------------------------------------
-
-أولاً: البيانات الحسابية الميدانية ومؤشرات DRASTIC:
-----------------------------------------------------
 * مؤشر DRASTIC الإجمالي: {drastic_index} / 230
 * نسبة الخطر البيئي التراكمية: {risk_score}%
 * زمن وصول التسرب للمياه الجوفية: {years} سنة
-* تركيز السيانيد الميداني: {cyanide} mg/L (الحد الأقصى المسموح: 0.05 mg/L)
-* عمق المياه الجوفية (D): {depth} متر
-* نوع التربة السطحية (S): {soil}
-* البعد عن المجرى المائي: {river_dist} متر
-
-ثانياً: التقرير الفني المعتمد وتحليل الذكاء الاصطناعي:
-----------------------------------------------------
-{st.session_state.ai_report_text if st.session_state.ai_report_text else "لم يتم ضغط زر توليد التقرير قبل التصدير."}
-
-====================================================================
-صُدر هذا المستند هندسياً عبر منصة النمذجة البيئية — جامعة الخرطوم
+* تركيز السيانيد الميداني: {cyanide} mg/L
+--------------------------------------------------------------------
+{st.session_state.ai_report_text}
 ====================================================================
 """
 
@@ -311,32 +312,147 @@ with tab1:
             )
 
 # ==========================================
-# TAB 2: التقييم الجماعي
+# TAB 2: التقييم الجماعي المحسن والمطور
 # ==========================================
 with tab2:
-    st.markdown("<h4 class='section-header'>📤 رفع ملف البيانات الجماعي (Bulk Upload)</h4>", unsafe_allow_html=True)
-    uploaded_file = st.file_uploader("اختر ملف Excel أو CSV:", type=["xlsx", "csv"])
+    st.markdown("<h4 class='section-header'>📤 رفع ملف البيانات الجماعي وحسابه دُفعة واحدة (Bulk Upload & Evaluation)</h4>", unsafe_allow_html=True)
+    uploaded_file = st.file_uploader("اختر ملف Excel أو CSV مع مراعاة احتواء الملف على الأعمدة (Site/Name, Latitude, Longitude, Cyanide, والرموز D,R,A,S,T,I,C):", type=["xlsx", "csv"])
     
     if uploaded_file is not None:
         try:
             df_bulk = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
-            st.success(f"تم تحميل {len(df_bulk)} موقع بنجاح.")
             
-            col_tbl, col_heat = st.columns([1, 1])
-            with col_tbl:
-                st.dataframe(df_bulk, use_container_width=True)
-            with col_heat:
-                m_heat = folium.Map(
-                    location=[df_bulk['Latitude'].mean(), df_bulk['Longitude'].mean()], 
-                    zoom_start=6,
-                    tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-                    attr="Esri World Imagery"
-                )
-                heat_data = [[row['Latitude'], row['Longitude'], row['Cyanide']] for _, row in df_bulk.iterrows() if 'Latitude' in row and 'Longitude' in row]
-                HeatMap(heat_data, radius=15).add_to(m_heat)
-                st_folium(m_heat, width="100%", height=380, key="bulk_heat_map")
+            # توحيد مسميات الإحداثيات والسيانيد
+            lat_col = next((c for c in df_bulk.columns if c.lower() in ['latitude', 'lat', 'خط_العرض']), None)
+            lon_col = next((c for c in df_bulk.columns if c.lower() in ['longitude', 'lon', 'long', 'خط_الطول']), None)
+            cy_col = next((c for c in df_bulk.columns if c.lower() in ['cyanide', 'cn', 'السيانيد']), None)
+            name_col = next((c for c in df_bulk.columns if c.lower() in ['site', 'name', 'location', 'اسم_الموقع', 'الموقع']), None)
+
+            if lat_col and lon_col:
+                # 1. حساب مؤشر DRASTIC ونسبة الخطر لكل صف في الملف
+                df_bulk['Calculated_DRASTIC'] = df_bulk.apply(calculate_row_drastic, axis=1)
+                df_bulk['Risk_Percentage (%)'] = ((df_bulk['Calculated_DRASTIC'] / 230) * 100).round(1)
+                
+                # تصنيف مستوى الخطورة
+                def assign_risk_label(val):
+                    if val >= 160: return "🔴 خطر مرتفع جداً"
+                    elif val >= 120: return "🟠 خطر متوسط"
+                    else: return "🟢 خطر منخفض"
+                    
+                df_bulk['Risk_Level'] = df_bulk['Calculated_DRASTIC'].apply(assign_risk_label)
+                
+                st.success(f"تم تحليل وترقيم {len(df_bulk)} موقع بنجاح بواسطة نموذج DRASTIC!")
+
+                # عرض المؤشرات السريعة للبيانات المرفوعة
+                m1, m2, m3 = st.columns(3)
+                m1.metric("إجمالي المواقع المرفوعة", len(df_bulk))
+                high_risk_count = len(df_bulk[df_bulk['Calculated_DRASTIC'] >= 160])
+                m2.metric("عدد المواقع عالية الخطورة", high_risk_count, delta="حرجة" if high_risk_count > 0 else "آمنة", delta_color="inverse")
+                m3.metric("متوسط مؤشر DRASTIC للمواقع", round(df_bulk['Calculated_DRASTIC'].mean(), 1))
+
+                st.markdown("---")
+                col_tbl, col_heat = st.columns([1, 1])
+                
+                with col_tbl:
+                    st.markdown("##### 📋 جدول التقييم المحسوب بالكامل:")
+                    st.dataframe(df_bulk, use_container_width=True)
+                    
+                    # زر تحميل CSV المعدل
+                    csv_data = df_bulk.to_csv(index=False).encode('utf-8-sig')
+                    st.download_button(
+                        label="📥 تنزيل الجدول المحسوب (CSV)",
+                        data=csv_data,
+                        file_name="Evaluated_Mining_Sites_DRASTIC.csv",
+                        mime="text/csv"
+                    )
+
+                with col_heat:
+                    st.markdown("##### 🛰️ الخريطة الحرارية ونطاقات التلوث:")
+                    m_heat = folium.Map(
+                        location=[df_bulk[lat_col].mean(), df_bulk[lon_col].mean()], 
+                        zoom_start=6,
+                        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+                        attr="Esri World Imagery"
+                    )
+                    
+                    # النقاط والخريطة الحرارية
+                    heat_weight = cy_col if cy_col else 'Calculated_DRASTIC'
+                    heat_data = [[row[lat_col], row[lon_col], float(row[heat_weight])] for _, row in df_bulk.iterrows()]
+                    HeatMap(heat_data, radius=18).add_to(m_heat)
+                    
+                    # إضافة علامات حية
+                    for _, r in df_bulk.iterrows():
+                        site_title = r[name_col] if name_col else "منجم"
+                        m_color = "red" if r['Calculated_DRASTIC'] >= 160 else ("orange" if r['Calculated_DRASTIC'] >= 120 else "green")
+                        folium.CircleMarker(
+                            location=[r[lat_col], r[lon_col]],
+                            radius=6,
+                            popup=f"{site_title}<br>DRASTIC: {r['Calculated_DRASTIC']}<br>الخطر: {r['Risk_Level']}",
+                            color=m_color,
+                            fill=True
+                        ).add_to(m_heat)
+                        
+                    st_folium(m_heat, width="100%", height=380, key="bulk_heat_map_v2")
+
+                # ==========================================
+                # توليد التقرير الجماعي بالذكاء الاصطناعي
+                # ==========================================
+                st.markdown("---")
+                st.markdown("<h4 class='section-header'>⚡ توليد التقرير الموحد للبيانات الجماعية (Bulk AI Executive Report)</h4>", unsafe_allow_html=True)
+                
+                if st.button("✨ تحليل وتوليد التقرير التنفيذي الجماعي عبر Gemini 3.8 Flash", type="primary", use_container_width=True):
+                    if "GEMINI_API_KEY" in st.secrets:
+                        try:
+                            genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+                            model = genai.GenerativeModel(
+                                'gemini-3.8-flash',
+                                generation_config={"temperature": 0.2, "max_output_tokens": 2048}
+                            )
+
+                            # إعداد الملخص الحسابي لإرساله للذكاء الاصطناعي
+                            summary_data = f"""
+                            - عدد المناجم والمواقع الكلي: {len(df_bulk)}
+                            - متوسط مؤشر DRASTIC: {round(df_bulk['Calculated_DRASTIC'].mean(), 1)}
+                            - أعلى مؤشر خطورة مسجل: {df_bulk['Calculated_DRASTIC'].max()}
+                            - عدد المواقع شديدة الخطورة (DRASTIC >= 160): {len(df_bulk[df_bulk['Calculated_DRASTIC'] >= 160])}
+                            - ملخص تركيزات السيانيد إن وجد: متوسط {round(df_bulk[cy_col].mean(), 2) if cy_col else 'غير محدد'} mg/L
+                            """
+
+                            prompt = f"""
+                            بصفتك المستشار البيئي الرئيسي لجامعة الخرطوم وهيئة الأبحاث الجيولوجية، قم بصياغة تقرير تقييمي جماعي تنفيذي موجه للوزارة والشركات بناءً على تحليل دفعة المناجم التالية:
+                            {summary_data}
+                            
+                            المطلوب في التقرير:
+                            1. **الملخص التنفيذي وتقييم الخطر الجماعي للمناجم المرفوعة.**
+                            2. **تحديد الأولويات والمناجم ذات الخطورة العالية التي تتطلب تدخلاً ميدانياً عاجلاً.**
+                            3. **خط الاستجابة الهندسية والتوصيات لحماية الخزانات الجوفية القريبة من هذه التجمعات.**
+                            """
+
+                            with st.spinner("جاري تحليل كافة المناجم وصياغة التقرير التنفيذي الموحد..."):
+                                res = model.generate_content(prompt)
+                                st.session_state.bulk_ai_report = res.text
+                                st.success("تم توليد التقرير الجماعي بنجاح!")
+
+                        except Exception as e:
+                            st.error(f"خطأ في الاتصال بالنموذج: {e}")
+                    else:
+                        st.warning("⚠️ يرجى إدخال GEMINI_API_KEY في إعدادات Secrets.")
+
+                if st.session_state.bulk_ai_report:
+                    st.markdown("##### 📄 التقرير التنفيذي الجماعي المعتمد:")
+                    st.info(st.session_state.bulk_ai_report)
+                    
+                    st.download_button(
+                        label="📥 تصدير التقرير الجماعي (TXT)",
+                        data=st.session_state.bulk_ai_report,
+                        file_name="Bulk_Executive_Mining_Report.txt",
+                        mime="text/plain"
+                    )
+
+            else:
+                st.error("⚠️ لم يتم العثور على أعمدة الإحداثيات (Latitude / Longitude) في الملف. يرجى التأكد من تسمية الأعمدة بشكل صحيح.")
         except Exception as e:
-            st.error(f"خطأ في قراءة الملف: {e}")
+            st.error(f"خطأ أثناء معالجة الملف: {e}")
 
 # ==========================================
 # TAB 3: محاكي الحلول الهندسية
