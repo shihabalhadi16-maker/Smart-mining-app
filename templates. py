@@ -1,0 +1,284 @@
+"""
+Report Templates Module — قوالب التقارير الثابتة
+نظام DRASTIC Sudan
+
+الغرض:
+    توفير 4 قوالب تقارير ثابتة حسب مستوى الخطورة.
+    القوالب حتمية (Deterministic) — نفس المدخلات = نفس المخرجات.
+    قابلة للاعتماد الرسمي بعد المراجعة البشرية.
+
+References:
+    - Aller et al. (1987). EPA/600/2-87/035
+    - Fetter (2001). Applied Hydrogeology, 4th ed.
+    - WHO (2022). Guidelines for Drinking-water Quality
+    - US EPA (1993). EPA/600/R-93/174
+    - قانون حماية البيئة السوداني 2001 (رقم 18)
+    - قانون تنمية الثروة المعدنية والتعدين 2015
+
+⚠️ تنبيه:
+    كل تقرير مُولَّد يحتاج مراجعة وتوقيع مهندس مختص
+    قبل الاعتماد الرسمي.
+"""
+
+import datetime
+from typing import Dict, Any
+
+
+# ============================================================
+# ثوابت القوالب
+# ============================================================
+
+TEMPLATE_METADATA = {
+    "low": {
+        "id": "TMP-LOW-001",
+        "version": "1.0",
+        "level": "منخفض",
+        "range": "23-99",
+    },
+    "moderate": {
+        "id": "TMP-MOD-001",
+        "version": "1.0",
+        "level": "متوسط",
+        "range": "100-139",
+    },
+    "high": {
+        "id": "TMP-HIGH-001",
+        "version": "1.0",
+        "level": "مرتفع",
+        "range": "140-179",
+    },
+    "very_high": {
+        "id": "TMP-VHIGH-001",
+        "version": "1.0",
+        "level": "مرتفع جداً",
+        "range": "180-230",
+    },
+}
+
+
+# ============================================================
+# المحتوى الثابت لكل مستوى
+# ============================================================
+
+CONTENT_LOW = {
+    "hydro_assessment": """
+الموقع يُظهر مستوى خطورة منخفض للتلوث. عمق المياه الجوفية 
+والطبقات الجيولوجية توفر حماية طبيعية جيدة. النشاط التعديني 
+الحالي لا يُشكّل تهديداً مباشراً على المياه الجوفية.
+""".strip(),
+    "recommendations": [
+        "الاستمرار في النشاط التعديني مع المراقبة الدورية السنوية.",
+        "إجراء فحص سنوي لجودة المياه الجوفية في بئر مراقبة واحد على الأقل.",
+        "توثيق أي تغيير في عمق المياه الجوفية أو نوع النشاط.",
+        "التزام العمال بمعدات الحماية الشخصية (PPE).",
+        "الإبلاغ الفوري عن أي حادث تلوث محتمل.",
+    ],
+}
+
+CONTENT_MODERATE = {
+    "hydro_assessment": """
+الموقع يُظهر مستوى خطورة متوسط. هناك احتمال لتسرب الملوثات 
+إلى المياه الجوفية في حال استمرار النشاط دون إجراءات وقائية. 
+الطبقات الجيولوجية توفر حماية جزئية.
+""".strip(),
+    "recommendations": [
+        "إجراء مراقبة دورية ربع سنوية لجودة المياه الجوفية.",
+        "تركيب آبار مراقبة (2-3 آبار) حول الموقع.",
+        "تحسين إدارة المخلفات التعدينية (الكرتة).",
+        "استخدام تقنيات معالجة السيانيد داخل الموقع.",
+        "إعداد خطة استجابة للطوارئ البيئية.",
+        "تدريب العمال على إجراءات السلامة البيئية.",
+    ],
+}
+
+CONTENT_HIGH = {
+    "hydro_assessment": """
+الموقع يُظهر مستوى خطورة مرتفع. الطبقات الجيولوجية لا توفر 
+حماية كافية. هناك خطر حقيقي لتسرب السيانيد والزئبق إلى المياه 
+الجوفية خلال سنوات قليلة. التدخل الهندسي العاجل ضروري.
+""".strip(),
+    "recommendations": [
+        "تركيب بطانة HDPE عازلة تحت أحواض المعالجة فوراً.",
+        "إنشاء وحدة معالجة السيانيد قبل التصريف.",
+        "حفر 4-6 آبار مراقبة حول الموقع.",
+        "مراقبة شهرية لجودة المياه الجوفية.",
+        "إعداد دراسة أثر بيئي (EIA) شاملة.",
+        "تقليل استخدام السيانيد إلى الحد الأدنى.",
+        "إبلاغ المجلس الأعلى للبيئة عن النشاط.",
+    ],
+}
+
+CONTENT_VERY_HIGH = {
+    "hydro_assessment": """
+الموقع يُظهر مستوى خطورة مرتفع جداً. الطبقات الجيولوجية ضعيفة 
+الحماية، وعمق المياه الجوفية قريب من السطح. هناك خطر داهم 
+لتلوث مصادر مياه الشرب خلال أشهر. التدخل الفوري إلزامي.
+""".strip(),
+    "recommendations": [
+        "إيقاف النشاط التعديني مؤقتاً حتى تركيب حلول الحماية.",
+        "تركيب HDPE Liner + وحدة معالجة سيانيد فورية.",
+        "حفر شبكة آبار مراقبة شاملة (8-10 آبار).",
+        "مراقبة أسبوعية لجودة المياه الجوفية.",
+        "إخلاء المناطق السكنية القريبة إذا لزم الأمر.",
+        "إعداد تقرير طارئ للمجلس الأعلى للبيئة.",
+        "توفير مصادر مياه بديلة للسكان المتأثرين.",
+        "خطة إعادة تأهيل شاملة للموقع.",
+    ],
+}
+
+
+# ============================================================
+# الدالة الرئيسية لتوليد التقرير
+# ============================================================
+
+def get_template_key(drastic_index: int) -> str:
+    """إرجاع مفتاح القالب المناسب حسب مؤشر DRASTIC."""
+    if drastic_index >= 180:
+        return "very_high"
+    if drastic_index >= 140:
+        return "high"
+    if drastic_index >= 100:
+        return "moderate"
+    return "low"
+
+
+def get_template_content(template_key: str) -> Dict[str, Any]:
+    """إرجاع محتوى القالب حسب المفتاح."""
+    mapping = {
+        "low": CONTENT_LOW,
+        "moderate": CONTENT_MODERATE,
+        "high": CONTENT_HIGH,
+        "very_high": CONTENT_VERY_HIGH,
+    }
+    return mapping.get(template_key, CONTENT_LOW)
+
+
+def generate_report(
+    site_name: str,
+    coordinates: tuple,
+    drastic_index: int,
+    ratings: Dict[str, int],
+    values: Dict[str, float],
+    travel_time_years: float = None,
+) -> str:
+    """
+    توليد تقرير فني كامل من القالب.
+    
+    Args:
+        site_name: اسم الموقع
+        coordinates: (lat, lon)
+        drastic_index: مؤشر DRASTIC
+        ratings: قاموس التقييمات الفردية {"D": int, ...}
+        values: قاموس القيم المدخلة {"depth": float, ...}
+        travel_time_years: زمن وصول الملوثات (اختياري)
+    
+    Returns:
+        str: نص التقرير الكامل
+    """
+    template_key = get_template_key(drastic_index)
+    meta = TEMPLATE_METADATA[template_key]
+    content = get_template_content(template_key)
+
+    today = datetime.date.today()
+    ref_num = f"GRAS-ENV-{today.strftime('%Y%m%d')}-{template_key.upper()[:3]}"
+
+    lines = []
+    lines.append("=" * 68)
+    lines.append("تقرير تقييم هشاشة المياه الجوفية")
+    lines.append("جامعة الخرطوم — كلية الهندسة")
+    lines.append("مكتب الاستشارات الهندسية")
+    lines.append("=" * 68)
+    lines.append("")
+    lines.append(f"الرقم المرجعي: {ref_num}")
+    lines.append(f"التاريخ: {today.strftime('%Y-%m-%d')}")
+    lines.append(f"قالب التقرير: {meta['id']} — الإصدار {meta['version']}")
+    lines.append("")
+    lines.append("-" * 68)
+    lines.append("القسم 1: بيانات الموقع")
+    lines.append("-" * 68)
+    lines.append(f"اسم الموقع: {site_name}")
+    lines.append(f"الإحداثيات: {coordinates[0]:.4f}, {coordinates[1]:.4f}")
+    lines.append(f"نظام الإحداثيات: WGS84")
+    lines.append("")
+    lines.append("-" * 68)
+    lines.append("القسم 2: نتائج التقييم — نموذج DRASTIC")
+    lines.append("-" * 68)
+    lines.append(f"مؤشر DRASTIC: {drastic_index} / 230")
+    lines.append(f"مستوى الخطورة: {meta['level']}")
+    lines.append(f"نطاق التصنيف: {meta['range']}")
+    lines.append("")
+    lines.append("المعاملات السبعة:")
+    lines.append(f"  D — عمق المياه الجوفية: {values.get('depth', 'N/A')} م   → التقييم: {ratings.get('D', 'N/A')}")
+    lines.append(f"  R — التغذية السنوية: {values.get('recharge', 'N/A')} مم/سنة   → التقييم: {ratings.get('R', 'N/A')}")
+    lines.append(f"  A — نوع الخزان الجوفي: {values.get('aquifer', 'N/A')}   → التقييم: {ratings.get('A', 'N/A')}")
+    lines.append(f"  S — نوع التربة: {values.get('soil', 'N/A')}   → التقييم: {ratings.get('S', 'N/A')}")
+    lines.append(f"  T — الانحدار: {values.get('slope', 'N/A')}%   → التقييم: {ratings.get('T', 'N/A')}")
+    lines.append(f"  I — المنطقة غير المشبعة: {values.get('vadose', 'N/A')}   → التقييم: {ratings.get('I', 'N/A')}")
+    lines.append(f"  C — النفاذية: {values.get('conductivity', 'N/A')} م/يوم   → التقييم: {ratings.get('C', 'N/A')}")
+    lines.append("")
+    if travel_time_years is not None:
+        lines.append(f"زمن وصول الملوثات (تقديري): {travel_time_years:.2f} سنة")
+        lines.append("")
+    lines.append("-" * 68)
+    lines.append("القسم 3: التقييم الهيدروجيولوجي")
+    lines.append("-" * 68)
+    lines.append(content["hydro_assessment"])
+    lines.append("")
+    lines.append("-" * 68)
+    lines.append("القسم 4: التوصيات الهندسية")
+    lines.append("-" * 68)
+    for i, rec in enumerate(content["recommendations"], 1):
+        lines.append(f"{i}. {rec}")
+    lines.append("")
+    lines.append("-" * 68)
+    lines.append("القسم 5: الامتثال التشريعي")
+    lines.append("-" * 68)
+    lines.append("- متوافق مع المادة (26) من قانون تنمية الثروة المعدنية والتعدين 2015.")
+    lines.append("- متوافق مع قانون حماية البيئة 2001 (رقم 18).")
+    lines.append("- متوافق مع لائحة تنظيم التعدين التقليدي 2016.")
+    lines.append("- يسترشد بمعايير WHO (2022) لجودة مياه الشرب.")
+    lines.append("- يسترشد بمعايير US EPA (1987) لنموذج DRASTIC.")
+    lines.append("")
+    lines.append("-" * 68)
+    lines.append("القسم 6: المراجع العلمية")
+    lines.append("-" * 68)
+    lines.append("1. Aller, L., et al. (1987). EPA/600/2-87/035.")
+    lines.append("2. Fetter, C.W. (2001). Applied Hydrogeology, 4th ed.")
+    lines.append("3. US EPA (1993). EPA/600/R-93/174.")
+    lines.append("4. WHO (2022). Guidelines for Drinking-water Quality.")
+    lines.append("")
+    lines.append("-" * 68)
+    lines.append("القسم 7: المراجعة والاعتماد")
+    lines.append("-" * 68)
+    lines.append("⚠️ هذا التقرير مُولَّد آلياً من قالب ثابت. لا يُعتمد")
+    lines.append("   رسمياً إلا بعد مراجعة وتوقيع مهندس مختص.")
+    lines.append("")
+    lines.append("اسم المهندس المراجع: _______________________________")
+    lines.append("الرقم الوظيفي/العضوية: _______________________________")
+    lines.append("التاريخ: ___ / ___ / ______")
+    lines.append("التوقيع: _______________________________")
+    lines.append("")
+    lines.append("إقرار: أُقر بأنني راجعت هذا التقرير وأتحمل المسؤولية")
+    lines.append("المهنية عن محتواه.")
+    lines.append("")
+    lines.append("=" * 68)
+    lines.append("© 2026 جامعة الخرطوم — مكتب الاستشارات الهندسية")
+    lines.append("=" * 68)
+
+    return "\n".join(lines)
+
+
+def get_templates_summary() -> Dict[str, Any]:
+    """ملخص القوالب المتاحة."""
+    return {
+        "total_templates": 4,
+        "templates": TEMPLATE_METADATA,
+        "purpose": "توليد تقارير فنية ثابتة حسب مستوى الخطورة",
+        "advantages": [
+            "حتمية 100% (نفس المدخلات = نفس المخرجات)",
+            "قابلة للمراجعة البشرية",
+            "تعمل Offline",
+            "لا تحتاج إنترنت أو API",
+            "متوافقة مع القانون السوداني",
+        ],
+    }
