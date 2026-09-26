@@ -1,4 +1,4 @@
-"""DRASTIC Sudan v5.0 - Single File Version"""
+"""DRASTIC Sudan v6.0 - Single File Version with Multi-Format Reports"""
 import streamlit as st
 import folium
 from streamlit_folium import st_folium
@@ -17,7 +17,7 @@ except ImportError:
     DS_OK = False
 
 
-# === دوال DRASTIC ===
+# ============ دوال DRASTIC ============
 def get_d_rating(d):
     if d < 0: raise ValueError("سالب")
     if d <= 1.5: return 10
@@ -104,7 +104,7 @@ def mitigate(idx, hdpe=False, treatment=False, monitoring=False):
                         ("Monitoring Wells", monitoring)] if v]}
 
 
-# === قوالب التقارير (مدمجة داخل app.py) ===
+# ============ قوالب التقارير ============
 TEMPLATES = {
     "low": {
         "level": "منخفض", "range": "23-99",
@@ -242,10 +242,40 @@ def gen_report(site, coords, idx, ratings, values, travel=None):
     return "\n".join(L)
 
 
-# === الواجهة ===
+def gen_html_report(report_text, site_name, ref):
+    """توليد HTML بتنسيق RTL صحيح"""
+    html = (
+        "<!DOCTYPE html>"
+        "<html dir='rtl' lang='ar'>"
+        "<head>"
+        "<meta charset='UTF-8'>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1.0'>"
+        "<title>تقرير " + site_name + "</title>"
+        "<style>"
+        "body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;"
+        "direction:rtl;text-align:right;padding:30px;"
+        "max-width:900px;margin:0 auto;background:#f8f9fa;color:#222;"
+        "line-height:1.9;font-size:14px;}"
+        "pre{white-space:pre-wrap;word-wrap:break-word;"
+        "font-family:'Segoe UI',Tahoma,Arial,sans-serif;"
+        "background:#fff;padding:25px;border-radius:8px;"
+        "border:1px solid #ddd;box-shadow:0 2px 6px rgba(0,0,0,0.08);}"
+        "h1{color:#5c2c16;text-align:center;}"
+        "@media print{body{background:#fff;padding:0;}pre{border:none;box-shadow:none;}}"
+        "</style>"
+        "</head>"
+        "<body>"
+        "<pre>" + report_text + "</pre>"
+        "</body>"
+        "</html>"
+    )
+    return html
+
+
+# ============ الواجهة ============
 st.title("⛏️ نظام التقييم البيئي للتعدين")
 st.markdown("### جامعة الخرطوم - كلية الهندسة")
-st.markdown("#### DRASTIC Sudan v5.0")
+st.markdown("#### DRASTIC Sudan v6.0")
 st.markdown("---")
 
 if DS_OK:
@@ -266,7 +296,7 @@ tabs = st.tabs(["📍 التقييم", "📊 الجماعي (A)", "🛡️ ال�
                 "📄 التقرير", "🗺️ الخريطة"])
 
 
-# === TAB 1 ===
+# ============ TAB 1: التقييم الفردي ============
 with tabs[0]:
     st.header("⚙️ اختيار الموقع والمدخلات")
     site = st.selectbox("الموقع:", list(preset.keys()))
@@ -292,9 +322,12 @@ with tabs[0]:
         porosity = st.slider("θ - المسامية:", 0.02, 0.55, 0.25, 0.01)
 
     try:
-        D_r = get_d_rating(depth); R_r = get_r_rating(recharge)
-        A_r = get_a_rating(aquifer); S_r = get_s_rating(soil)
-        T_r = get_t_rating(slope); I_r = get_i_rating(vadose)
+        D_r = get_d_rating(depth)
+        R_r = get_r_rating(recharge)
+        A_r = get_a_rating(aquifer)
+        S_r = get_s_rating(soil)
+        T_r = get_t_rating(slope)
+        I_r = get_i_rating(vadose)
         C_r = get_c_rating(conductivity)
         idx = calc_index(D_r, R_r, A_r, S_r, T_r, I_r, C_r)
         risk = classify(idx)
@@ -337,7 +370,7 @@ with tabs[0]:
         st.error("خطأ: " + str(e))
 
 
-# === TAB 2 ===
+# ============ TAB 2: التقييم الجماعي ============
 with tabs[1]:
     st.header("📊 التقييم الجماعي")
     sample = pd.DataFrame({
@@ -401,7 +434,7 @@ with tabs[1]:
             st.error("خطأ: " + str(e))
 
 
-# === TAB 3 ===
+# ============ TAB 3: محاكي الحلول ============
 with tabs[2]:
     st.header("🛡️ محاكي الحلول")
     if "idx" not in st.session_state:
@@ -426,7 +459,7 @@ with tabs[2]:
             st.metric("المستوى الجديد", nr["level"])
 
 
-# === TAB 4 ===
+# ============ TAB 4: توليد التقرير ============
 with tabs[3]:
     st.header("📄 توليد التقرير")
     if "idx" not in st.session_state:
@@ -437,6 +470,7 @@ with tabs[3]:
         key = get_tpl_key(idx)
         st.info("الموقع: " + site + " | المؤشر: " + str(idx) + 
                 " | القالب: " + key.upper())
+        
         if st.button("📄 توليد التقرير", type="primary"):
             rep = gen_report(
                 site=site,
@@ -448,15 +482,87 @@ with tabs[3]:
             )
             st.session_state["report"] = rep
             st.success("✅ تم التوليد")
+        
         if "report" in st.session_state:
-            st.text_area("التقرير:", st.session_state["report"], height=500)
-            st.download_button("📥 تحميل",
-                data=st.session_state["report"],
-                file_name="report_" + site + ".txt", mime="text/plain")
-            st.warning("⚠️ هذا تقرير آلي - يحتاج مراجعة بشرية.")
+            st.text_area("التقرير:", st.session_state["report"], height=400)
+            
+            st.markdown("---")
+            st.subheader("📥 خيارات التحميل")
+            st.caption("💡 للحصول على عرض صحيح للنص العربي، استخدم HTML.")
+            
+            ref = "GRAS-" + datetime.date.today().strftime("%Y%m%d") + "-" + key.upper()[:3]
+            safe_site = site.replace(" ", "_").replace("/", "_")
+            
+            col1, col2, col3 = st.columns(3)
+            
+            # TXT مع BOM
+            with col1:
+                txt_with_bom = "\ufeff" + st.session_state["report"]
+                st.download_button(
+                    "📥 TXT",
+                    data=txt_with_bom.encode("utf-8"),
+                    file_name="report_" + safe_site + ".txt",
+                    mime="text/plain; charset=utf-8",
+                    use_container_width=True,
+                    help="افتحه في Word لعرض صحيح"
+                )
+            
+            # HTML
+            with col2:
+                html_content = gen_html_report(
+                    st.session_state["report"], site, ref
+                )
+                st.download_button(
+                    "📥 HTML (موصى به)",
+                    data=html_content.encode("utf-8"),
+                    file_name="report_" + safe_site + ".html",
+                    mime="text/html; charset=utf-8",
+                    use_container_width=True,
+                    help="افتحه في أي متصفح - عرض مثالي"
+                )
+            
+            # CSV
+            with col3:
+                ratings = st.session_state.get("ratings", {})
+                values = st.session_state.get("values", {})
+                csv_lines = [
+                    "المعامل,القيمة,التقييم",
+                    "عمق المياه (D)," + str(values.get("depth", "")) + "," + str(ratings.get("D", "")),
+                    "التغذية (R)," + str(values.get("recharge", "")) + "," + str(ratings.get("R", "")),
+                    "الخزان (A)," + str(values.get("aquifer", "")) + "," + str(ratings.get("A", "")),
+                    "التربة (S)," + str(values.get("soil", "")) + "," + str(ratings.get("S", "")),
+                    "الانحدار (T)," + str(values.get("slope", "")) + "," + str(ratings.get("T", "")),
+                    "غير المشبعة (I)," + str(values.get("vadose", "")) + "," + str(ratings.get("I", "")),
+                    "النفاذية (C)," + str(values.get("conductivity", "")) + "," + str(ratings.get("C", "")),
+                    "المؤشر الإجمالي," + str(idx) + ",",
+                ]
+                csv_content = "\n".join(csv_lines)
+                st.download_button(
+                    "📥 CSV",
+                    data=("\ufeff" + csv_content).encode("utf-8"),
+                    file_name="data_" + safe_site + ".csv",
+                    mime="text/csv; charset=utf-8",
+                    use_container_width=True,
+                    help="بيانات منظمة لـ Excel"
+                )
+            
+            st.warning("⚠️ هذا تقرير آلي - يحتاج مراجعة وتوقيع مهندس مختص.")
+            
+            with st.expander("ℹ️ كيف أقرأ التقرير بشكل صحيح؟"):
+                st.markdown("""
+                **المشكلة:** ملفات TXT لا تدعم النص العربي (RTL) بشكل كامل.
+                
+                **الحلول:**
+                1. **📥 HTML (الأفضل):** افتحه في أي متصفح - عرض مثالي.
+                2. **📥 TXT:** افتحه في Microsoft Word أو Google Docs.
+                3. **📥 CSV:** لاستخدام البيانات في Excel.
+                
+                **نصيحة للطباعة:**
+                افتح HTML في Chrome، ثم Ctrl+P > Save as PDF.
+                """)
 
 
-# === TAB 5 ===
+# ============ TAB 5: الخريطة ============
 with tabs[4]:
     st.header("🗺️ الخريطة")
     m = folium.Map(location=[15.5, 32.5], zoom_start=6)
@@ -478,4 +584,4 @@ with tabs[4]:
 
 
 st.markdown("---")
-st.caption("© 2026 جامعة الخرطوم - DRASTIC Sudan v5.0")
+st.caption("© 2026 جامعة الخرطوم - DRASTIC Sudan v6.0")
