@@ -1,4 +1,4 @@
-"""DRASTIC Sudan v13.0 - Sidebar Fixed Version"""
+"""DRASTIC Sudan v13.1 - Sidebar Dynamic Keys"""
 import streamlit as st
 import folium
 from streamlit_folium import st_folium
@@ -264,7 +264,7 @@ def gen_html(rep, site):
 
 st.title("نظام التقييم البيئي للتعدين")
 st.markdown("### جامعة الخرطوم - كلية الهندسة")
-st.markdown("#### DRASTIC Sudan v13.0")
+st.markdown("#### DRASTIC Sudan v13.1")
 st.markdown("---")
 
 if DS_OK:
@@ -275,53 +275,75 @@ else:
               "depth": 15.0, "conductivity": 5.0, "source": "افتراضي"}}
     summary = {"Total Data Points": 1}
 
-# ===== الشريط الجانبي: الموقع + المدخلات =====
+
+# ===== الشريط الجانبي مع مفاتيح ديناميكية =====
 with st.sidebar:
     st.markdown("### اختيار الموقع")
-    site = st.selectbox("الموقع:", list(preset.keys()), key="side_site")
+    site = st.selectbox("الموقع:", list(preset.keys()), key="site_selector_v131")
     sd = preset[site]
     st.caption("المصدر: " + sd.get("source", "غير محدد"))
     st.markdown("---")
     
+    # مفتاح فريد لكل موقع (يُجبر Streamlit على التحديث)
+    sk = site.replace(" ", "_").replace("(", "").replace(")", "").replace("/", "_")[:15]
+    
     st.markdown("### المدخلات")
-    depth = st.slider("D - العمق (م):", 0.5, 100.0, float(sd["depth"]), 0.5, key="side_d")
-    recharge = st.slider("R - التغذية:", 0.0, 400.0, 150.0, 10.0, key="side_r")
-    slope = st.slider("T - الانحدار:", 0.0, 30.0, 4.0, 0.5, key="side_t")
-    conductivity = st.slider("C - النفاذية:", 0.01, 100.0, float(sd["conductivity"]), 0.1, key="side_c")
-    aquifer = st.selectbox("A - الخزان:", ["massive_sandstone", "sand_and_gravel", "karst_limestone", "basalt", "massive_shale"], key="side_aq")
-    soil = st.selectbox("S - التربة:", ["sand", "sandy_loam", "loam", "silty_loam", "clay_loam", "nonshrinking_clay"], key="side_so")
-    vadose = st.selectbox("I - غير المشبعة:", ["sand_gravel", "sandstone", "limestone", "silt_clay", "shale"], key="side_vd")
-    porosity = st.slider("المسامية:", 0.02, 0.55, 0.25, 0.01, key="side_po")
+    depth = st.slider("D - العمق (م):", 0.5, 100.0, float(sd["depth"]), 0.5,
+                      key="d_input_" + sk)
+    recharge = st.slider("R - التغذية:", 0.0, 400.0, 150.0, 10.0,
+                        key="r_input_" + sk)
+    slope = st.slider("T - الانحدار:", 0.0, 30.0, 4.0, 0.5,
+                     key="t_input_" + sk)
+    conductivity = st.slider("C - النفاذية:", 0.01, 100.0, float(sd["conductivity"]), 0.1,
+                              key="c_input_" + sk)
+    aquifer = st.selectbox("A - الخزان:",
+        ["massive_sandstone", "sand_and_gravel", "karst_limestone",
+         "basalt", "massive_shale"], key="a_input_" + sk)
+    soil = st.selectbox("S - التربة:",
+        ["sand", "sandy_loam", "loam", "silty_loam",
+         "clay_loam", "nonshrinking_clay"], key="s_input_" + sk)
+    vadose = st.selectbox("I - غير المشبعة:",
+        ["sand_gravel", "sandstone", "limestone", "silt_clay", "shale"],
+        key="i_input_" + sk)
+    porosity = st.slider("المسامية:", 0.02, 0.55, 0.25, 0.01,
+                        key="p_input_" + sk)
     
     st.markdown("---")
     st.markdown("### ملخص البيانات")
     st.metric("المواقع", summary["Total Data Points"])
 
+
 # ===== الحساب (قبل التبويبات) =====
-D_r = get_d_rating(depth)
-R_r = get_r_rating(recharge)
-A_r = get_a_rating(aquifer)
-S_r = get_s_rating(soil)
-T_r = get_t_rating(slope)
-I_r = get_i_rating(vadose)
-C_r = get_c_rating(conductivity)
-idx = calc_index(D_r, R_r, A_r, S_r, T_r, I_r, C_r)
-risk = classify(idx)
-travel = calc_travel(depth, porosity, conductivity)
+try:
+    D_r = get_d_rating(depth)
+    R_r = get_r_rating(recharge)
+    A_r = get_a_rating(aquifer)
+    S_r = get_s_rating(soil)
+    T_r = get_t_rating(slope)
+    I_r = get_i_rating(vadose)
+    C_r = get_c_rating(conductivity)
+    idx = calc_index(D_r, R_r, A_r, S_r, T_r, I_r, C_r)
+    risk = classify(idx)
+    travel = calc_travel(depth, porosity, conductivity)
+    calc_error = None
+except ValueError as e:
+    idx = 0
+    risk = {"level": "خطأ", "color": "red", "action": str(e)}
+    travel = {"years": 0, "days": 0, "velocity": 0}
+    D_r = R_r = A_r = S_r = T_r = I_r = C_r = 0
+    calc_error = str(e)
 
-st.session_state["ci"] = idx
-st.session_state["cs"] = site
-st.session_state["cc"] = sd["coords"]
-st.session_state["cr"] = {"D": D_r, "R": R_r, "A": A_r, "S": S_r, "T": T_r, "I": I_r, "C": C_r}
-st.session_state["cv"] = {"depth": depth, "recharge": recharge, "aquifer": aquifer, "soil": soil, "slope": slope, "vadose": vadose, "conductivity": conductivity}
-st.session_state["ct"] = travel["years"]
 
-# ===== عرض مؤشر سريع في الأعلى =====
-col_h1, col_h2, col_h3 = st.columns(3)
-col_h1.metric("الموقع الحالي", site)
-col_h2.metric("مؤشر DRASTIC", str(idx) + " / 230")
-col_h3.metric("المستوى", risk["level"])
+# ===== عرض سريع للمؤشر في الأعلى =====
+c1, c2, c3 = st.columns(3)
+c1.metric("الموقع الحالي", site)
+c2.metric("مؤشر DRASTIC", str(idx) + " / 230")
+c3.metric("المستوى", risk["level"])
 st.markdown("---")
+
+if calc_error:
+    st.error("خطأ في المدخلات: " + calc_error)
+
 
 # ===== التبويبات =====
 t1, t2, t3, t4, t5, t6 = st.tabs(["النتائج", "الجماعي", "الحلول", "التقرير", "الخريطة", "الدقة"])
@@ -365,7 +387,7 @@ with t2:
         "soil": ["sand", "sandy_loam"], "vadose": ["sand_gravel", "sandstone"]})
     st.download_button("تحميل نموذج", data=sample.to_csv(index=False).encode("utf-8-sig"),
         file_name="template.csv", mime="text/csv")
-    f = st.file_uploader("ارفع ملف:", type=["csv", "xlsx"], key="up")
+    f = st.file_uploader("ارفع ملف:", type=["csv", "xlsx"], key="up_v131")
     if f:
         try:
             df = pd.read_csv(f) if f.name.endswith(".csv") else pd.read_excel(f)
@@ -391,17 +413,17 @@ with t2:
             st.error("خطأ: " + str(e))
 
 
-# ===== TAB 3: الحلول (محسّن) =====
+# ===== TAB 3: الحلول =====
 with t3:
-    st.header("محاكي الحلول")
+    st.header("محاكي الحلول الهندسية")
     st.info("الموقع: " + site + " | المؤشر الحالي: " + str(idx))
     st.caption("HDPE = خفض 60 | المعالجة = خفض 40 | الآبار = خفض 15")
     c1, c2 = st.columns(2)
     with c1:
-        h = st.checkbox("HDPE Liner", key="mit_hdpe")
-        tr = st.checkbox("Cyanide Treatment", key="mit_treat")
+        h = st.checkbox("HDPE Liner", key="mit_hdpe_v131")
+        tr = st.checkbox("Cyanide Treatment", key="mit_treat_v131")
     with c2:
-        mo = st.checkbox("Monitoring Wells", key="mit_monitor")
+        mo = st.checkbox("Monitoring Wells", key="mit_monitor_v131")
     if h or tr or mo:
         r = mitigate(idx, h, tr, mo)
         st.markdown("---")
@@ -423,31 +445,33 @@ with t4:
     st.header("توليد التقرير")
     key = get_tpl_key(idx)
     st.info("الموقع: " + site + " | المؤشر: " + str(idx) + " | القالب: " + key.upper())
-    if st.button("توليد التقرير", type="primary", key="gen_btn"):
-        rep = gen_report(site, sd["coords"], idx,
-                        st.session_state["cr"], st.session_state["cv"],
-                        travel["years"])
-        st.session_state["rep"] = rep
+    if st.button("توليد التقرير", type="primary", key="gen_btn_v131"):
+        ratings_dict = {"D": D_r, "R": R_r, "A": A_r, "S": S_r, "T": T_r, "I": I_r, "C": C_r}
+        values_dict = {"depth": depth, "recharge": recharge, "aquifer": aquifer,
+                       "soil": soil, "slope": slope, "vadose": vadose,
+                       "conductivity": conductivity}
+        rep = gen_report(site, sd["coords"], idx, ratings_dict, values_dict, travel["years"])
+        st.session_state["rep_v131"] = rep
         st.success("تم التوليد")
-    if "rep" in st.session_state:
-        st.text_area("التقرير:", st.session_state["rep"], height=400)
+    if "rep_v131" in st.session_state:
+        st.text_area("التقرير:", st.session_state["rep_v131"], height=400)
         st.markdown("---")
         safe = site.replace(" ", "_")
         cc1, cc2 = st.columns(2)
         with cc1:
             st.download_button("تحميل TXT",
-                data=("\ufeff" + st.session_state["rep"]).encode("utf-8"),
+                data=("\ufeff" + st.session_state["rep_v131"]).encode("utf-8"),
                 file_name="rep_" + safe + ".txt",
                 mime="text/plain; charset=utf-8",
                 use_container_width=True,
-                key="dl_txt")
+                key="dl_txt_v131")
         with cc2:
             st.download_button("تحميل HTML",
-                data=gen_html(st.session_state["rep"], site).encode("utf-8"),
+                data=gen_html(st.session_state["rep_v131"], site).encode("utf-8"),
                 file_name="rep_" + safe + ".html",
                 mime="text/html; charset=utf-8",
                 use_container_width=True,
-                key="dl_html")
+                key="dl_html_v131")
         st.warning("يحتاج مراجعة بشرية قبل الاعتماد.")
 
 
@@ -465,7 +489,7 @@ with t5:
             folium.Marker([d["coords"][1], d["coords"][0]], popup=n, icon=folium.Icon(color=col)).add_to(m)
         for n, d in KHARTOUM_LOCALITIES.items():
             folium.CircleMarker([d["coords"][1], d["coords"][0]], radius=8, color="purple", fill=True, popup=n).add_to(m)
-    st_folium(m, width=None, height=600, key="map_main")
+    st_folium(m, width=None, height=600, key="map_v131")
 
 
 # ===== TAB 6: الدقة =====
@@ -475,7 +499,7 @@ with t6:
         "actual_status": [1, 0, 0, 1]})
     st.download_button("تحميل نموذج", data=sample.to_csv(index=False).encode("utf-8-sig"),
         file_name="accuracy_template.csv", mime="text/csv")
-    f2 = st.file_uploader("ارفع:", type=["csv", "xlsx"], key="acc_up")
+    f2 = st.file_uploader("ارفع:", type=["csv", "xlsx"], key="acc_up_v131")
     if f2:
         try:
             df = pd.read_csv(f2) if f2.name.endswith(".csv") else pd.read_excel(f2)
@@ -513,4 +537,4 @@ with t6:
 
 
 st.markdown("---")
-st.caption("2026 University of Khartoum - DRASTIC Sudan v13.0")
+st.caption("2026 University of Khartoum - DRASTIC Sudan v13.1")
