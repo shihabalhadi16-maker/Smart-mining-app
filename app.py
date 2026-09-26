@@ -516,7 +516,7 @@ with t3:
             h = st.checkbox("HDPE Liner", key="mh")
             tr = st.checkbox("Cyanide Treatment", key="mt")
         with c2:
-            mo = st.checkbox("Monitoring Wells", key="mm")
+        mo = st.checkbox("Monitoring Wells", key="check_mm")
         st.caption("HDPE = خفض 60 | المعالجة = خفض 40 | الآبار = خفض 15")
         if h or tr or mo:
             r = mitigate(base, h, tr, mo)
