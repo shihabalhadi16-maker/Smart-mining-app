@@ -1,9 +1,10 @@
-"""DRASTIC Sudan v7.0 - Fixed Session State Management"""
+"""DRASTIC Sudan v8.0 - Complete Integrated System"""
 import streamlit as st
 import folium
 from streamlit_folium import st_folium
 import pandas as pd
 import datetime
+import math
 
 st.set_page_config(page_title="DRASTIC Sudan", page_icon="⛏️", layout="wide")
 
@@ -17,7 +18,7 @@ except ImportError:
     DS_OK = False
 
 
-# ============ دوال DRASTIC ============
+# ============ دوال DRASTIC (مُحدّثة 100%) ============
 def get_d_rating(d):
     if d < 0: raise ValueError("سالب")
     if d <= 1.5: return 10
@@ -37,16 +38,33 @@ def get_r_rating(r):
     return 9
 
 def get_a_rating(a):
-    m = {"massive_shale": 2, "metamorphic_igneous": 3,
-         "thin_bedded_sequences": 6, "massive_sandstone": 6,
-         "massive_limestone": 6, "sand_and_gravel": 8,
-         "basalt": 9, "karst_limestone": 10}
+    m = {
+        "massive_shale": 2,
+        "metamorphic_igneous": 3,
+        "weathered_metamorphic_igneous": 4,
+        "thin_bedded_sequences": 6,
+        "massive_sandstone": 6,
+        "massive_limestone": 6,
+        "sand_and_gravel": 8,
+        "basalt": 9,
+        "karst_limestone": 10,
+    }
     return m.get(a, 6)
 
 def get_s_rating(s):
-    m = {"thin_or_absent": 10, "gravel": 10, "sand": 9, "peat": 8,
-         "sandy_loam": 6, "loam": 5, "silty_loam": 4,
-         "clay_loam": 3, "muck": 2, "nonshrinking_clay": 1}
+    m = {
+        "thin_or_absent": 10,
+        "gravel": 10,
+        "sand": 9,
+        "peat": 8,
+        "shrinking_aggregated_clay": 7,
+        "sandy_loam": 6,
+        "loam": 5,
+        "silty_loam": 4,
+        "clay_loam": 3,
+        "muck": 2,
+        "nonshrinking_clay": 1,
+    }
     return m.get(s, 5)
 
 def get_t_rating(t):
@@ -58,9 +76,18 @@ def get_t_rating(t):
     return 1
 
 def get_i_rating(i):
-    m = {"silt_clay": 1, "shale": 3, "limestone": 6, "sandstone": 6,
-         "sand_gravel_silt_clay": 6, "sand_gravel": 8,
-         "basalt": 9, "karst_limestone": 10}
+    m = {
+        "confining_layer": 1,
+        "silt_clay": 1,
+        "shale": 3,
+        "metamorphic_igneous": 4,
+        "limestone": 6,
+        "sandstone": 6,
+        "sand_gravel_silt_clay": 6,
+        "sand_gravel": 8,
+        "basalt": 9,
+        "karst_limestone": 10,
+    }
     return m.get(i, 6)
 
 def get_c_rating(c):
@@ -102,6 +129,100 @@ def mitigate(idx, hdpe=False, treatment=False, monitoring=False):
             "methods": [x for x, v in [("HDPE Liner", hdpe),
                         ("Cyanide Treatment", treatment),
                         ("Monitoring Wells", monitoring)] if v]}
+
+
+# ============ الدقة الإحصائية ============
+def calc_accuracy_metrics(predictions, actuals):
+    """حساب مقاييس الدقة الكاملة."""
+    if len(predictions) != len(actuals):
+        raise ValueError("عدد التنبؤات لا يطابق القيم الفعلية")
+    if len(predictions) == 0:
+        raise ValueError("القوائم فارغة")
+    
+    tp = tn = fp = fn = 0
+    for p, a in zip(predictions, actuals):
+        if p == 1 and a == 1: tp += 1
+        elif p == 0 and a == 0: tn += 1
+        elif p == 1 and a == 0: fp += 1
+        elif p == 0 and a == 1: fn += 1
+    
+    total = tp + tn + fp + fn
+    accuracy = (tp + tn) / total * 100
+    precision = (tp / (tp + fp) * 100) if (tp + fp) > 0 else 0
+    recall = (tp / (tp + fn) * 100) if (tp + fn) > 0 else 0
+    specificity = (tn / (tn + fp) * 100) if (tn + fp) > 0 else 0
+    f1 = (2 * precision * recall / (precision + recall)
+          if (precision + recall) > 0 else 0)
+    
+    # Kappa (Cohen, 1960)
+    p_o = (tp + tn) / total
+    p_e = (((tp + fp) * (tp + fn) + (tn + fn) * (tn + fp)) / (total ** 2))
+    kappa = ((p_o - p_e) / (1 - p_e)) if (1 - p_e) > 0 else 0
+    
+    return {
+        "accuracy": round(accuracy, 2),
+        "precision": round(precision, 2),
+        "recall": round(recall, 2),
+        "specificity": round(specificity, 2),
+        "f1_score": round(f1, 2),
+        "kappa": round(kappa, 4),
+        "TP": tp, "TN": tn, "FP": fp, "FN": fn,
+        "total": total,
+    }
+
+def interpret_kappa(k):
+    if k < 0: return "ضعيف جداً"
+    if k < 0.20: return "ضعيف جداً"
+    if k < 0.40: return "ضعيف"
+    if k < 0.60: return "متوسط"
+    if k < 0.80: return "جيد"
+    return "ممتاز"
+
+def interpret_accuracy(a):
+    if a >= 90: return "ممتاز - قابل للنشر العلمي"
+    if a >= 80: return "جيد جداً - قابل للاعتماد"
+    if a >= 70: return "جيد - يحتاج معايرة"
+    if a >= 60: return "مقبول - يحتاج تحسين"
+    return "ضعيف - يحتاج إعادة نظر"
+
+def gen_accuracy_report(metrics, n_sites):
+    """تقرير الدقة الكامل."""
+    L = []
+    L.append("=" * 60)
+    L.append("تقرير الدقة الإحصائية - نموذج DRASTIC Sudan")
+    L.append("=" * 60)
+    L.append("")
+    L.append("عدد المواقع: " + str(n_sites))
+    L.append("عتبة التصنيف: 140")
+    L.append("")
+    L.append("-" * 60)
+    L.append("مصفوفة الالتباس")
+    L.append("-" * 60)
+    L.append("  True Positive: " + str(metrics["TP"]))
+    L.append("  True Negative: " + str(metrics["TN"]))
+    L.append("  False Positive: " + str(metrics["FP"]))
+    L.append("  False Negative: " + str(metrics["FN"]))
+    L.append("")
+    L.append("-" * 60)
+    L.append("مقاييس الدقة")
+    L.append("-" * 60)
+    L.append("  الدقة الكلية: " + str(metrics["accuracy"]) + "%")
+    L.append("  الحساسية: " + str(metrics["recall"]) + "%")
+    L.append("  الدقة الموجبة: " + str(metrics["precision"]) + "%")
+    L.append("  التحديد: " + str(metrics["specificity"]) + "%")
+    L.append("  F1-Score: " + str(metrics["f1_score"]) + "%")
+    L.append("  Kappa: " + str(metrics["kappa"]))
+    L.append("")
+    L.append("-" * 60)
+    L.append("التفسير")
+    L.append("-" * 60)
+    L.append("  الدقة: " + interpret_accuracy(metrics["accuracy"]))
+    L.append("  Kappa: " + interpret_kappa(metrics["kappa"]))
+    L.append("")
+    L.append("=" * 60)
+    L.append("© 2026 جامعة الخرطوم")
+    L.append("=" * 60)
+    return "\n".join(L)
 
 
 # ============ قوالب التقارير ============
@@ -271,7 +392,7 @@ def gen_html_report(report_text, site_name):
 # ============ الترويسة ============
 st.title("⛏️ نظام التقييم البيئي للتعدين")
 st.markdown("### جامعة الخرطوم - كلية الهندسة")
-st.markdown("#### DRASTIC Sudan v7.0")
+st.markdown("#### DRASTIC Sudan v8.0")
 st.markdown("---")
 
 if DS_OK:
@@ -288,10 +409,10 @@ else:
               "depth": 15.0, "conductivity": 5.0, "source": "افتراضي"}}
 
 
-# ============ التبويبات ============
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+# ============ 6 تبويبات ============
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📍 التقييم", "📊 الجماعي (A)", "🛡️ الحلول (C)",
-    "📄 التقرير", "🗺️ الخريطة"
+    "📄 التقرير", "🗺️ الخريطة", "📊 الدقة الإحصائية"
 ])
 
 
@@ -316,13 +437,17 @@ with tab1:
     with c2:
         aquifer = st.selectbox("A - الخزان:",
             ["massive_sandstone", "sand_and_gravel", "karst_limestone",
-             "basalt", "massive_shale"], key="aq_select")
+             "basalt", "massive_shale", "metamorphic_igneous",
+             "weathered_metamorphic_igneous", "thin_bedded_sequences",
+             "massive_limestone"], key="aq_select")
         soil = st.selectbox("S - التربة:",
             ["sand", "sandy_loam", "loam", "silty_loam",
-             "clay_loam", "nonshrinking_clay"], key="soil_select")
+             "clay_loam", "nonshrinking_clay", "shrinking_aggregated_clay",
+             "gravel", "peat", "muck", "thin_or_absent"], key="soil_select")
         vadose = st.selectbox("I - غير المشبعة:",
-            ["sand_gravel", "sandstone", "limestone", "silt_clay", "shale"],
-            key="vadose_select")
+            ["sand_gravel", "sandstone", "limestone", "silt_clay", "shale",
+             "confining_layer", "metamorphic_igneous", "sand_gravel_silt_clay",
+             "basalt", "karst_limestone"], key="vadose_select")
         porosity = st.slider("θ - المسامية:", 0.02, 0.55, 0.25, 0.01,
                             key="porosity_slider")
 
@@ -337,7 +462,6 @@ with tab1:
         idx = calc_index(D_r, R_r, A_r, S_r, T_r, I_r, C_r)
         risk = classify(idx)
 
-        # حفظ في session_state مع مفتاح واضح
         st.session_state["current_idx"] = idx
         st.session_state["current_site"] = site
         st.session_state["current_coords"] = sd["coords"]
@@ -441,23 +565,16 @@ with tab2:
             st.error("خطأ: " + str(e))
 
 
-# ============ TAB 3: محاكي الحلول (FIXED) ============
+# ============ TAB 3: محاكي الحلول ============
 with tab3:
     st.header("🛡️ محاكي الحلول")
-    
     if "current_idx" not in st.session_state:
         st.warning("⚠️ اختر موقعاً أولاً من التبويب الأول.")
     else:
         base = st.session_state["current_idx"]
         site_name = st.session_state["current_site"]
+        st.info("📌 الموقع: **" + site_name + "** | المؤشر: **" + str(base) + "/230**")
         
-        st.info("📌 الموقع: **" + site_name + "** | المؤشر الأساسي: **" + str(base) + "/230**")
-        
-        # عرض تصنيف المؤشر الحالي
-        current_risk = classify(base)
-        st.caption("التصنيف الحالي: " + current_risk["level"])
-        
-        st.markdown("---")
         c1, c2 = st.columns(2)
         with c1:
             h = st.checkbox("HDPE Liner (خفض 60%)", key="mit_hdpe")
@@ -475,27 +592,16 @@ with tab3:
             st.progress(min(r["reduction_pct"] / 100, 1.0))
             
             nr = classify(int(r["mitigated_index"]))
-            st.markdown("---")
-            st.subheader("🎯 التصنيف الجديد")
-            st.metric("المستوى", nr["level"])
-            
-            if nr["color"] == "green":
-                st.success(nr["action"])
-            elif nr["color"] == "yellow":
-                st.info(nr["action"])
-            elif nr["color"] == "orange":
-                st.warning(nr["action"])
-            else:
-                st.error(nr["action"])
-            
-            st.markdown("**الحلول المُطبَّقة:**")
-            for method in r["methods"]:
-                st.markdown("- ✅ " + method)
+            st.metric("المستوى الجديد", nr["level"])
+            if nr["color"] == "green": st.success(nr["action"])
+            elif nr["color"] == "yellow": st.info(nr["action"])
+            elif nr["color"] == "orange": st.warning(nr["action"])
+            else: st.error(nr["action"])
         else:
-            st.info("ℹ️ اختر حلاً واحداً على الأقل لعرض النتائج.")
+            st.info("ℹ️ اختر حلاً واحداً على الأقل.")
 
 
-# ============ TAB 4: توليد التقرير ============
+# ============ TAB 4: التقرير ============
 with tab4:
     st.header("📄 توليد التقرير")
     if "current_idx" not in st.session_state:
@@ -520,98 +626,35 @@ with tab4:
             st.success("✅ تم التوليد")
         
         if "report" in st.session_state:
-            st.text_area("التقرير:", st.session_state["report"], height=400,
-                        key="report_area")
+            st.text_area("التقرير:", st.session_state["report"], height=400)
             
             st.markdown("---")
             st.subheader("📥 خيارات التحميل")
-            st.caption("💡 للحصول على عرض صحيح للنص العربي، استخدم HTML.")
-            
             safe_site = site.replace(" ", "_").replace("/", "_")
             
             col1, col2, col3 = st.columns(3)
             
             with col1:
                 txt_with_bom = "\ufeff" + st.session_state["report"]
-                st.download_button(
-                    "📥 TXT",
+                st.download_button("📥 TXT",
                     data=txt_with_bom.encode("utf-8"),
                     file_name="report_" + safe_site + ".txt",
                     mime="text/plain; charset=utf-8",
                     use_container_width=True,
-                    key="dl_txt"
-                )
+                    key="dl_txt")
             
             with col2:
                 html_content = gen_html_report(st.session_state["report"], site)
-                st.download_button(
-                    "📥 HTML (موصى به)",
+                st.download_button("📥 HTML (موصى به)",
                     data=html_content.encode("utf-8"),
                     file_name="report_" + safe_site + ".html",
                     mime="text/html; charset=utf-8",
                     use_container_width=True,
-                    key="dl_html"
-                )
+                    key="dl_html")
             
             with col3:
                 ratings = st.session_state.get("current_ratings", {})
                 values = st.session_state.get("current_values", {})
                 csv_lines = [
                     "المعامل,القيمة,التقييم",
-                    "عمق المياه (D)," + str(values.get("depth", "")) + "," + str(ratings.get("D", "")),
-                    "التغذية (R)," + str(values.get("recharge", "")) + "," + str(ratings.get("R", "")),
-                    "الخزان (A)," + str(values.get("aquifer", "")) + "," + str(ratings.get("A", "")),
-                    "التربة (S)," + str(values.get("soil", "")) + "," + str(ratings.get("S", "")),
-                    "الانحدار (T)," + str(values.get("slope", "")) + "," + str(ratings.get("T", "")),
-                    "غير المشبعة (I)," + str(values.get("vadose", "")) + "," + str(ratings.get("I", "")),
-                    "النفاذية (C)," + str(values.get("conductivity", "")) + "," + str(ratings.get("C", "")),
-                    "المؤشر الإجمالي," + str(idx) + ",",
-                ]
-                csv_content = "\n".join(csv_lines)
-                st.download_button(
-                    "📥 CSV",
-                    data=("\ufeff" + csv_content).encode("utf-8"),
-                    file_name="data_" + safe_site + ".csv",
-                    mime="text/csv; charset=utf-8",
-                    use_container_width=True,
-                    key="dl_csv"
-                )
-            
-            st.warning("⚠️ هذا تقرير آلي - يحتاج مراجعة وتوقيع مهندس مختص.")
-            
-            with st.expander("ℹ️ كيف أقرأ التقرير بشكل صحيح؟"):
-                st.markdown("""
-                **المشكلة:** ملفات TXT لا تدعم النص العربي (RTL) بشكل كامل.
-                
-                **الحلول:**
-                1. **📥 HTML (الأفضل):** افتحه في أي متصفح - عرض مثالي.
-                2. **📥 TXT:** افتحه في Microsoft Word أو Google Docs.
-                3. **📥 CSV:** لاستخدام البيانات في Excel.
-                
-                **للطباعة:** افتح HTML في Chrome، ثم Ctrl+P > Save as PDF.
-                """)
-
-
-# ============ TAB 5: الخريطة ============
-with tab5:
-    st.header("🗺️ الخريطة")
-    m = folium.Map(location=[15.5, 32.5], zoom_start=6)
-    if DS_OK:
-        for name, d in NARIS_WELLS.items():
-            folium.Marker([d["coords"][1], d["coords"][0]],
-                popup=name, icon=folium.Icon(color="blue")).add_to(m)
-        for name, d in DARFUR_WELLS.items():
-            folium.Marker([d["coords"][1], d["coords"][0]],
-                popup=name, icon=folium.Icon(color="green")).add_to(m)
-        for name, d in KNOWN_MINING_SITES.items():
-            col = "red" if d.get("cyanide_use") else "orange"
-            folium.Marker([d["coords"][1], d["coords"][0]],
-                popup=name, icon=folium.Icon(color=col)).add_to(m)
-        for name, d in KHARTOUM_LOCALITIES.items():
-            folium.CircleMarker([d["coords"][1], d["coords"][0]],
-                radius=8, color="purple", fill=True, popup=name).add_to(m)
-    st_folium(m, width=None, height=600, key="main_map")
-
-
-st.markdown("---")
-st.caption("© 2026 جامعة الخرطوم - DRASTIC Sudan v7.0")
+                    "عمق المياه (D)," +
