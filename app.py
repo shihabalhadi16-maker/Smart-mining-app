@@ -1,4 +1,4 @@
-"""DRASTIC Sudan v9.0"""
+"""DRASTIC Sudan v9.1 - Final Working Version"""
 import streamlit as st
 import folium
 from streamlit_folium import st_folium
@@ -289,7 +289,7 @@ def gen_html(rep, site):
 # ===== الترويسة =====
 st.title("⛏️ نظام التقييم البيئي للتعدين")
 st.markdown("### جامعة الخرطوم - كلية الهندسة")
-st.markdown("#### DRASTIC Sudan v9.0")
+st.markdown("#### DRASTIC Sudan v9.1")
 st.markdown("---")
 
 if DS_OK:
@@ -439,7 +439,7 @@ with t2:
             st.error("خطأ: " + str(e))
 
 
-# ===== TAB 3 =====
+# ===== TAB 3: محاكي الحلول (مُصلح) =====
 with t3:
     st.header("🛡️ محاكي الحلول")
     if "ci" not in st.session_state:
@@ -449,10 +449,10 @@ with t3:
         st.info("📍 " + st.session_state["cs"] + " | المؤشر: " + str(base))
         c1, c2 = st.columns(2)
         with c1:
-            h = st.checkbox("HDPE Liner (-60%)", key="mh")
-            tr = st.checkbox("معالجة السيانيد (-40%)", key="mt")
+            h = st.checkbox("HDPE Liner (خفض 60%)", key="mh")
+            tr = st.checkbox("معالجة السيانيد (خفض 40%)", key="mt")
         with c2:
-            mo = st.checkbox("آبار مراقبة (-15%)", key="mm")
+            mo = st.checkbox("آبار مراقبة (خفض 15%)", key="mm")
         if h or tr or mo:
             r = mitigate(base, h, tr, mo)
             st.markdown("---")
@@ -523,12 +523,12 @@ with t5:
     st_folium(m, width=None, height=600, key="mm")
 
 
-# ===== TAB 6: الدقة =====
+# ===== TAB 6 =====
 with t6:
     st.header("📊 الدقة الإحصائية")
     st.markdown("""
     **ارفع CSV** يحتوي على: `name`, `drastic_index`, `actual_status`
-    
+
     - `actual_status`: 1 = ملوث، 0 = نظيف
     """)
     sample = pd.DataFrame({
@@ -548,20 +548,20 @@ with t6:
                 preds = [1 if float(v) >= 140 else 0 for v in df["drastic_index"]]
                 actuals = [int(v) for v in df["actual_status"]]
                 m = calc_accuracy(preds, actuals)
-                
+
                 st.markdown("---")
                 a1, a2, a3, a4 = st.columns(4)
                 a1.metric("الدقة", str(m["accuracy"]) + "%")
                 a2.metric("الحساسية", str(m["recall"]) + "%")
                 a3.metric("Precision", str(m["precision"]) + "%")
                 a4.metric("F1", str(m["f1"]) + "%")
-                
+
                 b1, b2, b3, b4 = st.columns(4)
                 b1.metric("Kappa", m["kappa"])
                 b2.metric("التفسير", interp_kappa(m["kappa"]))
                 b3.metric("Specificity", str(m["specificity"]) + "%")
                 b4.metric("الإجمالي", m["total"])
-                
+
                 st.markdown("---")
                 st.subheader("🔢 مصفوفة الالتباس")
                 cm_df = pd.DataFrame({
@@ -569,11 +569,11 @@ with t6:
                     "نظيف فعلياً": [m["fp"], m["tn"]]},
                     index=["مصنّف ملوث", "مصنّف نظيف"])
                 st.dataframe(cm_df)
-                
+
                 st.markdown("---")
                 st.info("**الدقة:** " + interp_acc(m["accuracy"]))
                 st.info("**Kappa:** " + interp_kappa(m["kappa"]))
-                
+
                 st.markdown("---")
                 st.subheader("📄 التقرير")
                 rep_lines = [
@@ -613,4 +613,4 @@ with t6:
 
 
 st.markdown("---")
-st.caption("© 2026 جامعة الخرطوم - DRASTIC Sudan v9.0")
+st.caption("© 2026 جامعة الخرطوم - DRASTIC Sudan v9.1")
