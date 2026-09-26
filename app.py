@@ -1,4 +1,4 @@
-"""DRASTIC Sudan v13.1 - Sidebar Dynamic Keys"""
+"""DRASTIC Sudan v14.0 - Form-Based Sidebar"""
 import streamlit as st
 import folium
 from streamlit_folium import st_folium
@@ -264,7 +264,7 @@ def gen_html(rep, site):
 
 st.title("نظام التقييم البيئي للتعدين")
 st.markdown("### جامعة الخرطوم - كلية الهندسة")
-st.markdown("#### DRASTIC Sudan v13.1")
+st.markdown("#### DRASTIC Sudan v14.0")
 st.markdown("---")
 
 if DS_OK:
@@ -276,37 +276,35 @@ else:
     summary = {"Total Data Points": 1}
 
 
-# ===== الشريط الجانبي مع مفاتيح ديناميكية =====
+# ===== الشريط الجانبي: الموقع + نموذج المدخلات =====
 with st.sidebar:
     st.markdown("### اختيار الموقع")
-    site = st.selectbox("الموقع:", list(preset.keys()), key="site_selector_v131")
+    site = st.selectbox("الموقع:", list(preset.keys()), key="site_selector_v140")
     sd = preset[site]
     st.caption("المصدر: " + sd.get("source", "غير محدد"))
     st.markdown("---")
     
-    # مفتاح فريد لكل موقع (يُجبر Streamlit على التحديث)
-    sk = site.replace(" ", "_").replace("(", "").replace(")", "").replace("/", "_")[:15]
+    # نموذج بمفتاح فريد لكل موقع — يُعاد بناؤه عند تغيير الموقع
+    site_slug = site.replace(" ", "_").replace("(", "").replace(")", "").replace("/", "_")[:15]
     
-    st.markdown("### المدخلات")
-    depth = st.slider("D - العمق (م):", 0.5, 100.0, float(sd["depth"]), 0.5,
-                      key="d_input_" + sk)
-    recharge = st.slider("R - التغذية:", 0.0, 400.0, 150.0, 10.0,
-                        key="r_input_" + sk)
-    slope = st.slider("T - الانحدار:", 0.0, 30.0, 4.0, 0.5,
-                     key="t_input_" + sk)
-    conductivity = st.slider("C - النفاذية:", 0.01, 100.0, float(sd["conductivity"]), 0.1,
-                              key="c_input_" + sk)
-    aquifer = st.selectbox("A - الخزان:",
-        ["massive_sandstone", "sand_and_gravel", "karst_limestone",
-         "basalt", "massive_shale"], key="a_input_" + sk)
-    soil = st.selectbox("S - التربة:",
-        ["sand", "sandy_loam", "loam", "silty_loam",
-         "clay_loam", "nonshrinking_clay"], key="s_input_" + sk)
-    vadose = st.selectbox("I - غير المشبعة:",
-        ["sand_gravel", "sandstone", "limestone", "silt_clay", "shale"],
-        key="i_input_" + sk)
-    porosity = st.slider("المسامية:", 0.02, 0.55, 0.25, 0.01,
-                        key="p_input_" + sk)
+    with st.form(key="inputs_form_" + site_slug):
+        st.markdown("### المدخلات")
+        depth = st.slider("D - العمق (م):", 0.5, 100.0, float(sd["depth"]), 0.5)
+        recharge = st.slider("R - التغذية:", 0.0, 400.0, 150.0, 10.0)
+        slope = st.slider("T - الانحدار:", 0.0, 30.0, 4.0, 0.5)
+        conductivity = st.slider("C - النفاذية:", 0.01, 100.0, float(sd["conductivity"]), 0.1)
+        aquifer = st.selectbox("A - الخزان:",
+            ["massive_sandstone", "sand_and_gravel", "karst_limestone",
+             "basalt", "massive_shale"])
+        soil = st.selectbox("S - التربة:",
+            ["sand", "sandy_loam", "loam", "silty_loam",
+             "clay_loam", "nonshrinking_clay"])
+        vadose = st.selectbox("I - غير المشبعة:",
+            ["sand_gravel", "sandstone", "limestone", "silt_clay", "shale"])
+        porosity = st.slider("المسامية:", 0.02, 0.55, 0.25, 0.01)
+        
+        # زر "تطبيق" داخل النموذج
+        submitted = st.form_submit_button("تطبيق المدخلات")
     
     st.markdown("---")
     st.markdown("### ملخص البيانات")
@@ -334,7 +332,7 @@ except ValueError as e:
     calc_error = str(e)
 
 
-# ===== عرض سريع للمؤشر في الأعلى =====
+# ===== عرض سريع للمؤشر =====
 c1, c2, c3 = st.columns(3)
 c1.metric("الموقع الحالي", site)
 c2.metric("مؤشر DRASTIC", str(idx) + " / 230")
@@ -342,14 +340,13 @@ c3.metric("المستوى", risk["level"])
 st.markdown("---")
 
 if calc_error:
-    st.error("خطأ في المدخلات: " + calc_error)
+    st.error("خطأ: " + calc_error)
 
 
 # ===== التبويبات =====
 t1, t2, t3, t4, t5, t6 = st.tabs(["النتائج", "الجماعي", "الحلول", "التقرير", "الخريطة", "الدقة"])
 
 
-# ===== TAB 1: النتائج =====
 with t1:
     st.header("نتائج التقييم")
     x1, x2, x3, x4 = st.columns(4)
@@ -378,7 +375,6 @@ with t1:
     w3.metric("السرعة", round(travel["velocity"], 6))
 
 
-# ===== TAB 2: الجماعي =====
 with t2:
     st.header("التقييم الجماعي")
     sample = pd.DataFrame({"name": ["A", "B"], "lat": [19.53, 18.12], "lon": [33.32, 33.99],
@@ -387,7 +383,7 @@ with t2:
         "soil": ["sand", "sandy_loam"], "vadose": ["sand_gravel", "sandstone"]})
     st.download_button("تحميل نموذج", data=sample.to_csv(index=False).encode("utf-8-sig"),
         file_name="template.csv", mime="text/csv")
-    f = st.file_uploader("ارفع ملف:", type=["csv", "xlsx"], key="up_v131")
+    f = st.file_uploader("ارفع ملف:", type=["csv", "xlsx"], key="up_v140")
     if f:
         try:
             df = pd.read_csv(f) if f.name.endswith(".csv") else pd.read_excel(f)
@@ -413,17 +409,16 @@ with t2:
             st.error("خطأ: " + str(e))
 
 
-# ===== TAB 3: الحلول =====
 with t3:
     st.header("محاكي الحلول الهندسية")
     st.info("الموقع: " + site + " | المؤشر الحالي: " + str(idx))
     st.caption("HDPE = خفض 60 | المعالجة = خفض 40 | الآبار = خفض 15")
     c1, c2 = st.columns(2)
     with c1:
-        h = st.checkbox("HDPE Liner", key="mit_hdpe_v131")
-        tr = st.checkbox("Cyanide Treatment", key="mit_treat_v131")
+        h = st.checkbox("HDPE Liner", key="mit_hdpe_v140")
+        tr = st.checkbox("Cyanide Treatment", key="mit_treat_v140")
     with c2:
-        mo = st.checkbox("Monitoring Wells", key="mit_monitor_v131")
+        mo = st.checkbox("Monitoring Wells", key="mit_monitor_v140")
     if h or tr or mo:
         r = mitigate(idx, h, tr, mo)
         st.markdown("---")
@@ -440,42 +435,40 @@ with t3:
         else: st.error(nr["action"])
 
 
-# ===== TAB 4: التقرير =====
 with t4:
     st.header("توليد التقرير")
     key = get_tpl_key(idx)
     st.info("الموقع: " + site + " | المؤشر: " + str(idx) + " | القالب: " + key.upper())
-    if st.button("توليد التقرير", type="primary", key="gen_btn_v131"):
+    if st.button("توليد التقرير", type="primary", key="gen_btn_v140"):
         ratings_dict = {"D": D_r, "R": R_r, "A": A_r, "S": S_r, "T": T_r, "I": I_r, "C": C_r}
         values_dict = {"depth": depth, "recharge": recharge, "aquifer": aquifer,
                        "soil": soil, "slope": slope, "vadose": vadose,
                        "conductivity": conductivity}
         rep = gen_report(site, sd["coords"], idx, ratings_dict, values_dict, travel["years"])
-        st.session_state["rep_v131"] = rep
+        st.session_state["rep_v140"] = rep
         st.success("تم التوليد")
-    if "rep_v131" in st.session_state:
-        st.text_area("التقرير:", st.session_state["rep_v131"], height=400)
+    if "rep_v140" in st.session_state:
+        st.text_area("التقرير:", st.session_state["rep_v140"], height=400)
         st.markdown("---")
         safe = site.replace(" ", "_")
         cc1, cc2 = st.columns(2)
         with cc1:
             st.download_button("تحميل TXT",
-                data=("\ufeff" + st.session_state["rep_v131"]).encode("utf-8"),
+                data=("\ufeff" + st.session_state["rep_v140"]).encode("utf-8"),
                 file_name="rep_" + safe + ".txt",
                 mime="text/plain; charset=utf-8",
                 use_container_width=True,
-                key="dl_txt_v131")
+                key="dl_txt_v140")
         with cc2:
             st.download_button("تحميل HTML",
-                data=gen_html(st.session_state["rep_v131"], site).encode("utf-8"),
+                data=gen_html(st.session_state["rep_v140"], site).encode("utf-8"),
                 file_name="rep_" + safe + ".html",
                 mime="text/html; charset=utf-8",
                 use_container_width=True,
-                key="dl_html_v131")
+                key="dl_html_v140")
         st.warning("يحتاج مراجعة بشرية قبل الاعتماد.")
 
 
-# ===== TAB 5: الخريطة =====
 with t5:
     st.header("الخريطة التفاعلية")
     m = folium.Map(location=[15.5, 32.5], zoom_start=6)
@@ -489,17 +482,16 @@ with t5:
             folium.Marker([d["coords"][1], d["coords"][0]], popup=n, icon=folium.Icon(color=col)).add_to(m)
         for n, d in KHARTOUM_LOCALITIES.items():
             folium.CircleMarker([d["coords"][1], d["coords"][0]], radius=8, color="purple", fill=True, popup=n).add_to(m)
-    st_folium(m, width=None, height=600, key="map_v131")
+    st_folium(m, width=None, height=600, key="map_v140")
 
 
-# ===== TAB 6: الدقة =====
 with t6:
     st.header("تحليل الدقة الإحصائية")
     sample = pd.DataFrame({"name": ["A", "B", "C", "D"], "drastic_index": [150, 80, 130, 165],
         "actual_status": [1, 0, 0, 1]})
     st.download_button("تحميل نموذج", data=sample.to_csv(index=False).encode("utf-8-sig"),
         file_name="accuracy_template.csv", mime="text/csv")
-    f2 = st.file_uploader("ارفع:", type=["csv", "xlsx"], key="acc_up_v131")
+    f2 = st.file_uploader("ارفع:", type=["csv", "xlsx"], key="acc_up_v140")
     if f2:
         try:
             df = pd.read_csv(f2) if f2.name.endswith(".csv") else pd.read_excel(f2)
@@ -537,4 +529,4 @@ with t6:
 
 
 st.markdown("---")
-st.caption("2026 University of Khartoum - DRASTIC Sudan v13.1")
+st.caption("2026 University of Khartoum - DRASTIC Sudan v14.0")
