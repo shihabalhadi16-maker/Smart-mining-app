@@ -1,4 +1,4 @@
-"""DRASTIC Sudan v12.0 - Final Working Version"""
+"""DRASTIC Sudan v13.0 - Sidebar Fixed Version"""
 import streamlit as st
 import folium
 from streamlit_folium import st_folium
@@ -264,76 +264,99 @@ def gen_html(rep, site):
 
 st.title("نظام التقييم البيئي للتعدين")
 st.markdown("### جامعة الخرطوم - كلية الهندسة")
-st.markdown("#### DRASTIC Sudan v12.0")
+st.markdown("#### DRASTIC Sudan v13.0")
 st.markdown("---")
 
 if DS_OK:
     preset = get_preset_locations_for_app()
     summary = get_data_summary()
-    with st.sidebar:
-        st.markdown("### ملخص البيانات")
-        st.metric("المواقع", summary["Total Data Points"])
 else:
     preset = {"موقع تجريبي": {"coords": (19.53, 33.32),
               "depth": 15.0, "conductivity": 5.0, "source": "افتراضي"}}
+    summary = {"Total Data Points": 1}
 
-t1, t2, t3, t4, t5, t6 = st.tabs(["التقييم", "الجماعي", "الحلول", "التقرير", "الخريطة", "الدقة"])
-
-with t1:
-    st.header("المدخلات")
-    site = st.selectbox("الموقع:", list(preset.keys()), key="s1")
+# ===== الشريط الجانبي: الموقع + المدخلات =====
+with st.sidebar:
+    st.markdown("### اختيار الموقع")
+    site = st.selectbox("الموقع:", list(preset.keys()), key="side_site")
     sd = preset[site]
-    c1, c2 = st.columns(2)
-    with c1:
-        depth = st.slider("D - العمق (م):", 0.5, 100.0, float(sd["depth"]), 0.5, key="d1")
-        recharge = st.slider("R - التغذية (مم):", 0.0, 400.0, 150.0, 10.0, key="r1")
-        slope = st.slider("T - الانحدار:", 0.0, 30.0, 4.0, 0.5, key="t1k")
-        conductivity = st.slider("C - النفاذية:", 0.01, 100.0, float(sd["conductivity"]), 0.1, key="c1")
-    with c2:
-        aquifer = st.selectbox("A:", ["massive_sandstone", "sand_and_gravel", "karst_limestone", "basalt", "massive_shale"], key="aq")
-        soil = st.selectbox("S:", ["sand", "sandy_loam", "loam", "silty_loam", "clay_loam", "nonshrinking_clay"], key="so")
-        vadose = st.selectbox("I:", ["sand_gravel", "sandstone", "limestone", "silt_clay", "shale"], key="vd")
-        porosity = st.slider("المسامية:", 0.02, 0.55, 0.25, 0.01, key="po")
-    try:
-        D_r = get_d_rating(depth)
-        R_r = get_r_rating(recharge)
-        A_r = get_a_rating(aquifer)
-        S_r = get_s_rating(soil)
-        T_r = get_t_rating(slope)
-        I_r = get_i_rating(vadose)
-        C_r = get_c_rating(conductivity)
-        idx = calc_index(D_r, R_r, A_r, S_r, T_r, I_r, C_r)
-        risk = classify(idx)
-        st.session_state["ci"] = idx
-        st.session_state["cs"] = site
-        st.session_state["cc"] = sd["coords"]
-        st.session_state["cr"] = {"D": D_r, "R": R_r, "A": A_r, "S": S_r, "T": T_r, "I": I_r, "C": C_r}
-        st.session_state["cv"] = {"depth": depth, "recharge": recharge, "aquifer": aquifer, "soil": soil, "slope": slope, "vadose": vadose, "conductivity": conductivity}
-        travel = calc_travel(depth, porosity, conductivity)
-        st.session_state["ct"] = travel["years"]
-        st.markdown("---")
-        st.header("النتائج")
-        x1, x2, x3, x4 = st.columns(4)
-        x1.metric("D", D_r); x2.metric("R", R_r); x3.metric("A", A_r); x4.metric("S", S_r)
-        y1, y2, y3, y4 = st.columns(4)
-        y1.metric("T", T_r); y2.metric("I", I_r); y3.metric("C", C_r); y4.metric("theta", round(porosity, 2))
-        st.markdown("---")
-        z1, z2 = st.columns(2)
-        z1.metric("Index", str(idx) + " / 230")
-        z2.metric("Level", risk["level"])
-        if risk["color"] == "red": st.error(risk["action"])
-        elif risk["color"] == "orange": st.warning(risk["action"])
-        elif risk["color"] == "yellow": st.info(risk["action"])
-        else: st.success(risk["action"])
-        st.markdown("---")
-        st.subheader("زمن وصول الملوثات")
-        w1, w2, w3 = st.columns(3)
-        w1.metric("سنوات", round(travel["years"], 2))
-        w2.metric("أيام", round(travel["days"], 1))
-        w3.metric("السرعة", round(travel["velocity"], 6))
-    except ValueError as e:
-        st.error("خطأ: " + str(e))
+    st.caption("المصدر: " + sd.get("source", "غير محدد"))
+    st.markdown("---")
+    
+    st.markdown("### المدخلات")
+    depth = st.slider("D - العمق (م):", 0.5, 100.0, float(sd["depth"]), 0.5, key="side_d")
+    recharge = st.slider("R - التغذية:", 0.0, 400.0, 150.0, 10.0, key="side_r")
+    slope = st.slider("T - الانحدار:", 0.0, 30.0, 4.0, 0.5, key="side_t")
+    conductivity = st.slider("C - النفاذية:", 0.01, 100.0, float(sd["conductivity"]), 0.1, key="side_c")
+    aquifer = st.selectbox("A - الخزان:", ["massive_sandstone", "sand_and_gravel", "karst_limestone", "basalt", "massive_shale"], key="side_aq")
+    soil = st.selectbox("S - التربة:", ["sand", "sandy_loam", "loam", "silty_loam", "clay_loam", "nonshrinking_clay"], key="side_so")
+    vadose = st.selectbox("I - غير المشبعة:", ["sand_gravel", "sandstone", "limestone", "silt_clay", "shale"], key="side_vd")
+    porosity = st.slider("المسامية:", 0.02, 0.55, 0.25, 0.01, key="side_po")
+    
+    st.markdown("---")
+    st.markdown("### ملخص البيانات")
+    st.metric("المواقع", summary["Total Data Points"])
 
+# ===== الحساب (قبل التبويبات) =====
+D_r = get_d_rating(depth)
+R_r = get_r_rating(recharge)
+A_r = get_a_rating(aquifer)
+S_r = get_s_rating(soil)
+T_r = get_t_rating(slope)
+I_r = get_i_rating(vadose)
+C_r = get_c_rating(conductivity)
+idx = calc_index(D_r, R_r, A_r, S_r, T_r, I_r, C_r)
+risk = classify(idx)
+travel = calc_travel(depth, porosity, conductivity)
+
+st.session_state["ci"] = idx
+st.session_state["cs"] = site
+st.session_state["cc"] = sd["coords"]
+st.session_state["cr"] = {"D": D_r, "R": R_r, "A": A_r, "S": S_r, "T": T_r, "I": I_r, "C": C_r}
+st.session_state["cv"] = {"depth": depth, "recharge": recharge, "aquifer": aquifer, "soil": soil, "slope": slope, "vadose": vadose, "conductivity": conductivity}
+st.session_state["ct"] = travel["years"]
+
+# ===== عرض مؤشر سريع في الأعلى =====
+col_h1, col_h2, col_h3 = st.columns(3)
+col_h1.metric("الموقع الحالي", site)
+col_h2.metric("مؤشر DRASTIC", str(idx) + " / 230")
+col_h3.metric("المستوى", risk["level"])
+st.markdown("---")
+
+# ===== التبويبات =====
+t1, t2, t3, t4, t5, t6 = st.tabs(["النتائج", "الجماعي", "الحلول", "التقرير", "الخريطة", "الدقة"])
+
+
+# ===== TAB 1: النتائج =====
+with t1:
+    st.header("نتائج التقييم")
+    x1, x2, x3, x4 = st.columns(4)
+    x1.metric("D", D_r)
+    x2.metric("R", R_r)
+    x3.metric("A", A_r)
+    x4.metric("S", S_r)
+    y1, y2, y3, y4 = st.columns(4)
+    y1.metric("T", T_r)
+    y2.metric("I", I_r)
+    y3.metric("C", C_r)
+    y4.metric("المسامية", round(porosity, 2))
+    st.markdown("---")
+    z1, z2 = st.columns(2)
+    z1.metric("مؤشر DRASTIC", str(idx) + " / 230")
+    z2.metric("المستوى", risk["level"])
+    if risk["color"] == "red": st.error(risk["action"])
+    elif risk["color"] == "orange": st.warning(risk["action"])
+    elif risk["color"] == "yellow": st.info(risk["action"])
+    else: st.success(risk["action"])
+    st.markdown("---")
+    st.subheader("زمن وصول الملوثات")
+    w1, w2, w3 = st.columns(3)
+    w1.metric("سنوات", round(travel["years"], 2))
+    w2.metric("أيام", round(travel["days"], 1))
+    w3.metric("السرعة", round(travel["velocity"], 6))
+
+
+# ===== TAB 2: الجماعي =====
 with t2:
     st.header("التقييم الجماعي")
     sample = pd.DataFrame({"name": ["A", "B"], "lat": [19.53, 18.12], "lon": [33.32, 33.99],
@@ -367,64 +390,70 @@ with t2:
         except Exception as e:
             st.error("خطأ: " + str(e))
 
+
+# ===== TAB 3: الحلول (محسّن) =====
 with t3:
     st.header("محاكي الحلول")
-    if "ci" not in st.session_state:
-        st.warning("اختر موقعا اولا.")
-    else:
-        base = st.session_state["ci"]
-        st.info("الموقع: " + st.session_state["cs"] + " | المؤشر: " + str(base))
-        c1, c2 = st.columns(2)
-        with c1:
-            h = st.checkbox("HDPE Liner", key="mh")
-            tr = st.checkbox("Cyanide Treatment", key="mt")
-        with c2:
-            mo = st.checkbox("Monitoring", key="mm2")
-        if h or tr or mo:
-            r = mitigate(base, h, tr, mo)
-            a, b, c = st.columns(3)
-            a.metric("قبل", base)
-            b.metric("بعد", r["mitigated_index"])
-            c.metric("التخفيض", str(r["reduction_pct"]) + " percent")
-            st.progress(min(r["reduction_pct"] / 100, 1.0))
-            nr = classify(int(r["mitigated_index"]))
-            st.metric("المستوى الجديد", nr["level"])
+    st.info("الموقع: " + site + " | المؤشر الحالي: " + str(idx))
+    st.caption("HDPE = خفض 60 | المعالجة = خفض 40 | الآبار = خفض 15")
+    c1, c2 = st.columns(2)
+    with c1:
+        h = st.checkbox("HDPE Liner", key="mit_hdpe")
+        tr = st.checkbox("Cyanide Treatment", key="mit_treat")
+    with c2:
+        mo = st.checkbox("Monitoring Wells", key="mit_monitor")
+    if h or tr or mo:
+        r = mitigate(idx, h, tr, mo)
+        st.markdown("---")
+        a, b, c = st.columns(3)
+        a.metric("قبل", idx)
+        b.metric("بعد", r["mitigated_index"])
+        c.metric("التخفيض", str(r["reduction_pct"]) + " percent")
+        st.progress(min(r["reduction_pct"] / 100, 1.0))
+        nr = classify(int(r["mitigated_index"]))
+        st.metric("المستوى الجديد", nr["level"])
+        if nr["color"] == "green": st.success(nr["action"])
+        elif nr["color"] == "yellow": st.info(nr["action"])
+        elif nr["color"] == "orange": st.warning(nr["action"])
+        else: st.error(nr["action"])
 
+
+# ===== TAB 4: التقرير =====
 with t4:
     st.header("توليد التقرير")
-    if "ci" not in st.session_state:
-        st.warning("اختر موقعا اولا.")
-    else:
-        idx = st.session_state["ci"]
-        site = st.session_state["cs"]
-        key = get_tpl_key(idx)
-        st.info("الموقع: " + site + " | المؤشر: " + str(idx) + " | القالب: " + key.upper())
-        if st.button("توليد", type="primary", key="gb"):
-            rep = gen_report(site, st.session_state["cc"], idx,
-                            st.session_state["cr"], st.session_state["cv"],
-                            st.session_state.get("ct"))
-            st.session_state["rep"] = rep
-            st.success("تم")
-        if "rep" in st.session_state:
-            st.text_area("التقرير:", st.session_state["rep"], height=400)
-            safe = site.replace(" ", "_")
-            c1, c2 = st.columns(2)
-            with c1:
-                st.download_button("تحميل TXT",
-                    data=("\ufeff" + st.session_state["rep"]).encode("utf-8"),
-                    file_name="rep_" + safe + ".txt",
-                    mime="text/plain; charset=utf-8",
-                    use_container_width=True)
-            with c2:
-                st.download_button("تحميل HTML",
-                    data=gen_html(st.session_state["rep"], site).encode("utf-8"),
-                    file_name="rep_" + safe + ".html",
-                    mime="text/html; charset=utf-8",
-                    use_container_width=True)
-            st.warning("يحتاج مراجعة بشرية.")
+    key = get_tpl_key(idx)
+    st.info("الموقع: " + site + " | المؤشر: " + str(idx) + " | القالب: " + key.upper())
+    if st.button("توليد التقرير", type="primary", key="gen_btn"):
+        rep = gen_report(site, sd["coords"], idx,
+                        st.session_state["cr"], st.session_state["cv"],
+                        travel["years"])
+        st.session_state["rep"] = rep
+        st.success("تم التوليد")
+    if "rep" in st.session_state:
+        st.text_area("التقرير:", st.session_state["rep"], height=400)
+        st.markdown("---")
+        safe = site.replace(" ", "_")
+        cc1, cc2 = st.columns(2)
+        with cc1:
+            st.download_button("تحميل TXT",
+                data=("\ufeff" + st.session_state["rep"]).encode("utf-8"),
+                file_name="rep_" + safe + ".txt",
+                mime="text/plain; charset=utf-8",
+                use_container_width=True,
+                key="dl_txt")
+        with cc2:
+            st.download_button("تحميل HTML",
+                data=gen_html(st.session_state["rep"], site).encode("utf-8"),
+                file_name="rep_" + safe + ".html",
+                mime="text/html; charset=utf-8",
+                use_container_width=True,
+                key="dl_html")
+        st.warning("يحتاج مراجعة بشرية قبل الاعتماد.")
 
+
+# ===== TAB 5: الخريطة =====
 with t5:
-    st.header("الخريطة")
+    st.header("الخريطة التفاعلية")
     m = folium.Map(location=[15.5, 32.5], zoom_start=6)
     if DS_OK:
         for n, d in NARIS_WELLS.items():
@@ -436,15 +465,17 @@ with t5:
             folium.Marker([d["coords"][1], d["coords"][0]], popup=n, icon=folium.Icon(color=col)).add_to(m)
         for n, d in KHARTOUM_LOCALITIES.items():
             folium.CircleMarker([d["coords"][1], d["coords"][0]], radius=8, color="purple", fill=True, popup=n).add_to(m)
-    st_folium(m, width=None, height=600, key="map1")
+    st_folium(m, width=None, height=600, key="map_main")
 
+
+# ===== TAB 6: الدقة =====
 with t6:
-    st.header("الدقة الإحصائية")
+    st.header("تحليل الدقة الإحصائية")
     sample = pd.DataFrame({"name": ["A", "B", "C", "D"], "drastic_index": [150, 80, 130, 165],
         "actual_status": [1, 0, 0, 1]})
     st.download_button("تحميل نموذج", data=sample.to_csv(index=False).encode("utf-8-sig"),
         file_name="accuracy_template.csv", mime="text/csv")
-    f2 = st.file_uploader("ارفع:", type=["csv", "xlsx"], key="acc")
+    f2 = st.file_uploader("ارفع:", type=["csv", "xlsx"], key="acc_up")
     if f2:
         try:
             df = pd.read_csv(f2) if f2.name.endswith(".csv") else pd.read_excel(f2)
@@ -471,8 +502,6 @@ with t6:
                 report = "Accuracy Report\n" + "=" * 40 + "\n"
                 report += "Total: " + str(m["total"]) + "\n"
                 report += "Accuracy: " + str(m["accuracy"]) + " percent\n"
-                report += "Recall: " + str(m["recall"]) + " percent\n"
-                report += "Precision: " + str(m["precision"]) + " percent\n"
                 report += "Kappa: " + str(m["kappa"]) + "\n"
                 st.text_area("Report:", report, height=200)
                 st.download_button("تحميل التقرير", data=report.encode("utf-8-sig"),
@@ -482,5 +511,6 @@ with t6:
         except Exception as e:
             st.error("خطأ: " + str(e))
 
+
 st.markdown("---")
-st.caption("2026 University of Khartoum - DRASTIC Sudan v12.0")
+st.caption("2026 University of Khartoum - DRASTIC Sudan v13.0")
