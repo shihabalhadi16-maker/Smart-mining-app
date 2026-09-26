@@ -607,4 +607,17 @@ with t6:
                 report = "\n".join(rep_lines)
                 st.text_area("التقرير الكامل:", report, height=300)
                 st.download_button("📥 تحميل التقرير",
+                                  report = "\n".join(rep_lines)
+                st.text_area("التقرير الكامل:", report, height=300)
+                st.download_button(
+                    "📥 تحميل التقرير",
                     data=report.encode("utf-8-sig"),
+                    file_name="accuracy_report.txt",
+                    mime="text/plain"
+                )
+        except Exception as e:
+            st.error("خطأ: " + str(e))
+
+
+st.markdown("---")
+st.caption("© 2026 جامعة الخرطوم - DRASTIC Sudan v10.1")  
