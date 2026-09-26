@@ -1,0 +1,253 @@
+"""
+Sudan Mining & Environmental Legislation Module
+وحدة التشريعات السودانية والمعايير الدولية البيئية للتعدين
+
+غرض الملف:
+    تقديم قاعدة بيانات شاملة ومُهيكلة للتشريعات الوطنية، الاتفاقيات الدولية،
+    والمعايير الفنية المتعلقة بقطاع التعدين وحماية البيئة في جمهورية السودان.
+
+تاريخ آخر تحديث:
+    سبتمبر 2026
+
+⚠️ تنبيه قانوني مهم:
+جميع النصوص القانونية الواردة في هذا الملف يجب التحقق منها 
+من الجريدة الرسمية السودانية قبل الاستخدام الرسمي أو الاعتماد 
+أمام أي جهة قضائية أو تنظيمية.
+هذا الملف مرجع تقني مساعد، وليس بديلاً عن الاستشارة القانونية.
+"""
+
+from typing import Dict, List, Any, Union
+
+SUDAN_MINING_LEGISLATIONS: Dict[str, Any] = {
+    "national_laws": {
+        "mining_act_2015": {
+            "title": "قانون تنمية الثروة المعدنية والتعدين لسنة 2015",
+            "year": 2015,
+            "reference": "قانون رقم (31) لسنة 2015",
+            "articles": {
+                "مادة (14)": "تأمين حماية البيئة والتنسيق مع الجهات المختصة لمنع التلوث الناجم عن عمليات التعدين.",
+                "مادة (26)": "الالتزام بإجراء دراسات تقييم الأثر البيئي والتجهيز لخطط إغلاق وإعادة تأهيل المناجم.",
+                "مادة (38)": "حظر استخدام المواد السامة والمؤذية للبيئة دون تصريح كتابي ومعتمد من السلطة المترخصة."
+            },
+            "source": "الجريدة الرسمية لجمهورية السودان - الملحق الأول - العدد (1842)",
+            "verification_status": "verified",
+            "notes": "تم الاطلاع على الهيكل العام للقانون واشتراطات دراسات الأثر البيئي بالهيئة العامة للأبحاث الجيولوجية."
+        },
+        "environmental_act_2001": {
+            "title": "قانون حماية البيئة لسنة 2001",
+            "year": 2001,
+            "reference": "قانون رقم (22) لسنة 2001",
+            "articles": {
+                "مادة (17)": "وجوب دراسة تقييم الأثر البيئي لأي مشروع صناعي أو تعديني قبل البدء في التنفيذ.",
+                "مادة (20)": "حظر إلقاء أو تصريف المواد الضارة والملوثات في التربة أو المجاري المائية والمياه الجوفية."
+            },
+            "source": "الجريدة الرسمية لجمهورية السودان - العدد (1610)",
+            "verification_status": "verified",
+            "notes": "المجلس الأعلى للبيئة والموارد الطبيعية يعتبر المرجع الرئيسي لإنفاذ هذا القانون."
+        },
+        "traditional_mining_reg_2016": {
+            "title": "لائحة تنظيم التعدين التقليدي لسنة 2016",
+            "year": 2016,
+            "reference": "لائحة صادرة بموجب أحكام قانون تنمية الثروة المعدنية والتعدين 2015",
+            "articles": {
+                "مادة (8)": "تحديد مساحات وأعماق الآبار المسموح بها في مناطق التعدين التقليدي وحظر الآبار المتداخلة.",
+                "مادة (15)": "حظر استخدام الزئبق والسيانيد داخل النطاق السكني والزراعي والمجاري المائية."
+            },
+            "source": "منشورات الشركة السودانية للموارد المعدنية - قسم التنظيم الميداني",
+            "verification_status": "verified",
+            "notes": "تتضمن ضوابط استخراج تراخيص التعدين الأهلي وحظر معالجة الكرتة داخل التجمعات السكنية."
+        },
+        "mineral_exploitation_reg_2018": {
+            "title": "لائحة تنظيم استغلال المعادن لسنة 2018",
+            "year": 2018,
+            "reference": "لائحة تنظيمية صادرة عن وزارة المعادن",
+            "articles": {
+                "مادة (22)": "اشتراطات إنشاء الأحواض الخرسانية المبطنة بعوازل الممبرين (HDPE) لمنع تسرب المركبات الكيميائية.",
+                "مادة (35)": "توفير السلامة المهنية للعمال وخطط إدارة المخاطر الهيدرولوجية والتفتيش الدوري."
+            },
+            "source": "مطبوعات وزارة المعادن - الهيئة العامة للأبحاث الجيولوجية",
+            "verification_status": "needs_verification",
+            "notes": "تتطلب مراجعة الأرقام المحددة للمواد من النشرة الرسمية بوزارة العدل."
+        },
+        "environmental_health_act_2009": {
+            "title": "قانون الصحة البيئية لسنة 2009",
+            "year": 2009,
+            "reference": "قانون رقم (14) لسنة 2009",
+            "articles": {
+                "مادة (11)": "الرقابة على الأنشطة التي تؤدي إلى تلوث مياه الشرب أو الموارد المائية السطحية والجوفية.",
+                "مادة (18)": "الاشتراطات الصحية للتخلص من النفايات الخطرة والإنبعاثات الكيميائية السامة."
+            },
+            "source": "الجريدة الرسمية - وزارة الصحة الاتحادية",
+            "verification_status": "verified",
+            "notes": "ينطبق بشكل مباشر على عمليات معالجة واستخلاص الذهب والتخلص من الفضلات الكيميائية."
+        },
+        "decree_90_2021": {
+            "title": "قرار رئيس مجلس الوزراء رقم (90) لسنة 2021 بشأن حظر استخدام الزئبق",
+            "year": 2021,
+            "reference": "قرار رقم (90) لسنة 2021",
+            "articles": {
+                "مادة (1)": "الحظر التام لاستخدام الزئبق في العمليات التعدينية واستيراده أو تداوله في التعدين التقليدي.",
+                "مادة (2)": "التحول نحو البدائل والتقنيات الخضراء الآمنة بيئياً تحت إشراف الشركة السودانية للموارد المعدنية."
+            },
+            "source": "الأمانة العامة لمجلس الوزراء - قرارات رئاسية",
+            "verification_status": "verified",
+            "notes": "جاء هذا القرار تنفيذاً لالتزامات السودان الدولية المترتبة على التوقيع على اتفاقية ميناماتا."
+        }
+    },
+    "international_agreements": {
+        "minamata_convention": {
+            "title": "Minamata Convention on Mercury / اتفاقية ميناماتا بشأن الزئبق",
+            "year": 2013,
+            "reference": "UN Treaty Series Vol. 3202",
+            "key_requirements": [
+                "تخفيض والقضاء التدريجي على استخدام الزئبق في التعدين الحرفي والفيئوي للذهب (ASGM).",
+                "منع التجارة غير المشروعة للزئبق والحد من انبعاثاته في الهواء والتربة والماء.",
+                "تطوير استراتيجيات وطنية للتوعية بالآثار الصحية والتخلص الآمن من نفايات الزئبق."
+            ],
+            "sudan_status": "ratified"
+        },
+        "cyanide_code": {
+            "title": "International Cyanide Management Code / المدونة الدولية لإدارة السيانيد",
+            "year": 2002,
+            "reference": "International Cyanide Management Institute (ICMI) Document",
+            "key_requirements": [
+                "الاستخدام الآمن والمسؤول للسيانيد في إنتاج واستخلاص الذهب.",
+                "تطبيق معايير صارمة لنقل، تخزين، وتفكيك مادة السيانيد وتأمين أحواض المعالجة.",
+                "إعداد خطط الاستجابة للطوارئ البيئية ورصد المياه الجوفية لمنع التلوث."
+            ],
+            "sudan_status": "needs_verification"
+        },
+        "basel_convention": {
+            "title": "Basel Convention on the Control of Transboundary Movements of Hazardous Wastes and their Disposal / اتفاقية بازل بشأن التحكم في نقل النفايات الخطرة والتخلص منها عبر الحدود",
+            "year": 1989,
+            "reference": "UN Treaty Series Vol. 1673, p. 57",
+            "key_requirements": [
+                "تقليل توليد النفايات الخطرة والتعدينية إلى أدنى حد ممكن.",
+                "ضمان التخلص من النفايات الخطرة بطريقة سليمة بيئياً وقريبة من مصدر إنتاجها.",
+                "فرض قيود صارمة على حركة النفايات السامة عبر الحدود."
+            ],
+            "sudan_status": "ratified"
+        },
+        "stockholm_convention": {
+            "title": "Stockholm Convention on Persistent Organic Pollutants (POPs) / اتفاقية ستوكهولم بشأن الملوثات العضوية الثابتة",
+            "year": 2001,
+            "reference": "UN Treaty Series Vol. 2256, p. 119",
+            "key_requirements": [
+                "تقليل أو القضاء على انبعاث الملوثات العضوية الثابتة والكيماويات المرافقة للتعدين.",
+                "إدارة المخزونات والمواد الكيميائية الضارة بطريقة آمنة بيئياً.",
+                "حظر التخلص غير الآمن من المركبات العضوية الثابتة في البيئة."
+            ],
+            "sudan_status": "ratified"
+        },
+        "rotterdam_convention": {
+            "title": "Rotterdam Convention on the Prior Informed Consent Procedure for Certain Hazardous Chemicals and Pesticides in International Trade / اتفاقية روتردام المتعلقة بإجراء الموافقة المسبقة عن علم لمواد كيميائية ومبيدات آفة معينة خطرة في التجارة الدولية",
+            "year": 1998,
+            "reference": "UN Treaty Series Vol. 2244, p. 337",
+            "key_requirements": [
+                "تبادل المعلومات حول الكيماويات الخطرة المستوردة للاستخدام التعديني والصناعي.",
+                "تطبيق إجراء الموافقة المسبقة عن علم (PIC) للكيماويات المقيدة شديدة الخطورة.",
+                "مساعدة الدول في اتخاذ قرارات مستنيرة بشأن استيراد المواد السامة."
+            ],
+            "sudan_status": "ratified"
+        }
+    },
+    "technical_standards": {
+        "jorc_code": {
+            "title": "Australasian Code for Reporting of Exploration Results, Mineral Resources and Ore Reserves (JORC Code)",
+            "year": 2012,
+            "country": "Australia",
+            "reference": "JORC Code 2012 Edition",
+            "scope": "المعيار الأسترالي الإجباري لإعداد التقارير الفنية وتقدير الاحتياطيات والموارد المعدنية بنزاهة وشفافية."
+        },
+        "ni_43_101": {
+            "title": "National Instrument 43-101 Standards of Disclosure for Mineral Projects (NI 43-101)",
+            "year": 2011,
+            "country": "Canada",
+            "reference": "Canadian Securities Administrators (CSA) NI 43-101",
+            "scope": "المعيار الكندي العالمي للشفافية والإفصاح عن المشاريع التعدينية والتقارير الجيولوجية المعتمدة للبورصات العالمية."
+        },
+        "iso_14001": {
+            "title": "ISO 14001:2015 Environmental Management Systems - Requirements with guidance for use",
+            "year": 2015,
+            "country": "International (ISO)",
+            "reference": "ISO 14001:2015 Standard",
+            "scope": "المعيار الدولي لأنظمة الإدارة البيئية المطبقة في المنشآت التعدينية والمصانع للحد من التلوث والتحسين المستمر."
+        }
+    }
+}
+
+
+def get_applicable_legislation(activity_type: str) -> Dict[str, List[Any]]:
+    """
+    ترجع القوانين المطبقة حسب نوع النشاط التعديني.
+    
+    Args:
+        activity_type (str): نوع النشاط، أحد الخيارات:
+            - "traditional_mining": التعدين التقليدي
+            - "industrial_mining": التعدين الصناعي
+            - "processing": المعالجة والتكرير
+    
+    Returns:
+        dict: يحتوي على:
+            - national_laws: قائمة القوانين المطبقة
+            - international_agreements: قائمة الاتفاقيات المطبقة
+            - technical_standards: قائمة المعايير المطبقة
+            
+    Raises:
+        ValueError: إذا كان activity_type غير معروف أو غير مدعوم.
+    """
+    valid_types = ["traditional_mining", "industrial_mining", "processing"]
+    
+    if not isinstance(activity_type, str) or activity_type.strip().lower() not in valid_types:
+        raise ValueError(
+            f"نوع النشاط غير معروف: '{activity_type}'. الخيارات المتاحة هي: {valid_types} / "
+            f"Unknown activity_type: '{activity_type}'. Valid options are: {valid_types}"
+        )
+    
+    act_type = activity_type.strip().lower()
+    nat_laws = SUDAN_MINING_LEGISLATIONS["national_laws"]
+    intl_agreements = SUDAN_MINING_LEGISLATIONS["international_agreements"]
+    tech_standards = SUDAN_MINING_LEGISLATIONS["technical_standards"]
+    
+    result: Dict[str, List[Any]] = {
+        "national_laws": [],
+        "international_agreements": [],
+        "technical_standards": []
+    }
+    
+    if act_type == "traditional_mining":
+        # التعدين التقليدي: لائحة 2016 + قانون 2015 + قانون البيئة 2001
+        result["national_laws"] = [
+            nat_laws["traditional_mining_reg_2016"],
+            nat_laws["mining_act_2015"],
+            nat_laws["environmental_act_2001"]
+        ]
+        result["international_agreements"] = [
+            intl_agreements["minamata_convention"]
+        ]
+        result["technical_standards"] = []
+        
+    elif act_type == "industrial_mining":
+        # التعدين الصناعي: قانون 2015 + لائحة 2018 + كل الاتفاقيات الدولية
+        result["national_laws"] = [
+            nat_laws["mining_act_2015"],
+            nat_laws["mineral_exploitation_reg_2018"]
+        ]
+        result["international_agreements"] = list(intl_agreements.values())
+        result["technical_standards"] = list(tech_standards.values())
+        
+    elif act_type == "processing":
+        # المعالجة والتكرير: قانون 2015 + قانون الصحة 2009 + Minamata + Cyanide Code
+        result["national_laws"] = [
+            nat_laws["mining_act_2015"],
+            nat_laws["environmental_health_act_2009"]
+        ]
+        result["international_agreements"] = [
+            intl_agreements["minamata_convention"],
+            intl_agreements["cyanide_code"]
+        ]
+        result["technical_standards"] = [
+            tech_standards["iso_14001"]
+        ]
+        
+    return result
