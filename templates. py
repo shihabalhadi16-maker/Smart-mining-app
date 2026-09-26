@@ -5,80 +5,85 @@ TEMPLATE_METADATA = {
     "low": {"id": "TMP-LOW", "level": "منخفض", "range": "23-99"},
     "moderate": {"id": "TMP-MOD", "level": "متوسط", "range": "100-139"},
     "high": {"id": "TMP-HIGH", "level": "مرتفع", "range": "140-179"},
-    "very_high": {"id": "TMP-VHIGH", "level": "مرتفع جداً", "range": "180-230"},
+    "very_high": {"id": "TMP-VHIGH", "level": "مرتفع جداً", "range": "180-230"}
 }
 
 TEXT = {
     "low": {
-        "assessment": "الموقع يُظهر خطورة منخفضة. الطبقات الجيولوجية توفر حماية جيدة.",
+        "assessment": "الموقع يظهر هشاشة منخفضة. الطبقات الجيولوجية توفر حماية طبيعية جيدة للمياه الجوفية.",
         "recs": [
-            "الاستمرار مع المراقبة السنوية",
-            "فحص سنوي لجودة المياه",
-            "توثيق أي تغيير",
-            "التزام العمال بـ PPE",
-            "الإبلاغ عن أي حادث",
-        ],
+            "الاستمرار في مراقبة جودة المياه سنوياً.",
+            "حماية حرم البئر من التلوث السطحي.",
+            "الالتزام بمعايير الضخ الآمن.",
+            "توثيق أي أنشطة تنموية مجاورة.",
+            "تطبيق الإرشادات البيئية العامة."
+        ]
     },
     "moderate": {
-        "assessment": "الموقع يُظهر خطورة متوسطة. حماية جزئية.",
+        "assessment": "الموقع يظهر هشاشة متوسطة. الحماية الطبيعية جزئية وتحتاج إدارة احترازية.",
         "recs": [
-            "مراقبة ربع سنوية",
-            "تركيب آبار مراقبة (2-3)",
-            "تحسين إدارة المخلفات",
-            "معالجة السيانيد",
-            "خطة طوارئ",
-            "تدريب العمال",
-        ],
+            "إجراء مراقبة دورية كل 6 أشهر.",
+            "إنشاء حفر مراقبة حول مصدر التلوث.",
+            "تحديد نطاق حماية للمكمن الجوفي.",
+            "تحسين إدارة المخلفات الصلبة والسائلة.",
+            "منع حفر آبار عشوائية بالقرب من الموقع.",
+            "إعداد خطة طوارئ للتلوث البيئي."
+        ]
     },
     "high": {
-        "assessment": "الموقع يُظهر خطورة مرتفعة. حماية غير كافية.",
+        "assessment": "الموقع يظهر هشاشة مرتفعة. الخزان الجوفي عرضة للتلوث بشكل مباشر وسريع.",
         "recs": [
-            "تركيب HDPE Liner",
-            "وحدة معالجة السيانيد",
-            "4-6 آبار مراقبة",
-            "مراقبة شهرية",
-            "دراسة EIA",
-            "تقليل السيانيد",
-            "إبلاغ المجلس الأعلى للبيئة",
-        ],
+            "تركيب بطانات عازلة من نوع HDPE.",
+            "إنشاء شبكة آبار مراقبة ربع سنوية.",
+            "إجراء دراسة تقييم أثر بيئي شاملة.",
+            "تقليل استخدام المواد الكيميائية الخطرة.",
+            "إبلاغ السلطات البيئية بالأنشطة والمخاطر.",
+            "عزل مناطق تصريف المياه العادمة.",
+            "معالجة المخلفات قبل التخلص منها."
+        ]
     },
     "very_high": {
-        "assessment": "خطورة مرتفعة جداً. خطر داهم.",
+        "assessment": "الموقع يظهر هشاشة مرتفعة جداً. خطر داهم ويتطلب تدخلاً هندسياً فورياً.",
         "recs": [
-            "إيقاف النشاط مؤقتاً",
-            "HDPE + معالجة فورية",
-            "8-10 آبار مراقبة",
-            "مراقبة أسبوعية",
-            "إخلاء المناطق إذا لزم",
-            "تقرير طارئ",
-            "مصادر مياه بديلة",
-            "خطة إعادة تأهيل",
-        ],
-    },
+            "إيقاف النشاط الملوث مؤقتاً لحين المعالجة.",
+            "تركيب نظام عزل ثنائي لمنع التسرب.",
+            "إنشاء آبار مراقبة شهرياً لحركة الملوثات.",
+            "إعداد خطة طوارئ وإخلاء فورية.",
+            "توفير مصادر مياه بديلة للمنطقة.",
+            "إعادة تأهيل الموقع وتطهير التربة.",
+            "التنسيق المباشر مع وزارة البيئة.",
+            "إجراء فحص شاملي هيدروجيولوجي."
+        ]
+    }
 }
 
 
 def get_template_key(index):
-    if index >= 180: return "very_high"
-    if index >= 140: return "high"
-    if index >= 100: return "moderate"
-    return "low"
+    if index >= 180:
+        return "very_high"
+    elif index >= 140:
+        return "high"
+    elif index >= 100:
+        return "moderate"
+    else:
+        return "low"
 
 
 def generate_report(site_name, coordinates, drastic_index, ratings, values, travel_time_years=None):
     key = get_template_key(drastic_index)
     meta = TEMPLATE_METADATA[key]
     text = TEXT[key]
-    today = datetime.date.today()
-    
+    date = datetime.date.today()
+    ref = f"GRAS-{date.strftime('%Y%m%d')}-{key.upper()[:3]}"
+
     lines = []
     lines.append("=" * 60)
     lines.append("تقرير تقييم هشاشة المياه الجوفية")
     lines.append("جامعة الخرطوم - كلية الهندسة")
     lines.append("=" * 60)
     lines.append("")
-    lines.append(f"الرقم المرجعي: GRAS-{today.strftime('%Y%m%d')}-{key.upper()[:3]}")
-    lines.append(f"التاريخ: {today.strftime('%Y-%m-%d')}")
+    lines.append(f"الرقم المرجعي: {ref}")
+    lines.append(f"التاريخ: {date.strftime('%Y-%m-%d')}")
     lines.append(f"القالب: {meta['id']}")
     lines.append("")
     lines.append("-" * 60)
@@ -93,19 +98,19 @@ def generate_report(site_name, coordinates, drastic_index, ratings, values, trav
     lines.append(f"المؤشر: {drastic_index} / 230")
     lines.append(f"المستوى: {meta['level']} ({meta['range']})")
     lines.append("")
-    lines.append(f"D - العمق: {values.get('depth', 'N/A')} م → {ratings.get('D', 'N/A')}")
-    lines.append(f"R - التغذية: {values.get('recharge', 'N/A')} مم → {ratings.get('R', 'N/A')}")
-    lines.append(f"A - الخزان: {values.get('aquifer', 'N/A')} → {ratings.get('A', 'N/A')}")
-    lines.append(f"S - التربة: {values.get('soil', 'N/A')} → {ratings.get('S', 'N/A')}")
-    lines.append(f"T - الانحدار: {values.get('slope', 'N/A')}% → {ratings.get('T', 'N/A')}")
-    lines.append(f"I - غير المشبعة: {values.get('vadose', 'N/A')} → {ratings.get('I', 'N/A')}")
-    lines.append(f"C - النفاذية: {values.get('conductivity', 'N/A')} → {ratings.get('C', 'N/A')}")
+    lines.append(f"D - العمق: {values.get('depth', 'N/A')} م -> {ratings.get('D', 0)}")
+    lines.append(f"R - التغذية: {values.get('recharge', 'N/A')} مم -> {ratings.get('R', 0)}")
+    lines.append(f"A - الخزان: {values.get('aquifer', 'N/A')} -> {ratings.get('A', 0)}")
+    lines.append(f"S - التربة: {values.get('soil', 'N/A')} -> {ratings.get('S', 0)}")
+    lines.append(f"T - الانحدار: {values.get('slope', 'N/A')}% -> {ratings.get('T', 0)}")
+    lines.append(f"I - غير المشبعة: {values.get('vadose', 'N/A')} -> {ratings.get('I', 0)}")
+    lines.append(f"C - النفاذية: {values.get('conductivity', 'N/A')} -> {ratings.get('C', 0)}")
     lines.append("")
-    
-    if travel_time_years:
+
+    if travel_time_years is not None:
         lines.append(f"زمن وصول الملوثات: {travel_time_years:.2f} سنة")
         lines.append("")
-    
+
     lines.append("-" * 60)
     lines.append("التقييم الهيدروجيولوجي")
     lines.append("-" * 60)
@@ -114,8 +119,10 @@ def generate_report(site_name, coordinates, drastic_index, ratings, values, trav
     lines.append("-" * 60)
     lines.append("التوصيات")
     lines.append("-" * 60)
+
     for i, rec in enumerate(text["recs"], 1):
         lines.append(f"{i}. {rec}")
+
     lines.append("")
     lines.append("-" * 60)
     lines.append("الامتثال التشريعي")
@@ -136,16 +143,16 @@ def generate_report(site_name, coordinates, drastic_index, ratings, values, trav
     lines.append("-" * 60)
     lines.append("المراجعة والاعتماد")
     lines.append("-" * 60)
-    lines.append("هذا التقرير مُولَّد آلياً. لا يُعتمد رسمياً")
+    lines.append("هذا التقرير مولد آلياً. لا يعتمد رسمياً")
     lines.append("إلا بعد مراجعة وتوقيع مهندس مختص.")
     lines.append("")
-    lines.append("اسم المهندس: _______________________")
-    lines.append("الرقم الوظيفي: _______________________")
-    lines.append("التاريخ: ___/___/______")
-    lines.append("التوقيع: _______________________")
+    lines.append("اسم المهندس: ___________________________")
+    lines.append("الرقم الوظيفي: ___________________________")
+    lines.append("التاريخ: ___ / ___ / _______")
+    lines.append("التوقيع: ___________________________")
     lines.append("")
     lines.append("=" * 60)
-    lines.append("© 2026 جامعة الخرطوم")
+    lines.append("جامعة الخرطوم 2026 ©")
     lines.append("=" * 60)
-    
+
     return "\n".join(lines)
