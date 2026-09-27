@@ -1,0 +1,136 @@
+"""
+GIS Export Module
+==================
+وحدة تصدير البيانات بصيغ GIS
+
+Version: 1.0.0
+"""
+
+import json
+import datetime
+
+__version__ = "1.0.0"
+
+
+def sites_to_geojson(sites: list) -> str:
+    """
+    تحويل قائمة المواقع إلى GeoJSON.
+    sites: [{"name": str, "lat": float, "lon": float, "index": int, ...}]
+    """
+    features = []
+    for s in sites:
+        try:
+            features.append({
+                "type": "Feature",
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [float(s.get("lon", 0)),
+                                    float(s.get("lat", 0))],
+                },
+                "properties": {
+                    "name": str(s.get("name", "")),
+                    "index": int(s.get("index", 0)),
+                    "level": str(s.get("level", "")),
+                },
+            })
+        except Exception:
+            continue
+    geojson = {
+        "type": "FeatureCollection",
+        "features": features,
+    }
+    return json.dumps(geojson, ensure_ascii=False, indent=2)
+
+
+def sites_to_kml(sites: list, doc_name="DRASTIC Sudan Sites") -> str:
+    """تحويل قائمة المواقع إلى KML (Google Earth)."""
+    kml = '<?xml version="1.0" encoding="UTF-8"?>\n'
+    kml += '<kml xmlns="http://www.opengis.net/kml/2.2">\n'
+    kml += '<Document>\n'
+    kml += '<name>' + doc_name + '</name>\n'
+
+    for s in sites:
+        try:
+            name = str(s.get("name", ""))
+            lat = float(s.get("lat", 0))
+            lon = float(s.get("lon", 0))
+            idx = int(s.get("index", 0))
+            level = str(s.get("level", ""))
+            kml += '  <Placemark>\n'
+            kml += '    <name>' + name + '</name>\n'
+            kml += '    <description>DRASTIC: ' + str(idx) + \
+                   ' | ' + level + '</description>\n'
+            kml += '    <Point>\n'
+            kml += '      <coordinates>' + str(lon) + ',' + \
+                   str(lat) + ',0</coordinates>\n'
+            kml += '    </Point>\n'
+            kml += '  </Placemark>\n'
+        except Exception:
+            continue
+
+    kml += '</Document>\n</kml>'
+    return kml
+
+
+def sites_to_csv(sites: list) -> str:
+    """تصدير المواقع كـ CSV."""
+    if not sites:
+        return ""
+    headers = ["name", "lat", "lon", "index", "level"]
+    lines = [",".join(headers)]
+    for s in sites:
+        row = [
+            str(s.get("name", "")).replace(",", ";"),
+            str(s.get("lat", 0)),
+            str(s.get("lon", 0)),
+            str(s.get("index", 0)),
+            str(s.get("level", "")).replace(",", ";"),
+        ]
+        lines.append(",".join(row))
+    return "\ufeff" + "\n".join(lines)
+
+
+def history_to_sites(history: list) -> list:
+    """تحويل سجل التقييمات إلى قائمة مواقع."""
+    sites = []
+    for h in history:
+        try:
+            sites.append({
+                "name": h.get("الموقع", ""),
+                "lat": float(h.get("lat", 0)),
+                "lon": float(h.get("lon", 0)),
+                "index": int(float(h.get("مؤشر DRASTIC", 0))),
+                "level": h.get("المستوى", ""),
+            })
+        except Exception:
+            continue
+    return sites
+
+
+def preset_to_sites(preset: dict) -> list:
+    """تحويل preset_locations إلى قائمة مواقع للتصدير."""
+    sites = []
+    for name, data in preset.items():
+        try:
+            coords = data.get("coords", (0, 0))
+            sites.append({
+                "name": str(name),
+                "lat": float(coords[0]),
+                "lon": float(coords[1]),
+                "index": 0,
+                "level": "غير محدد",
+            })
+        except Exception:
+            continue
+    return sites
+
+
+def get_module_info() -> dict:
+    return {
+        "name": "GIS Export",
+        "version": __version__,
+        "formats": ["GeoJSON", "KML", "CSV"],
+        "functions": ["sites_to_geojson", "sites_to_kml",
+                      "sites_to_csv", "history_to_sites",
+                      "preset_to_sites"],
+    }
