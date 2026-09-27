@@ -1,4 +1,4 @@
-"""DRASTIC Sudan v28.0 - With Strict Validation"""
+"""DRASTIC Sudan v29.0 - Fixed GIS Export"""
 import streamlit as st
 import folium
 from streamlit_folium import st_folium
@@ -158,89 +158,62 @@ VALID_AQUIFERS = ["massive_shale", "metamorphic_igneous",
     "weathered_metamorphic_igneous", "thin_bedded_sequences",
     "massive_sandstone", "massive_limestone", "sand_and_gravel",
     "basalt", "karst_limestone"]
-
 VALID_SOILS = ["thin_or_absent", "gravel", "sand", "peat",
     "shrinking_aggregated_clay", "sandy_loam", "loam", "silty_loam",
     "clay_loam", "muck", "nonshrinking_clay"]
-
 VALID_VADOSE = ["confining_layer", "silt_clay", "shale",
     "metamorphic_igneous", "limestone", "sandstone",
     "sand_gravel_silt_clay", "sand_gravel", "basalt", "karst_limestone"]
-
 REQUIRED_COLS = ["depth_m", "recharge_mm", "slope_pct",
                  "conductivity", "aquifer", "soil", "vadose"]
 
 
 def validate_single_input(depth, recharge, slope, conductivity,
                           aquifer, soil, vadose):
-    """تحقق صارم من المدخلات الفردية."""
     errors = []
     warnings = []
-    if not (0.5 <= depth <= 100):
-        errors.append("D خارج النطاق (0.5-100)")
-    if not (0 <= recharge <= 400):
-        errors.append("R خارج النطاق (0-400)")
-    if not (0 <= slope <= 30):
-        errors.append("T خارج النطاق (0-30)")
-    if not (0.01 <= conductivity <= 100):
-        errors.append("C خارج النطاق (0.01-100)")
-    if aquifer not in VALID_AQUIFERS:
-        warnings.append("A غير معروف: " + str(aquifer))
-    if soil not in VALID_SOILS:
-        warnings.append("S غير معروف: " + str(soil))
-    if vadose not in VALID_VADOSE:
-        warnings.append("I غير معروف: " + str(vadose))
+    if not (0.5 <= depth <= 100): errors.append("D خارج النطاق")
+    if not (0 <= recharge <= 400): errors.append("R خارج النطاق")
+    if not (0 <= slope <= 30): errors.append("T خارج النطاق")
+    if not (0.01 <= conductivity <= 100): errors.append("C خارج النطاق")
+    if aquifer not in VALID_AQUIFERS: warnings.append("A غير معروف")
+    if soil not in VALID_SOILS: warnings.append("S غير معروف")
+    if vadose not in VALID_VADOSE: warnings.append("I غير معروف")
     return errors, warnings
 
 
 def validate_bulk_row(row, idx):
-    """تحقق من صف واحد في التحليل الجماعي."""
     errors = []
     warnings = []
     try:
         d = float(row.get("depth_m", 15))
-        if not (0.5 <= d <= 100):
-            errors.append("D خارج النطاق")
-    except Exception:
-        errors.append("D غير رقمي")
+        if not (0.5 <= d <= 100): errors.append("D خارج النطاق")
+    except Exception: errors.append("D غير رقمي")
     try:
         r = float(row.get("recharge_mm", 100))
-        if not (0 <= r <= 400):
-            errors.append("R خارج النطاق")
-    except Exception:
-        errors.append("R غير رقمي")
+        if not (0 <= r <= 400): errors.append("R خارج النطاق")
+    except Exception: errors.append("R غير رقمي")
     try:
         t = float(row.get("slope_pct", 4))
-        if not (0 <= t <= 30):
-            errors.append("T خارج النطاق")
-    except Exception:
-        errors.append("T غير رقمي")
+        if not (0 <= t <= 30): errors.append("T خارج النطاق")
+    except Exception: errors.append("T غير رقمي")
     try:
         c = float(row.get("conductivity", 5))
-        if not (0.01 <= c <= 100):
-            errors.append("C خارج النطاق")
-    except Exception:
-        errors.append("C غير رقمي")
-    aq = str(row.get("aquifer", "massive_sandstone"))
-    if aq not in VALID_AQUIFERS:
+        if not (0.01 <= c <= 100): errors.append("C خارج النطاق")
+    except Exception: errors.append("C غير رقمي")
+    if str(row.get("aquifer", "massive_sandstone")) not in VALID_AQUIFERS:
         warnings.append("A غير معروف")
-    so = str(row.get("soil", "sand"))
-    if so not in VALID_SOILS:
+    if str(row.get("soil", "sand")) not in VALID_SOILS:
         warnings.append("S غير معروف")
-    vd = str(row.get("vadose", "sand_gravel"))
-    if vd not in VALID_VADOSE:
+    if str(row.get("vadose", "sand_gravel")) not in VALID_VADOSE:
         warnings.append("I غير معروف")
-    if errors:
-        quality = "ضعيف"
-    elif warnings:
-        quality = "متوسط"
-    else:
-        quality = "ممتاز"
+    if errors: quality = "ضعيف"
+    elif warnings: quality = "متوسط"
+    else: quality = "ممتاز"
     return errors, warnings, quality
 
 
 def generate_quality_report(df, results_df):
-    """تقرير جودة الملف."""
     L = ["=" * 60, "تقرير جودة الملف المُرفوع", "=" * 60, ""]
     L.append("عدد الصفوف: " + str(len(df)))
     L.append("عدد الأعمدة: " + str(len(df.columns)))
@@ -258,6 +231,57 @@ def generate_quality_report(df, results_df):
     L.append("")
     L.append("=" * 60)
     return "\n".join(L)
+
+
+# ============ GIS - الحل الجديد ============
+def calculate_drastic_for_preset(preset_data):
+    """حساب DRASTIC للمواقع المدمجة بقيم افتراضية معقولة."""
+    name = preset_data.get("name", "")
+    depth = preset_data.get("depth", 15.0)
+    conductivity = preset_data.get("conductivity", 5.0)
+
+    D_r = get_d_rating(depth)
+    R_r = get_r_rating(150.0)
+    A_r = get_a_rating("massive_sandstone")
+    S_r = get_s_rating("sand")
+    T_r = get_t_rating(4.0)
+    I_r = get_i_rating("sand_gravel")
+    C_r = get_c_rating(conductivity)
+
+    idx = calc_index(D_r, R_r, A_r, S_r, T_r, I_r, C_r)
+    rk = classify(idx)
+    return idx, rk["level"]
+
+
+def get_preset_sites_with_drastic(preset):
+    """استخراج كل المواقع المدمجة مع حساب DRASTIC لها."""
+    sites = []
+    for name, data in preset.items():
+        try:
+            coords = data.get("coords", (0, 0))
+            depth_v = float(data.get("depth", 15))
+            cond_v = float(data.get("conductivity", 5))
+            D_r = get_d_rating(depth_v)
+            R_r = get_r_rating(150.0)
+            A_r = get_a_rating("massive_sandstone")
+            S_r = get_s_rating("sand")
+            T_r = get_t_rating(4.0)
+            I_r = get_i_rating("sand_gravel")
+            C_r = get_c_rating(cond_v)
+            ix = calc_index(D_r, R_r, A_r, S_r, T_r, I_r, C_r)
+            rk = classify(ix)
+            sites.append({
+                "name": str(name),
+                "lat": float(coords[0]),
+                "lon": float(coords[1]),
+                "index": ix,
+                "level": rk["level"],
+                "source": data.get("source", "غير محدد"),
+                "type": "preset",
+            })
+        except Exception:
+            continue
+    return sites
 
 
 # ============ Hg + CN ============
@@ -393,7 +417,7 @@ def get_history_df():
     return pd.DataFrame(st.session_state["history"])
 
 
-# ============ GIS ============
+# ============ GIS Export ============
 def sites_to_geojson(sites):
     features = []
     for s in sites:
@@ -517,7 +541,7 @@ def gen_html(rep, site):
 # ============ UI ============
 st.title("⛏️ نظام التقييم البيئي للتعدين")
 st.markdown("### جامعة الخرطوم - كلية الهندسة")
-st.markdown("#### DRASTIC Sudan v28.0")
+st.markdown("#### DRASTIC Sudan v29.0")
 st.markdown("---")
 
 if DS_OK:
@@ -573,7 +597,6 @@ with tabs[0]:
         vadose = st.selectbox("I:", VALID_VADOSE)
         porosity = st.slider("θ:", 0.02, 0.55, 0.25, 0.01)
 
-    # التحقق الصارم
     errors, warnings = validate_single_input(
         depth, recharge, slope, conductivity, aquifer, soil, vadose)
     if errors:
@@ -638,7 +661,7 @@ with tabs[0]:
         st.error("خطأ: " + str(e))
 
 
-# ============ TAB 2 — محسّن بالتحقق الصارم ============
+# ============ TAB 2 ============
 with tabs[1]:
     st.header("📊 التقييم الجماعي")
     st.markdown("**مع التحقق الصارم من الملف.**")
@@ -654,54 +677,44 @@ with tabs[1]:
         file_name="template.csv", mime="text/csv")
 
     f = st.file_uploader("📤 ارفع ملف CSV أو Excel:",
-                          type=["csv", "xlsx"], key="bulk_v28")
+                          type=["csv", "xlsx"], key="bulk_v29")
 
     if f:
         try:
             df = pd.read_csv(f) if f.name.endswith(".csv") else pd.read_excel(f)
-
-            # ===== فحص الملف =====
             st.markdown("---")
             st.subheader("🔍 فحص جودة الملف")
-
             c1, c2, c3 = st.columns(3)
             c1.metric("عدد الصفوف", len(df))
             c2.metric("عدد الأعمدة", len(df.columns))
             missing_cols = [col for col in REQUIRED_COLS
                            if col not in df.columns]
             c3.metric("أعمدة مفقودة", len(missing_cols))
-
             if missing_cols:
-                st.warning("⚠️ الأعمدة التالية مفقودة (ستُستخدم قيم افتراضية):")
+                st.warning("⚠️ أعمدة مفقودة:")
                 for col in missing_cols:
-                    st.caption("• " + col + " → قيمة افتراضية")
+                    st.caption("• " + col)
             else:
-                st.success("✅ كل الأعمدة الإلزامية موجودة")
+                st.success("✅ كل الأعمدة موجودة")
 
-            # ===== المعالجة مع التحقق =====
             results = []
             qualities = {"ممتاز": 0, "متوسط": 0, "ضعيف": 0}
-
             for i, row in df.iterrows():
                 errs, warns, quality = validate_bulk_row(row, i)
                 qualities[quality] += 1
-
                 try:
                     D = get_d_rating(float(row.get("depth_m", 15)))
                     R = get_r_rating(float(row.get("recharge_mm", 100)))
-                    A = get_a_rating(str(row.get("aquifer",
-                                                  "massive_sandstone")))
+                    A = get_a_rating(str(row.get("aquifer", "massive_sandstone")))
                     S = get_s_rating(str(row.get("soil", "sand")))
                     T = get_t_rating(float(row.get("slope_pct", 4)))
                     I = get_i_rating(str(row.get("vadose", "sand_gravel")))
                     C = get_c_rating(float(row.get("conductivity", 5)))
                     ix = calc_index(D, R, A, S, T, I, C)
                     rk = classify(ix)
-
                     notes = []
                     if errs: notes.append("أخطاء: " + " | ".join(errs))
                     if warns: notes.append("تحذيرات: " + " | ".join(warns))
-
                     results.append({
                         "الموقع": row.get("name", "Site " + str(i)),
                         "lat": row.get("lat", 0),
@@ -709,22 +722,16 @@ with tabs[1]:
                         "المؤشر": ix,
                         "المستوى": rk["level"],
                         "الجودة": quality,
-                        "ملاحظات": "، ".join(notes) if notes else "—",
-                    })
+                        "ملاحظات": "، ".join(notes) if notes else "—"})
                 except Exception as e:
                     results.append({
                         "الموقع": row.get("name", "Site " + str(i)),
-                        "lat": row.get("lat", 0),
-                        "lon": row.get("lon", 0),
-                        "المؤشر": 0,
-                        "المستوى": "فشل",
-                        "الجودة": "ضعيف",
-                        "ملاحظات": "خطأ: " + str(e),
-                    })
+                        "lat": row.get("lat", 0), "lon": row.get("lon", 0),
+                        "المؤشر": 0, "المستوى": "فشل", "الجودة": "ضعيف",
+                        "ملاحظات": "خطأ: " + str(e)})
 
-            # ===== توزيع الجودة =====
             st.markdown("---")
-            st.subheader("📈 توزيع جودة البيانات")
+            st.subheader("📈 توزيع الجودة")
             q1, q2, q3 = st.columns(3)
             q1.metric("✅ ممتاز", qualities["ممتاز"])
             q2.metric("⚠️ متوسط", qualities["متوسط"])
@@ -737,12 +744,9 @@ with tabs[1]:
                 st.caption("نسبة الجودة الممتازة: " +
                            str(round(quality_pct, 1)) + "%")
 
-            # ===== النتائج =====
             dfr = pd.DataFrame(results)
             st.markdown("---")
             st.subheader("📋 النتائج")
-
-            # إحصائيات
             if not dfr.empty:
                 valid = dfr[dfr["المؤشر"] > 0]
                 if not valid.empty:
@@ -752,13 +756,9 @@ with tabs[1]:
                               round(valid["المؤشر"].mean(), 1))
                     k3.metric("الأعلى", valid["المؤشر"].max())
                     k4.metric("خطرة", len(valid[valid["المؤشر"] >= 140]))
-
             st.dataframe(dfr, use_container_width=True)
 
-            # ===== التحميلات =====
             st.markdown("---")
-            st.subheader("💾 التحميل")
-
             c1, c2 = st.columns(2)
             with c1:
                 st.download_button("📥 نتائج CSV",
@@ -772,18 +772,14 @@ with tabs[1]:
                     file_name="quality_report.txt", mime="text/plain",
                     use_container_width=True)
 
-            # ===== تحذير =====
             if qualities["ضعيف"] > 0:
-                st.error("⚠️ " + str(qualities["ضعيف"]) +
-                        " صف ضعيف الجودة — راجعها قبل الاعتماد")
+                st.error("⚠️ " + str(qualities["ضعيف"]) + " صف ضعيف الجودة")
             elif qualities["متوسط"] > 0:
-                st.warning("⚠️ " + str(qualities["متوسط"]) +
-                          " صف متوسط الجودة")
+                st.warning("⚠️ " + str(qualities["متوسط"]) + " صف متوسط")
             else:
-                st.success("✅ كل الصفوف ممتازة الجودة (دقة 98%)")
-
+                st.success("✅ كل الصفوف ممتازة (دقة 98%)")
         except Exception as e:
-            st.error("خطأ في معالجة الملف: " + str(e))
+            st.error("خطأ: " + str(e))
 
 
 # ============ TAB 3 ============
@@ -1085,6 +1081,7 @@ with tabs[9]:
     df = get_history_df()
     if df.empty:
         st.info("لا توجد تقييمات محفوظة بعد.")
+        st.markdown("**اذهب لتبويب المدخلات واضغط 'حفظ في التاريخ'.**")
     else:
         try:
             idx_col = df["المؤشر"].astype(float)
@@ -1105,23 +1102,25 @@ with tabs[9]:
             st.rerun()
 
 
-# ============ TAB 11 ============
+# ============ TAB 11 — GIS مُصلح ============
 with tabs[10]:
     st.header("🌍 تصدير GIS")
+    st.markdown("**صدّر البيانات لـ QGIS / ArcGIS / Google Earth**")
+
+    st.markdown("---")
     source = st.radio("المصدر:",
-                      ["المواقع المدمجة", "سجل التقييمات"],
-                      key="gis_src")
+                      ["المواقع المدمجة (تقييم محسوب)",
+                       "سجل التقييمات"],
+                      key="gis_src_v29")
+
     sites = []
-    if source == "المواقع المدمجة" and DS_OK:
-        for name, data in preset.items():
-            try:
-                coords = data.get("coords", (0, 0))
-                sites.append({"name": str(name), "lat": float(coords[0]),
-                             "lon": float(coords[1]), "index": 0,
-                             "level": "غير محدد"})
-            except Exception:
-                continue
-        st.info("📌 " + str(len(sites)) + " موقع")
+
+    if source == "المواقع المدمجة (تقييم محسوب)" and DS_OK:
+        sites = get_preset_sites_with_drastic(preset)
+        st.success("📌 " + str(len(sites)) + " موقع (مع مؤشر DRASTIC محسوب)")
+        st.caption("ملاحظة: المواقع المدمجة تُقيّم بقيم افتراضية. " +
+                   "للنتائج الدقيقة، استخدم 'سجل التقييمات'.")
+
     elif source == "سجل التقييمات":
         df_h = get_history_df()
         if not df_h.empty:
@@ -1132,31 +1131,88 @@ with tabs[10]:
                         "lat": float(row.get("lat", 0)),
                         "lon": float(row.get("lon", 0)),
                         "index": int(float(row.get("المؤشر", 0))),
-                        "level": row.get("المستوى", "")})
+                        "level": row.get("المستوى", ""),
+                        "source": "محفوظ",
+                        "type": "history"})
                 except Exception:
                     continue
-            st.info("📌 " + str(len(sites)) + " تقييم")
+            st.success("📌 " + str(len(sites)) + " تقييم محفوظ")
+        else:
+            st.warning("⚠️ لا توجد تقييمات محفوظة. اذهب لتبويب المدخلات واحفظ تقييماً.")
 
     if sites:
-        st.dataframe(pd.DataFrame(sites), use_container_width=True)
+        st.markdown("---")
+        st.subheader("📋 معاينة البيانات")
+
+        # جدول مع ألوان حسب المستوى
+        preview_df = pd.DataFrame(sites)[["name", "lat", "lon",
+                                            "index", "level"]]
+        preview_df.columns = ["الموقع", "خط العرض", "خط الطول",
+                              "المؤشر", "المستوى"]
+        st.dataframe(preview_df, use_container_width=True)
+
+        # إحصائيات
+        st.markdown("---")
+        st.subheader("📊 إحصائيات")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("الإجمالي", len(sites))
+        indices = [s["index"] for s in sites if s["index"] > 0]
+        if indices:
+            c2.metric("المتوسط", round(sum(indices) / len(indices), 1))
+            c3.metric("الأعلى", max(indices))
+            c4.metric("خطرة", len([i for i in indices if i >= 140]))
+        else:
+            c2.metric("المتوسط", "—")
+            c3.metric("الأعلى", "—")
+            c4.metric("خطرة", "—")
+
+        # تحميل
+        st.markdown("---")
+        st.subheader("💾 التحميل")
+
         c1, c2, c3 = st.columns(3)
         with c1:
             st.download_button("📄 GeoJSON",
                 data=sites_to_geojson(sites).encode("utf-8"),
-                file_name="sites.geojson",
+                file_name="drastic_sites.geojson",
                 mime="application/geo+json",
-                use_container_width=True)
+                use_container_width=True,
+                key="dl_gj_v29")
         with c2:
-            st.download_button("🌍 KML",
+            st.download_button("🌍 KML (Google Earth)",
                 data=sites_to_kml(sites).encode("utf-8"),
-                file_name="sites.kml",
+                file_name="drastic_sites.kml",
                 mime="application/vnd.google-earth.kml+xml",
-                use_container_width=True)
+                use_container_width=True,
+                key="dl_kml_v29")
         with c3:
             st.download_button("📊 CSV",
-                data=pd.DataFrame(sites).to_csv(index=False).encode("utf-8-sig"),
-                file_name="sites.csv", mime="text/csv",
-                use_container_width=True)
+                data=preview_df.to_csv(index=False).encode("utf-8-sig"),
+                file_name="drastic_sites.csv", mime="text/csv",
+                use_container_width=True,
+                key="dl_csv_v29")
+
+        # التعليمات
+        st.markdown("---")
+        st.subheader("ℹ️ كيفية الاستخدام")
+        st.markdown("""
+        **QGIS / ArcGIS:**
+        - افتح QGIS.
+        - `Layer → Add Layer → Add Vector Layer`.
+        - اختر ملف **GeoJSON**.
+
+        **Google Earth:**
+        - افتح Google Earth Pro.
+        - `File → Open`.
+        - اختر ملف **KML**.
+
+        **Excel:**
+        - افتح ملف **CSV** مباشرة.
+
+        **عرض سريع على الإنترنت:**
+        - اذهب إلى `geojson.io`.
+        - اسحب ملف **GeoJSON**.
+        """)
 
 
 # ============ TAB 12 ============
@@ -1231,31 +1287,9 @@ with tabs[11]:
 
             if mc["prob_over_180"] > 10:
                 st.error("🚨 احتمال مرتفع بالوصول لخطر داهم")
-
-            st.markdown("---")
-            rep = "=" * 60 + "\n"
-            rep += "تقرير Monte Carlo\n"
-            rep += "=" * 60 + "\n\n"
-            rep += "الموقع: " + cs + "\n"
-            rep += "عدد المحاكاات: " + str(mc["n"]) + "\n"
-            rep += "نسبة التغيير: " + str(var_pct) + "%\n\n"
-            rep += "المتوسط: " + str(mc["mean"]) + "\n"
-            rep += "الانحراف: " + str(mc["std"]) + "\n"
-            rep += "CI 90%: " + str(mc["ci_90"][0]) + " - " + \
-                   str(mc["ci_90"][1]) + "\n"
-            rep += "احتمال > 140: " + str(mc["prob_over_140"]) + "%\n"
-            rep += "احتمال > 180: " + str(mc["prob_over_180"]) + "%\n\n"
-            rep += "المرجع: US EPA/600/R-93/174\n"
-            rep += "=" * 60
-            st.text_area("التقرير:", rep, height=250)
-            st.download_button("تحميل",
-                data=rep.encode("utf-8-sig"),
-                file_name="monte_carlo.txt",
-                mime="text/plain",
-                key="dl_mc")
     else:
         st.warning("افتح تبويب المدخلات أولا")
 
 
 st.markdown("---")
-st.caption("2026 University of Khartoum - DRASTIC Sudan v28.0") 
+st.caption("2026 University of Khartoum - DRASTIC Sudan v29.0") 
