@@ -1,4 +1,4 @@
-"""نظام التعدين السوداني — Sudan Mining System v1.0"""
+"""نظام التعدين السوداني v31.0 - مع اللوقو والاسم الجديد"""
 import streamlit as st
 import folium
 from streamlit_folium import st_folium
@@ -9,78 +9,114 @@ import json
 import random as _rnd
 from datetime import timedelta
 
-# ============ إعدادات الصفحة ============
-st.set_page_config(
-    page_title="نظام التعدين السوداني",
-    page_icon="⛏️",
-    layout="wide",
-    initial_sidebar_state="collapsed",
-)
+# ============ استيراد PIL ============
+try:
+    from PIL import Image
+    PIL_OK = True
+except ImportError:
+    PIL_OK = False
 
-# ============ تنسيق بصري محسّن للجوال ============
+# ============ إعدادات الصفحة ============
+if PIL_OK:
+    try:
+        _logo = Image.open("logo.png")
+        st.set_page_config(
+            page_title="نظام التعدين السوداني",
+            page_icon=_logo,
+            layout="wide",
+            initial_sidebar_state="collapsed",
+            menu_items={
+                "Get Help": "mailto:your_email@example.com",
+                "Report a bug": "mailto:your_email@example.com",
+                "About": "نظام التعدين السوداني - جامعة الخرطوم"
+            }
+        )
+    except Exception:
+        st.set_page_config(
+            page_title="نظام التعدين السوداني",
+            page_icon="⛏️",
+            layout="wide",
+        )
+else:
+    st.set_page_config(
+        page_title="نظام التعدين السوداني",
+        page_icon="⛏️",
+        layout="wide",
+    )
+
+# ============ CSS مخصص ============
 st.markdown("""
 <style>
-    /* تحسينات للجوال */
-    @media (max-width: 768px) {
-        .stApp {
-            font-size: 14px;
-        }
-        h1 {
-            font-size: 24px !important;
-        }
-        h2 {
-            font-size: 20px !important;
-        }
-        h3 {
-            font-size: 18px !important;
-        }
-        div[data-testid="stMetricValue"] {
-            font-size: 22px !important;
-        }
+    html, body, [class*="css"] {
+        font-family: 'Segoe UI', 'Tahoma', 'Arial', sans-serif;
     }
-    
-    /* التنسيق العام */
-    .stApp {
-        background-color: #f8f9fa;
+    .main-title {
+        color: #5c2c16;
+        font-size: 2.2em;
+        font-weight: bold;
+        text-align: center;
+        margin-bottom: 5px;
+    }
+    .sub-title {
+        color: #c19a6b;
+        font-size: 1.1em;
+        text-align: center;
+        margin-bottom: 20px;
+    }
+    .stButton > button {
+        border-radius: 8px;
+        font-weight: bold;
+    }
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 4px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 8px 8px 0 0;
+        padding: 8px 12px;
+        font-size: 0.9em;
     }
     div[data-testid="stMetric"] {
-        background-color: #ffffff !important;
+        background-color: #ffffff;
         border: 1px solid #d4af37;
         border-radius: 10px;
         padding: 12px;
         box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
-    .section-header {
-        color: #5c2c16;
-        border-bottom: 2px solid #c19a6b;
-        padding-bottom: 5px;
-        margin-bottom: 15px;
-        font-weight: bold;
-    }
-    /* الأزرار الكبيرة */
-    .stButton > button {
+    .stAlert {
         border-radius: 8px;
-        font-weight: bold;
     }
-    /* التبويبات */
-    .stTabs [data-baseweb="tab"] {
-        font-size: 14px;
+    [data-testid="stSidebar"] {
+        background-color: #f5eedc;
+        border-right: 2px solid #c19a6b;
+    }
+    .header-container {
+        background: linear-gradient(135deg, #5c2c16 0%, #c19a6b 100%);
+        padding: 20px;
+        border-radius: 12px;
+        margin-bottom: 20px;
+        color: white;
+        text-align: center;
+    }
+    .header-title {
+        font-size: 1.8em;
+        font-weight: bold;
+        margin: 0;
+    }
+    .header-subtitle {
+        font-size: 1.0em;
+        opacity: 0.9;
+        margin: 5px 0 0 0;
+    }
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    @media print {
+        .stButton, .stDownloadButton, .stSlider { display: none; }
     }
 </style>
 """, unsafe_allow_html=True)
 
-# ============ Meta Tags للـ PWA ============
-st.markdown("""
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="theme-color" content="#5c2c16">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="نظام التعدين">
-<meta name="application-name" content="نظام التعدين السوداني">
-<meta name="description" content="نظام تقييم هشاشة المياه الجوفية في مواقع التعدين التقليدي بالسودان">
-""", unsafe_allow_html=True)
 
-# ============ استيراد البيانات ============
+# ============ استيراد data_sources ============
 try:
     from data_sources import (
         get_preset_locations_for_app, get_data_summary,
@@ -90,7 +126,7 @@ except ImportError:
     DS_OK = False
 
 
-# ==================== DRASTIC ====================
+# ============ DRASTIC ============
 def get_d_rating(d):
     if d < 0: raise ValueError("Neg")
     if d <= 1.5: return 10
@@ -223,7 +259,7 @@ def monte_carlo_analysis(D, R, A, S, T, I, C, n_iter=1000, variation=0.15):
             "prob_over_180": round(over_180, 1)}
 
 
-# ==================== Validation ====================
+# ============ Validation ============
 VALID_AQUIFERS = ["massive_shale", "metamorphic_igneous",
     "weathered_metamorphic_igneous", "thin_bedded_sequences",
     "massive_sandstone", "massive_limestone", "sand_and_gravel",
@@ -303,7 +339,7 @@ def generate_quality_report(df, results_df):
     return "\n".join(L)
 
 
-# ==================== GIS Preset Sites ====================
+# ============ GIS ============
 def get_preset_sites_with_drastic(preset):
     sites = []
     for name, data in preset.items():
@@ -321,17 +357,17 @@ def get_preset_sites_with_drastic(preset):
             ix = calc_index(D_r, R_r, A_r, S_r, T_r, I_r, C_r)
             rk = classify(ix)
             sites.append({
-                "name": str(name),
-                "lat": float(coords[0]),
-                "lon": float(coords[1]),
-                "index": ix,
-                "level": rk["level"]})
+                "name": str(name), "lat": float(coords[0]),
+                "lon": float(coords[1]), "index": ix,
+                "level": rk["level"],
+                "source": data.get("source", "غير محدد"),
+                "type": "preset"})
         except Exception:
             continue
     return sites
 
 
-# ==================== Hg + CN ====================
+# ============ Hg + CN ============
 def analyze_mercury(w, s):
     wl, sl = 0.006, 1.0
     wr, sr = w / wl, s / sl
@@ -389,7 +425,7 @@ def generate_alerts(idx, hg=None, cn=None, tox=None):
     return al
 
 
-# ==================== Satellite ====================
+# ============ Satellite ============
 def get_rainfall(lat, lon, years=3):
     try:
         end = datetime.datetime.now().strftime('%Y-%m-%d')
@@ -442,7 +478,7 @@ def fetch_satellite(lat, lon, years=3):
             "source": "ERA5 (ECMWF) via Open-Meteo"}
 
 
-# ==================== History ====================
+# ============ History ============
 def save_to_history(site, coords, idx, level, values, travel, sat, tox):
     if "history" not in st.session_state:
         st.session_state["history"] = []
@@ -464,7 +500,7 @@ def get_history_df():
     return pd.DataFrame(st.session_state["history"])
 
 
-# ==================== GIS Export ====================
+# ============ GIS Export ============
 def sites_to_geojson(sites):
     features = []
     for s in sites:
@@ -483,7 +519,7 @@ def sites_to_geojson(sites):
 def sites_to_kml(sites):
     kml = '<?xml version="1.0" encoding="UTF-8"?>\n'
     kml += '<kml xmlns="http://www.opengis.net/kml/2.2"><Document>\n'
-    kml += '<name>نظام التعدين السوداني</name>\n'
+    kml += '<name>Sudan Mining System</name>\n'
     for s in sites:
         try:
             kml += '  <Placemark><name>' + str(s.get("name", "")) + '</name>\n'
@@ -498,7 +534,7 @@ def sites_to_kml(sites):
     return kml
 
 
-# ==================== Templates ====================
+# ============ Templates ============
 TEMPLATES = {
     "low": {"level": "منخفض", "range": "23-99",
         "assessment": "خطورة منخفضة. حماية جيدة.",
@@ -530,9 +566,9 @@ def gen_report(site, coords, idx, values, travel=None, sat=None, tox=None):
     key = get_tpl_key(idx)
     tpl = TEMPLATES[key]
     today = datetime.date.today()
-    ref = "SMS-" + today.strftime("%Y%m%d") + "-" + key.upper()[:3]
+    ref = "GRAS-" + today.strftime("%Y%m%d") + "-" + key.upper()[:3]
     L = ["=" * 60, "تقرير تقييم هشاشة المياه الجوفية",
-         "نظام التعدين السوداني — جامعة الخرطوم", "=" * 60, "",
+         "نظام التعدين السوداني - جامعة الخرطوم", "=" * 60, "",
          "الرقم المرجعي: " + ref,
          "التاريخ: " + today.strftime("%Y-%m-%d"),
          "الموقع: " + str(site),
@@ -585,11 +621,24 @@ def gen_html(rep, site):
          "</body></html>")
 
 
-# ==================== UI ====================
-st.title("⛏️ نظام التعدين السوداني")
-st.markdown("### جامعة الخرطوم — كلية الهندسة")
-st.markdown("#### الإصدار 1.0")
-st.markdown("---")
+# ============ UI ============
+# عرض اللوقو
+_col1, _col2, _col3 = st.columns([1, 2, 1])
+with _col2:
+    if PIL_OK:
+        try:
+            st.image("logo.png", use_container_width=True)
+        except Exception:
+            st.markdown("<h1 style='text-align:center;'>⛏️</h1>", unsafe_allow_html=True)
+
+# الترويسة
+st.markdown("""
+<div class="header-container">
+    <div class="header-title">⛏️ نظام التعدين السوداني</div>
+    <div class="header-subtitle">جامعة الخرطوم - كلية الهندسة</div>
+    <div class="header-subtitle">نظام تقييم هشاشة المياه الجوفية</div>
+</div>
+""", unsafe_allow_html=True)
 
 if DS_OK:
     preset = get_preset_locations_for_app()
@@ -722,8 +771,7 @@ with tabs[1]:
         file_name="template.csv", mime="text/csv")
 
     f = st.file_uploader("📤 ارفع ملف CSV أو Excel:",
-                          type=["csv", "xlsx"], key="bulk_v30")
-
+                          type=["csv", "xlsx"], key="bulk_v31")
     if f:
         try:
             df = pd.read_csv(f) if f.name.endswith(".csv") else pd.read_excel(f)
@@ -797,8 +845,7 @@ with tabs[1]:
                 if not valid.empty:
                     k1, k2, k3, k4 = st.columns(4)
                     k1.metric("الإجمالي", len(dfr))
-                    k2.metric("المتوسط",
-                              round(valid["المؤشر"].mean(), 1))
+                    k2.metric("المتوسط", round(valid["المؤشر"].mean(), 1))
                     k3.metric("الأعلى", valid["المؤشر"].max())
                     k4.metric("خطرة", len(valid[valid["المؤشر"] >= 140]))
             st.dataframe(dfr, use_container_width=True)
@@ -1126,7 +1173,6 @@ with tabs[9]:
     df = get_history_df()
     if df.empty:
         st.info("لا توجد تقييمات محفوظة بعد.")
-        st.markdown("**اذهب لتبويب المدخلات واضغط 'حفظ في التاريخ'.**")
     else:
         try:
             idx_col = df["المؤشر"].astype(float)
@@ -1150,20 +1196,14 @@ with tabs[9]:
 # ============ TAB 11 ============
 with tabs[10]:
     st.header("🌍 تصدير GIS")
-    st.markdown("**صدّر البيانات لـ QGIS / ArcGIS / Google Earth**")
-
-    st.markdown("---")
     source = st.radio("المصدر:",
                       ["المواقع المدمجة (تقييم محسوب)",
                        "سجل التقييمات"],
-                      key="gis_src_v30")
-
+                      key="gis_src_v31")
     sites = []
     if source == "المواقع المدمجة (تقييم محسوب)" and DS_OK:
         sites = get_preset_sites_with_drastic(preset)
-        st.success("📌 " + str(len(sites)) + " موقع (مع مؤشر DRASTIC)")
-        st.caption("ملاحظة: المواقع المدمجة تُقيّم بقيم افتراضية.")
-
+        st.success("📌 " + str(len(sites)) + " موقع (مع مؤشر DRASTIC محسوب)")
     elif source == "سجل التقييمات":
         df_h = get_history_df()
         if not df_h.empty:
@@ -1177,56 +1217,41 @@ with tabs[10]:
                         "level": row.get("المستوى", "")})
                 except Exception:
                     continue
-            st.success("📌 " + str(len(sites)) + " تقييم محفوظ")
-        else:
-            st.warning("⚠️ لا توجد تقييمات محفوظة.")
+            st.success("📌 " + str(len(sites)) + " تقييم")
 
     if sites:
-        st.markdown("---")
-        st.subheader("📋 معاينة البيانات")
         preview_df = pd.DataFrame(sites)[["name", "lat", "lon",
                                             "index", "level"]]
         preview_df.columns = ["الموقع", "خط العرض", "خط الطول",
                               "المؤشر", "المستوى"]
         st.dataframe(preview_df, use_container_width=True)
 
-        st.markdown("---")
-        st.subheader("📊 إحصائيات")
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("الإجمالي", len(sites))
-        indices = [s["index"] for s in sites if s["index"] > 0]
-        if indices:
-            c2.metric("المتوسط", round(sum(indices) / len(indices), 1))
-            c3.metric("الأعلى", max(indices))
-            c4.metric("خطرة", len([i for i in indices if i >= 140]))
-        else:
-            c2.metric("المتوسط", "—")
-            c3.metric("الأعلى", "—")
-            c4.metric("خطرة", "—")
-
-        st.markdown("---")
-        st.subheader("💾 التحميل")
         c1, c2, c3 = st.columns(3)
         with c1:
             st.download_button("📄 GeoJSON",
                 data=sites_to_geojson(sites).encode("utf-8"),
                 file_name="drastic_sites.geojson",
                 mime="application/geo+json",
-                use_container_width=True,
-                key="dl_gj_v30")
+                use_container_width=True)
         with c2:
             st.download_button("🌍 KML",
                 data=sites_to_kml(sites).encode("utf-8"),
                 file_name="drastic_sites.kml",
                 mime="application/vnd.google-earth.kml+xml",
-                use_container_width=True,
-                key="dl_kml_v30")
+                use_container_width=True)
         with c3:
             st.download_button("📊 CSV",
                 data=preview_df.to_csv(index=False).encode("utf-8-sig"),
                 file_name="drastic_sites.csv", mime="text/csv",
-                use_container_width=True,
-                key="dl_csv_v30")
+                use_container_width=True)
+
+        st.markdown("""
+        **كيفية الاستخدام:**
+        - **QGIS:** GeoJSON → Add Vector Layer
+        - **Google Earth:** KML → File → Open
+        - **Excel:** CSV
+        - **عرض سريع:** `geojson.io`
+        """)
 
 
 # ============ TAB 12 ============
@@ -1235,7 +1260,7 @@ with tabs[11]:
     if "ci" in st.session_state:
         r = st.session_state["cr"]
         cs = st.session_state["cs"]
-        st.info("الموقع: " + cs + " | المؤشر: " +
+        st.info("الموقع: " + cs + " | المؤشر الأساسي: " +
                 str(st.session_state["ci"]))
 
         st.markdown("---")
@@ -1293,19 +1318,17 @@ with tabs[11]:
 
             st.markdown("---")
             if mc["prob_over_140"] > 50:
-                st.error("⚠️ احتمال مرتفع تجاوز 140")
+                st.error("⚠️ احتمال مرتفع تجاوز 140 — خطر")
             elif mc["prob_over_140"] > 20:
                 st.warning("⚠️ احتمال متوسط")
             else:
                 st.success("✅ احتمال منخفض")
+
+            if mc["prob_over_180"] > 10:
+                st.error("🚨 احتمال مرتفع بالوصول لخطر داهم")
     else:
         st.warning("افتح تبويب المدخلات أولا")
 
 
 st.markdown("---")
-st.caption("© 2026 نظام التعدين السوداني — الإصدار 1.0")
-st.markdown(
-    "<center style='color:#888;font-size:12px;'>"
-    "جامعة الخرطوم — كلية الهندسة"
-    "</center>",
-    unsafe_allow_html=True)
+st.caption("2026 جامعة الخرطوم - نظام التعدين السوداني v31.0")
