@@ -1,12 +1,6 @@
-streamlit
-pandas
-folium
-streamlit-folium
-google-generativeai
-geopy
-fpdf2
-reportlab
-matplotlib
-pyproj
-google-genai
-earthengine authenticate
+streamlit>=1.32.0
+folium>=0.15.1
+streamlit-folium>=0.18.0
+pandas>=2.2.0
+openpyxl>=3.1.0
+requests>=2.31.0
