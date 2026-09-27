@@ -1,0 +1,364 @@
+"""
+DRASTIC Calculations Module
+============================
+وحدة حساب نموذج DRASTIC المعتمدة
+
+References:
+    - Aller, L., Bennett, T., Lehr, J. H., Petty, R. J., & Hackett, G. (1987).
+      DRASTIC: A standardized system for evaluating ground water pollution
+      potential using hydrogeologic settings.
+      U.S. EPA, Washington, D.C., EPA/600/2-87/035.
+    - Fetter, C. W. (2001). Applied Hydrogeology (4th ed.). Prentice Hall.
+    - US EPA (1993). Ground Water Volume I. EPA/600/R-93/174.
+
+Version: 1.0.0
+"""
+
+from typing import Dict, Any, Union
+
+__version__ = "1.0.0"
+
+# ============================================================
+# ثوابت النموذج
+# ============================================================
+
+DRASTIC_WEIGHTS = {
+    "D": 5,  # Depth to water
+    "R": 4,  # Net Recharge
+    "A": 3,  # Aquifer Media
+    "S": 2,  # Soil Media
+    "T": 1,  # Topography
+    "I": 5,  # Impact of Vadose Zone
+    "C": 3,  # Hydraulic Conductivity
+}
+
+DRASTIC_MIN_INDEX = 23
+DRASTIC_MAX_INDEX = 230
+
+
+# ============================================================
+# 1. Depth to Water (D) — Aller et al. (1987), Table 6, p.19
+# ============================================================
+def get_d_rating(depth_m: float) -> int:
+    """
+    تصنيف عمق المياه الجوفية.
+    
+    Args:
+        depth_m: العمق بالمتر (>= 0)
+    
+    Returns:
+        التصنيف من 1 إلى 10
+    
+    Raises:
+        ValueError: إذا كان العمق سالباً
+    
+    Examples:
+        >>> get_d_rating(1.0)
+        10
+        >>> get_d_rating(40.0)
+        1
+    """
+    if depth_m < 0:
+        raise ValueError("Depth cannot be negative")
+    if depth_m <= 1.5: return 10
+    if depth_m <= 4.6: return 9
+    if depth_m <= 9.1: return 7
+    if depth_m <= 15.2: return 5
+    if depth_m <= 22.9: return 3
+    if depth_m <= 30.5: return 2
+    return 1
+
+
+# ============================================================
+# 2. Net Recharge (R) — Table 7, p.21
+# ============================================================
+def get_r_rating(recharge_mm: float) -> int:
+    """
+    تصنيف التغذية السنوية الصافية.
+    
+    Args:
+        recharge_mm: التغذية بالمم/سنة
+    
+    Returns:
+        التصنيف من 1 إلى 9
+    """
+    if recharge_mm < 0:
+        raise ValueError("Recharge cannot be negative")
+    if recharge_mm <= 50.8: return 1
+    if recharge_mm <= 101.6: return 3
+    if recharge_mm <= 177.8: return 6
+    if recharge_mm <= 254.0: return 8
+    return 9
+
+
+# ============================================================
+# 3. Aquifer Media (A) — Table 8, p.23
+# ============================================================
+AQUIFER_TYPES = {
+    "massive_shale": 2,
+    "metamorphic_igneous": 3,
+    "weathered_metamorphic_igneous": 4,
+    "thin_bedded_sequences": 6,
+    "massive_sandstone": 6,
+    "massive_limestone": 6,
+    "sand_and_gravel": 8,
+    "basalt": 9,
+    "karst_limestone": 10,
+}
+
+def get_a_rating(aquifer_type: str) -> int:
+    """تصنيف نوع الخزان الجوفي."""
+    return AQUIFER_TYPES.get(aquifer_type, 6)
+
+
+# ============================================================
+# 4. Soil Media (S) — Table 9, p.25
+# ============================================================
+SOIL_TYPES = {
+    "thin_or_absent": 10,
+    "gravel": 10,
+    "sand": 9,
+    "peat": 8,
+    "shrinking_aggregated_clay": 7,
+    "sandy_loam": 6,
+    "loam": 5,
+    "silty_loam": 4,
+    "clay_loam": 3,
+    "muck": 2,
+    "nonshrinking_clay": 1,
+}
+
+def get_s_rating(soil_type: str) -> int:
+    """تصنيف نوع التربة."""
+    return SOIL_TYPES.get(soil_type, 5)
+
+
+# ============================================================
+# 5. Topography (T) — Table 10, p.27
+# ============================================================
+def get_t_rating(slope_percent: float) -> int:
+    """تصنيف الانحدار."""
+    if slope_percent < 0:
+        raise ValueError("Slope cannot be negative")
+    if slope_percent <= 2.0: return 10
+    if slope_percent <= 6.0: return 9
+    if slope_percent <= 12.0: return 5
+    if slope_percent <= 18.0: return 3
+    return 1
+
+
+# ============================================================
+# 6. Impact of Vadose Zone (I) — Table 11, p.29
+# ============================================================
+VADOSE_TYPES = {
+    "confining_layer": 1,
+    "silt_clay": 1,
+    "shale": 3,
+    "metamorphic_igneous": 4,
+    "limestone": 6,
+    "sandstone": 6,
+    "sand_gravel_silt_clay": 6,
+    "sand_gravel": 8,
+    "basalt": 9,
+    "karst_limestone": 10,
+}
+
+def get_i_rating(vadose_type: str) -> int:
+    """تصنيف المنطقة غير المشبعة."""
+    return VADOSE_TYPES.get(vadose_type, 6)
+
+
+# ============================================================
+# 7. Hydraulic Conductivity (C) — Table 12, p.31
+# ============================================================
+def get_c_rating(conductivity_m_day: float) -> int:
+    """
+    تصنيف النفاذية الهيدروليكية.
+    
+    Note:
+        التحويل: 1 gpd/ft² = 0.04074 m/day
+    """
+    if conductivity_m_day < 0:
+        raise ValueError("Conductivity cannot be negative")
+    if conductivity_m_day <= 4.074: return 1
+    if conductivity_m_day <= 12.222: return 2
+    if conductivity_m_day <= 28.518: return 4
+    if conductivity_m_day <= 40.740: return 6
+    if conductivity_m_day <= 81.480: return 8
+    return 10
+
+
+# ============================================================
+# حساب المؤشر الإجمالي — Aller et al. (1987), p.16
+# ============================================================
+def calc_index(D: int, R: int, A: int, S: int,
+               T: int, I: int, C: int) -> int:
+    """
+    حساب مؤشر DRASTIC الإجمالي.
+    
+    الصيغة:
+        DI = D*5 + R*4 + A*3 + S*2 + T*1 + I*5 + C*3
+    
+    Returns:
+        المؤشر من 23 إلى 230
+    """
+    ratings = [D, R, A, S, T, I, C]
+    if any(not isinstance(r, int) or r < 1 or r > 10 for r in ratings):
+        raise ValueError("All ratings must be integers between 1 and 10")
+    return (D * 5) + (R * 4) + (A * 3) + (S * 2) + (T * 1) + (I * 5) + (C * 3)
+
+
+# ============================================================
+# تصنيف الخطورة
+# ============================================================
+def classify(idx: int) -> Dict[str, str]:
+    """
+    تصنيف مستوى الخطورة.
+    
+    المرجع:
+        Rahman, A. (2008). Environmental Monitoring and Assessment.
+    """
+    if idx >= 180:
+        return {"level": "مرتفع جدا", "level_en": "Very High",
+                "color": "red", "action": "معالجة فورية"}
+    if idx >= 140:
+        return {"level": "مرتفع", "level_en": "High",
+                "color": "orange", "action": "مراقبة عاجلة"}
+    if idx >= 100:
+        return {"level": "متوسط", "level_en": "Moderate",
+                "color": "yellow", "action": "مراقبة دورية"}
+    return {"level": "منخفض", "level_en": "Low",
+            "color": "green", "action": "مراقبة روتينية"}
+
+
+# ============================================================
+# زمن وصول الملوثات — Fetter (2001), pp.132-136
+# ============================================================
+def calc_travel_time(depth_m: float, porosity: float,
+                     conductivity: float, gradient: float = 1.0) -> Dict[str, float]:
+    """
+    حساب زمن وصول الملوثات باستخدام قانون Darcy.
+    
+    المعادلة:
+        v = (K * i) / θ
+        t = L / v
+    
+    Args:
+        depth_m: العمق (م)
+        porosity: المسامية (0.01 - 0.60)
+        conductivity: النفاذية (م/يوم)
+        gradient: التدرج الهيدروليكي (افتراضي 1.0)
+    
+    Returns:
+        dict مع days, years, velocity
+    """
+    if depth_m <= 0:
+        raise ValueError("Depth must be > 0")
+    if not (0.01 < porosity < 0.60):
+        raise ValueError("Porosity must be between 0.01 and 0.60")
+    if conductivity <= 0:
+        raise ValueError("Conductivity must be > 0")
+    if gradient <= 0:
+        raise ValueError("Gradient must be > 0")
+    v = (conductivity * gradient) / porosity
+    days = depth_m / v
+    return {
+        "days": round(days, 2),
+        "years": round(days / 365.25, 3),
+        "velocity": round(v, 6),
+    }
+
+
+# ============================================================
+# محاكي الحلول الهندسية
+# ============================================================
+def mitigate(idx: int, hdpe: bool = False,
+             treatment: bool = False, monitoring: bool = False) -> Dict[str, Any]:
+    """
+    حساب تخفيض الخطورة بعد تطبيق الحلول الهندسية.
+    """
+    m = float(idx)
+    if hdpe: m *= 0.40
+    if treatment: m *= 0.60
+    if monitoring: m *= 0.85
+    red = ((idx - m) / idx * 100) if idx > 0 else 0.0
+    methods = []
+    if hdpe: methods.append("HDPE Liner")
+    if treatment: methods.append("Cyanide Treatment")
+    if monitoring: methods.append("Monitoring Wells")
+    return {
+        "mitigated_index": round(m, 1),
+        "reduction_pct": round(red, 1),
+        "methods": methods,
+    }
+
+
+# ============================================================
+# تحليل الحساسية (Sensitivity Analysis)
+# ============================================================
+def sensitivity_analysis(D: int, R: int, A: int, S: int,
+                         T: int, I: int, C: int,
+                         variation: float = 0.10) -> Dict[str, Any]:
+    """
+    تحليل حساسية النموذج لكل معامل (± variation).
+    
+    المرجع:
+        Napolitano, P., & Fabbri, A. G. (1996). Single-parameter 
+        sensitivity analysis for aquifer vulnerability assessment.
+    
+    Args:
+        D, R, A, S, T, I, C: تقييمات المعاملات
+        variation: نسبة التغيير (افتراضي 0.10 = 10%)
+    
+    Returns:
+        dict مع التغير في المؤشر لكل معامل
+    """
+    base_idx = calc_index(D, R, A, S, T, I, C)
+    base_vals = {"D": D, "R": R, "A": A, "S": S, "T": T, "I": I, "C": C}
+    weights = DRASTIC_WEIGHTS
+    results = {}
+    
+    for param, val in base_vals.items():
+        new_val = max(1, min(10, val * (1 + variation)))
+        modified = dict(base_vals)
+        modified[param] = new_val
+        new_idx = calc_index(**modified)
+        change = new_idx - base_idx
+        results[param] = {
+            "original": val,
+            "modified": round(new_val, 2),
+            "new_index": new_idx,
+            "change": change,
+            "change_pct": round(change / base_idx * 100, 2) if base_idx > 0 else 0,
+            "sensitivity": round(abs(change) / base_idx * 100, 3) if base_idx > 0 else 0,
+        }
+    
+    sorted_results = dict(sorted(results.items(),
+                                  key=lambda x: x[1]["sensitivity"],
+                                  reverse=True))
+    return {
+        "base_index": base_idx,
+        "variation": variation,
+        "parameters": sorted_results,
+        "most_sensitive": list(sorted_results.keys())[0] if sorted_results else None,
+    }
+
+
+# ============================================================
+# معلومات الوحدة
+# ============================================================
+def get_module_info() -> Dict[str, Any]:
+    """معلومات عن وحدة الحسابات."""
+    return {
+        "name": "DRASTIC Calculations",
+        "version": __version__,
+        "reference": "Aller et al. (1987), EPA/600/2-87/035",
+        "weights": DRASTIC_WEIGHTS,
+        "range": [DRASTIC_MIN_INDEX, DRASTIC_MAX_INDEX],
+        "functions": [
+            "get_d_rating", "get_r_rating", "get_a_rating",
+            "get_s_rating", "get_t_rating", "get_i_rating",
+            "get_c_rating", "calc_index", "classify",
+            "calc_travel_time", "mitigate", "sensitivity_analysis",
+        ],
+    }
