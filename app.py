@@ -1,4 +1,4 @@
-"""DRASTIC Sudan v21.0 - With Sensitivity Analysis"""
+"""DRASTIC Sudan v22.0 - With Comparison & PDF"""
 import streamlit as st
 import folium
 from streamlit_folium import st_folium
@@ -107,7 +107,6 @@ def mitigate(idx, hdpe=False, treatment=False, monitoring=False):
 
 
 def sensitivity_analysis(D, R, A, S, T, I, C, variation=0.10):
-    """تحليل حساسية النموذج لكل معامل - Napolitano & Fabbri (1996)."""
     base_idx = calc_index(D, R, A, S, T, I, C)
     base_vals = {"D": D, "R": R, "A": A, "S": S, "T": T, "I": I, "C": C}
     results = {}
@@ -278,16 +277,25 @@ def gen_report(site, coords, idx, ratings, values, travel=None, sat=None):
 def gen_html(rep, site):
     return ("<!DOCTYPE html><html dir='rtl' lang='ar'><head>"
          "<meta charset='UTF-8'><title>" + site + "</title>"
-         "<style>body{font-family:Arial;direction:rtl;text-align:right;"
+         "<style>"
+         "body{font-family:Arial;direction:rtl;text-align:right;"
          "padding:30px;max-width:900px;margin:auto;line-height:1.9;}"
          "pre{white-space:pre-wrap;background:#f8f9fa;padding:25px;"
-         "border-radius:8px;}</style></head><body><pre>" + rep +
-         "</pre></body></html>")
+         "border-radius:8px;font-family:inherit;}"
+         "@media print{body{background:#fff;padding:0;}pre{"
+         "background:#fff;padding:0;border:none;}}"
+         "</style></head><body><pre>" + rep +
+         "</pre>"
+         "<div style='text-align:center;margin-top:30px;color:#666;"
+         "font-size:12px;'>"
+         "لحفظ كـ PDF: Ctrl+P ثم Save as PDF"
+         "</div>"
+         "</body></html>")
 
 
 st.title("نظام التقييم البيئي للتعدين")
 st.markdown("### جامعة الخرطوم - كلية الهندسة")
-st.markdown("#### DRASTIC Sudan v21.0")
+st.markdown("#### DRASTIC Sudan v22.0")
 st.markdown("---")
 
 if DS_OK:
@@ -298,9 +306,9 @@ else:
               "depth": 15.0, "conductivity": 5.0, "source": "افتراضي"}}
     summary = {"Total Data Points": 1}
 
-t1, t2, t3, t4, t5, t6, t7 = st.tabs([
+t1, t2, t3, t4, t5, t6, t7, t8 = st.tabs([
     "المدخلات والنتائج", "الجماعي", "الحلول",
-    "التقرير", "الخريطة", "الدقة", "تحليل الحساسية"
+    "التقرير", "الخريطة", "الدقة", "تحليل الحساسية", "مقارنة موقعين"
 ])
 
 
@@ -581,11 +589,7 @@ with t6:
 
 with t7:
     st.header("تحليل الحساسية (Sensitivity Analysis)")
-    st.markdown("""
-    **الغرض:** تحديد المعاملات الأكثر تأثيراً على مؤشر DRASTIC.
-
-    **المرجع:** Napolitano & Fabbri (1996).
-    """)
+    st.markdown("**الغرض:** تحديد المعاملات الأكثر تأثيراً على مؤشر DRASTIC.")
 
     if "ci" in st.session_state:
         ratings = st.session_state["cr"]
@@ -608,7 +612,6 @@ with t7:
 
         st.markdown("---")
         st.subheader("المعاملات مرتبة حسب التأثير")
-        st.caption("الأعلى = الأكثر تأثيراً على المؤشر")
 
         for param in result["parameters"]:
             p = result["parameters"][param]
@@ -623,9 +626,8 @@ with t7:
                 c3.metric("التغير في المؤشر", str(p["change"]))
 
         st.markdown("---")
-        st.subheader("الخلاصة")
-        most = result["most_sensitive"]
-        st.success("**المعامل الأكثر تأثيراً: " + str(most) + "**")
+        st.success("**المعامل الأكثر تأثيراً: " +
+                   str(result["most_sensitive"]) + "**")
 
         chart_data = pd.DataFrame({
             "المعامل": list(result["parameters"].keys()),
@@ -633,19 +635,168 @@ with t7:
                              for p in result["parameters"]]
         })
         st.bar_chart(chart_data.set_index("المعامل"))
-
-        st.markdown("---")
-        st.info("""
-        **التفسير:**
-        - **D (العمق)** و **I (غير المشبعة)**: الأكثر تأثيراً (وزن 5).
-        - **R (التغذية)**: وزن 4.
-        - **A (الخزان)** و **C (النفاذية)**: وزن 3.
-        - **S (التربة)**: وزن 2.
-        - **T (الانحدار)**: الأقل تأثيراً (وزن 1).
-        """)
     else:
         st.warning("افتح تبويب المدخلات أولا")
 
 
+with t8:
+    st.header("مقارنة موقعين")
+    st.markdown("**اختر موقعين، عدّل المدخلات، ثم شاهد الفرق.**")
+
+    if DS_OK:
+        c1, c2 = st.columns(2)
+        with c1:
+            st.subheader("الموقع الأول")
+            site_a = st.selectbox("اختر:", list(preset.keys()), key="site_a")
+            sd_a = preset[site_a]
+            depth_a = st.slider("D (م):", 0.5, 100.0, float(sd_a["depth"]), 0.5, key="d_a")
+            recharge_a = st.slider("R (مم):", 0.0, 400.0, 150.0, 10.0, key="r_a")
+            slope_a = st.slider("T (%):", 0.0, 30.0, 4.0, 0.5, key="t_a")
+            cond_a = st.slider("C (م/يوم):", 0.01, 100.0, float(sd_a["conductivity"]), 0.1, key="c_a")
+            aq_a = st.selectbox("A:", ["massive_sandstone", "sand_and_gravel",
+                "karst_limestone", "basalt", "massive_shale"], key="aq_a")
+            soil_a = st.selectbox("S:", ["sand", "sandy_loam", "loam",
+                "silty_loam", "clay_loam", "nonshrinking_clay"], key="so_a")
+            vd_a = st.selectbox("I:", ["sand_gravel", "sandstone", "limestone",
+                "silt_clay", "shale"], key="vd_a")
+
+        with c2:
+            st.subheader("الموقع الثاني")
+            site_b = st.selectbox("اختر:", list(preset.keys()), key="site_b")
+            sd_b = preset[site_b]
+            depth_b = st.slider("D (م):", 0.5, 100.0, float(sd_b["depth"]), 0.5, key="d_b")
+            recharge_b = st.slider("R (مم):", 0.0, 400.0, 150.0, 10.0, key="r_b")
+            slope_b = st.slider("T (%):", 0.0, 30.0, 4.0, 0.5, key="t_b")
+            cond_b = st.slider("C (م/يوم):", 0.01, 100.0, float(sd_b["conductivity"]), 0.1, key="c_b")
+            aq_b = st.selectbox("A:", ["massive_sandstone", "sand_and_gravel",
+                "karst_limestone", "basalt", "massive_shale"], key="aq_b")
+            soil_b = st.selectbox("S:", ["sand", "sandy_loam", "loam",
+                "silty_loam", "clay_loam", "nonshrinking_clay"], key="so_b")
+            vd_b = st.selectbox("I:", ["sand_gravel", "sandstone", "limestone",
+                "silt_clay", "shale"], key="vd_b")
+
+        try:
+            D_a = get_d_rating(depth_a)
+            R_a = get_r_rating(recharge_a)
+            A_a = get_a_rating(aq_a)
+            S_a = get_s_rating(soil_a)
+            T_a = get_t_rating(slope_a)
+            I_a = get_i_rating(vd_a)
+            C_a = get_c_rating(cond_a)
+            idx_a = calc_index(D_a, R_a, A_a, S_a, T_a, I_a, C_a)
+            risk_a = classify(idx_a)
+
+            D_b = get_d_rating(depth_b)
+            R_b = get_r_rating(recharge_b)
+            A_b = get_a_rating(aq_b)
+            S_b = get_s_rating(soil_b)
+            T_b = get_t_rating(slope_b)
+            I_b = get_i_rating(vd_b)
+            C_b = get_c_rating(cond_b)
+            idx_b = calc_index(D_b, R_b, A_b, S_b, T_b, I_b, C_b)
+            risk_b = classify(idx_b)
+
+            st.markdown("---")
+            st.header("النتائج المقارنة")
+
+            m1, m2, m3 = st.columns(3)
+            m1.metric(site_a, str(idx_a) + " / 230", risk_a["level"])
+            m2.metric("الفرق", str(abs(idx_a - idx_b)),
+                      "أعلى: " + (site_a if idx_a > idx_b else site_b))
+            m3.metric(site_b, str(idx_b) + " / 230", risk_b["level"])
+
+            st.markdown("---")
+            st.subheader("جدول تفصيلي")
+
+            comparison = pd.DataFrame({
+                "المعامل": ["D (العمق)", "R (التغذية)", "A (الخزان)",
+                            "S (التربة)", "T (الانحدار)", "I (غير المشبعة)",
+                            "C (النفاذية)"],
+                site_a: [D_a, R_a, A_a, S_a, T_a, I_a, C_a],
+                site_b: [D_b, R_b, A_b, S_b, T_b, I_b, C_b],
+                "الفرق": [D_a - D_b, R_a - R_b, A_a - A_b,
+                          S_a - S_b, T_a - T_b, I_a - I_b, C_a - C_b],
+            })
+            st.dataframe(comparison, use_container_width=True)
+
+            st.markdown("---")
+            st.subheader("الرسم البياني")
+            chart_df = pd.DataFrame({
+                "المعامل": comparison["المعامل"],
+                site_a: comparison[site_a],
+                site_b: comparison[site_b],
+            }).set_index("المعامل")
+            st.bar_chart(chart_df)
+
+            st.markdown("---")
+            st.subheader("الخلاصة")
+
+            if idx_a > idx_b:
+                st.error("**" + site_a + "** أكثر خطورة بمقدار " +
+                         str(idx_a - idx_b) + " نقطة")
+            elif idx_b > idx_a:
+                st.error("**" + site_b + "** أكثر خطورة بمقدار " +
+                         str(idx_b - idx_a) + " نقطة")
+            else:
+                st.info("الموقعان متساويان في المؤشر")
+
+            st.markdown("---")
+            st.subheader("تصدير المقارنة")
+
+            html_comp = (
+                "<!DOCTYPE html><html dir='rtl' lang='ar'><head>"
+                "<meta charset='UTF-8'><title>مقارنة</title>"
+                "<style>body{font-family:Arial;direction:rtl;"
+                "text-align:right;padding:30px;max-width:900px;"
+                "margin:auto;line-height:1.9;}"
+                "table{width:100%;border-collapse:collapse;margin:20px 0;}"
+                "th,td{border:1px solid #ddd;padding:10px;text-align:center;}"
+                "th{background:#f0f0f0;}"
+                "@media print{body{background:#fff;padding:0;}}"
+                "</style></head><body>"
+                "<h1>تقرير مقارنة موقعين</h1>"
+                "<h2>" + site_a + " vs " + site_b + "</h2>"
+                "<p><strong>" + site_a + ":</strong> " +
+                str(idx_a) + "/230 — " + risk_a["level"] + "</p>"
+                "<p><strong>" + site_b + ":</strong> " +
+                str(idx_b) + "/230 — " + risk_b["level"] + "</p>"
+                "<table><tr><th>المعامل</th><th>" + site_a +
+                "</th><th>" + site_b + "</th><th>الفرق</th></tr>" +
+                "<tr><td>D</td><td>" + str(D_a) + "</td><td>" + str(D_b) +
+                "</td><td>" + str(D_a - D_b) + "</td></tr>" +
+                "<tr><td>R</td><td>" + str(R_a) + "</td><td>" + str(R_b) +
+                "</td><td>" + str(R_a - R_b) + "</td></tr>" +
+                "<tr><td>A</td><td>" + str(A_a) + "</td><td>" + str(A_b) +
+                "</td><td>" + str(A_a - A_b) + "</td></tr>" +
+                "<tr><td>S</td><td>" + str(S_a) + "</td><td>" + str(S_b) +
+                "</td><td>" + str(S_a - S_b) + "</td></tr>" +
+                "<tr><td>T</td><td>" + str(T_a) + "</td><td>" + str(T_b) +
+                "</td><td>" + str(T_a - T_b) + "</td></tr>" +
+                "<tr><td>I</td><td>" + str(I_a) + "</td><td>" + str(I_b) +
+                "</td><td>" + str(I_a - I_b) + "</td></tr>" +
+                "<tr><td>C</td><td>" + str(C_a) + "</td><td>" + str(C_b) +
+                "</td><td>" + str(C_a - C_b) + "</td></tr>" +
+                "<tr><th>المؤشر</th><th>" + str(idx_a) +
+                "</th><th>" + str(idx_b) + "</th><th>" +
+                str(abs(idx_a - idx_b)) + "</th></tr></table>"
+                "<p style='text-align:center;margin-top:30px;color:#666;"
+                "font-size:12px;'>لحفظ كـ PDF: Ctrl+P ثم Save as PDF</p>"
+                "</body></html>"
+            )
+
+            st.download_button("تحميل المقارنة (HTML/PDF)",
+                data=html_comp.encode("utf-8"),
+                file_name="comparison.html",
+                mime="text/html; charset=utf-8",
+                use_container_width=True,
+                key="dl_compare")
+
+            st.info("افتح الملف في المتصفح ثم Ctrl+P → Save as PDF")
+        except ValueError as e:
+            st.error("خطأ: " + str(e))
+    else:
+        st.warning("data_sources.py غير متوفر")
+
+
 st.markdown("---")
-st.caption("2026 University of Khartoum - DRASTIC Sudan v21.0")
+st.caption("2026 University of Khartoum - DRASTIC Sudan v22.0")
