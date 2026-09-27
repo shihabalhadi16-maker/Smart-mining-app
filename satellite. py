@@ -1,0 +1,184 @@
+"""
+Satellite Data Module
+=====================
+وحدة بيانات الأقمار الصناعية والمناخ
+
+المصدر:
+    ERA5 (ECMWF) عبر Open-Meteo API
+    https://open-meteo.com/
+
+References:
+    - Hersbach, H., et al. (2020). The ERA5 global reanalysis.
+      Quarterly Journal of the Royal Meteorological Society, 146(730), 1999-2049.
+    - WMO (2023). Guide to Instruments and Methods of Observation.
+
+Version: 1.0.0
+"""
+
+import requests
+import datetime
+from datetime import timedelta
+
+__version__ = "1.0.0"
+
+OPEN_METEO_URL = "https://archive-api.open-meteo.com/v1/archive"
+
+
+def get_rainfall(lat: float, lon: float, years: int = 3):
+    """
+    جلب متوسط الأمطار السنوية من Open-Meteo (ERA5).
+
+    Args:
+        lat: خط العرض
+        lon: خط الطول
+        years: عدد السنوات (افتراضي 3)
+
+    Returns:
+        متوسط الأمطار السنوية (مم) أو None عند الفشل
+    """
+    try:
+        end_date = datetime.datetime.now().strftime('%Y-%m-%d')
+        start_date = (datetime.datetime.now() -
+                      timedelta(days=365 * years)).strftime('%Y-%m-%d')
+        r = requests.get(
+            OPEN_METEO_URL,
+            params={
+                "latitude": lat,
+                "longitude": lon,
+                "start_date": start_date,
+                "end_date": end_date,
+                "daily": "precipitation_sum",
+                "timezone": "Africa/Khartoum",
+            },
+            timeout=30,
+        )
+        data = r.json()
+        daily = data.get("daily", {}).get("precipitation_sum", [])
+        vals = [v for v in daily if v is not None]
+        if not vals:
+            return None
+        return round(sum(vals) / years, 1)
+    except Exception:
+        return None
+
+
+def get_temperature(lat: float, lon: float, years: int = 3):
+    """
+    جلب متوسط الحرارة السنوية من Open-Meteo (ERA5).
+    """
+    try:
+        end_date = datetime.datetime.now().strftime('%Y-%m-%d')
+        start_date = (datetime.datetime.now() -
+                      timedelta(days=365 * years)).strftime('%Y-%m-%d')
+        r = requests.get(
+            OPEN_METEO_URL,
+            params={
+                "latitude": lat,
+                "longitude": lon,
+                "start_date": start_date,
+                "end_date": end_date,
+                "daily": "temperature_2m_mean",
+                "timezone": "Africa/Khartoum",
+            },
+            timeout=30,
+        )
+        data = r.json()
+        temps = data.get("daily", {}).get("temperature_2m_mean", [])
+        vals = [v for v in temps if v is not None]
+        if not vals:
+            return None
+        return round(sum(vals) / len(vals), 1)
+    except Exception:
+        return None
+
+
+def classify_aridity(rainfall_mm):
+    """
+    تصنيف المناخ حسب الأمطار السنوية.
+
+    المرجع:
+        UNEP (1992). World Atlas of Desertification.
+    """
+    if rainfall_mm is None:
+        return "غير محدد"
+    if rainfall_mm < 100:
+        return "صحراوي"
+    if rainfall_mm < 250:
+        return "شبه جاف"
+    if rainfall_mm < 500:
+        return "شبه رطب"
+    return "رطب"
+
+
+def estimate_recharge(rainfall_mm, soil_type: str = "sand"):
+    """
+    تقدير التغذية الجوفية من الأمطار بناءً على نوع التربة.
+
+    المرجع:
+        US EPA (1993). EPA/600/R-93/174.
+
+    Args:
+        rainfall_mm: الأمطار السنوية (مم)
+        soil_type: نوع التربة
+
+    Returns:
+        التغذية المقدرة (مم/سنة) أو None
+    """
+    if rainfall_mm is None:
+        return None
+    ratios = {
+        "sand": 0.20,
+        "sandy_loam": 0.15,
+        "loam": 0.12,
+        "silty_loam": 0.10,
+        "clay_loam": 0.07,
+        "nonshrinking_clay": 0.04,
+    }
+    ratio = ratios.get(soil_type, 0.12)
+    return round(rainfall_mm * ratio, 1)
+
+
+def estimate_ndvi(rainfall_mm):
+    """
+    تقدير NDVI من الأمطار (نموذج تجريبي).
+    """
+    if rainfall_mm is None:
+        return None
+    ndvi = min(0.7, max(0.05, rainfall_mm / 1000.0))
+    return round(ndvi, 3)
+
+
+def fetch_satellite_data(lat: float, lon: float, years: int = 3):
+    """
+    الدالة الموحدة لجلب جميع مؤشرات الأقمار الصناعية.
+
+    Returns:
+        dict يحتوي على: rainfall_mm, temperature_c, aridity,
+        ndvi_estimated, source, period, lat, lon
+    """
+    rainfall = get_rainfall(lat, lon, years)
+    temperature = get_temperature(lat, lon, years)
+    return {
+        "rainfall_mm": rainfall,
+        "temperature_c": temperature,
+        "aridity": classify_aridity(rainfall),
+        "ndvi_estimated": estimate_ndvi(rainfall),
+        "source": "ERA5 (ECMWF) via Open-Meteo",
+        "period": str(years) + " سنوات",
+        "lat": lat,
+        "lon": lon,
+    }
+
+
+def get_module_info():
+    """معلومات عن الوحدة."""
+    return {
+        "name": "Satellite Data (ERA5)",
+        "version": __version__,
+        "source": "Open-Meteo API",
+        "reference": "Hersbach et al. (2020)",
+        "functions": [
+            "get_rainfall", "get_temperature", "classify_aridity",
+            "estimate_recharge", "estimate_ndvi", "fetch_satellite_data",
+        ],
+    }
