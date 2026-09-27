@@ -1,0 +1,299 @@
+"""
+Hg & CN Analysis Module
+========================
+وحدة تحليل الزئبق والسيانيد + نظام التنبيهات
+
+References:
+    - Minamata Convention on Mercury (2017)
+    - International Cyanide Management Code (ICMC, 2002)
+    - WHO (2022). Guidelines for Drinking-water Quality
+    - US EPA (2020). Mercury and Air Toxics Standards
+
+Version: 1.0.0
+"""
+
+from typing import Dict, Any, List
+import datetime
+
+__version__ = "1.0.0"
+
+
+# ============================================================
+# الحدود الدولية
+# ============================================================
+WHO_LIMITS = {
+    "mercury_inorganic_mg_L": {"limit": 0.006, "source": "WHO (2022)"},
+    "mercury_total_mg_L": {"limit": 0.001, "source": "WHO (2022)"},
+    "cyanide_free_mg_L": {"limit": 0.07, "source": "WHO (2022)"},
+    "cyanide_total_mg_L": {"limit": 0.07, "source": "WHO (2022)"},
+    "mercury_soil_mg_kg": {"limit": 1.0, "source": "Minamata Convention"},
+    "cyanide_soil_mg_kg": {"limit": 10.0, "source": "ICMC (2002)"},
+}
+
+
+# ============================================================
+# 1. تحليل الزئبق
+# ============================================================
+def analyze_mercury(water_mg_L: float, soil_mg_kg: float) -> Dict[str, Any]:
+    """
+    تحليل تركيز الزئبق مقابل المعايير الدولية.
+
+    Args:
+        water_mg_L: تركيز الزئبق في المياه (mg/L)
+        soil_mg_kg: تركيز الزئبق في التربة (mg/kg)
+
+    Returns:
+        dict مع التحليل الكامل
+    """
+    water_limit = WHO_LIMITS["mercury_inorganic_mg_L"]["limit"]
+    soil_limit = WHO_LIMITS["mercury_soil_mg_kg"]["limit"]
+
+    water_status = "safe" if water_mg_L <= water_limit else "exceeded"
+    soil_status = "safe" if soil_mg_kg <= soil_limit else "exceeded"
+
+    water_ratio = water_mg_L / water_limit if water_limit > 0 else 0
+    soil_ratio = soil_mg_kg / soil_limit if soil_limit > 0 else 0
+
+    # تصنيف الخطورة
+    max_ratio = max(water_ratio, soil_ratio)
+    if max_ratio <= 1.0:
+        toxicity_level = "منخفض"
+        toxicity_color = "green"
+    elif max_ratio <= 3.0:
+        toxicity_level = "متوسط"
+        toxicity_color = "yellow"
+    elif max_ratio <= 10.0:
+        toxicity_level = "مرتفع"
+        toxicity_color = "orange"
+    else:
+        toxicity_level = "مرتفع جدا"
+        toxicity_color = "red"
+
+    return {
+        "water": {
+            "value": water_mg_L,
+            "limit": water_limit,
+            "status": water_status,
+            "ratio": round(water_ratio, 2),
+            "source": WHO_LIMITS["mercury_inorganic_mg_L"]["source"],
+        },
+        "soil": {
+            "value": soil_mg_kg,
+            "limit": soil_limit,
+            "status": soil_status,
+            "ratio": round(soil_ratio, 2),
+            "source": WHO_LIMITS["mercury_soil_mg_kg"]["source"],
+        },
+        "toxicity_level": toxicity_level,
+        "toxicity_color": toxicity_color,
+        "max_ratio": round(max_ratio, 2),
+    }
+
+
+# ============================================================
+# 2. تحليل السيانيد
+# ============================================================
+def analyze_cyanide(water_mg_L: float, soil_mg_kg: float) -> Dict[str, Any]:
+    """تحليل تركيز السيانيد مقابل المعايير الدولية."""
+    water_limit = WHO_LIMITS["cyanide_free_mg_L"]["limit"]
+    soil_limit = WHO_LIMITS["cyanide_soil_mg_kg"]["limit"]
+
+    water_status = "safe" if water_mg_L <= water_limit else "exceeded"
+    soil_status = "safe" if soil_mg_kg <= soil_limit else "exceeded"
+
+    water_ratio = water_mg_L / water_limit if water_limit > 0 else 0
+    soil_ratio = soil_mg_kg / soil_limit if soil_limit > 0 else 0
+
+    max_ratio = max(water_ratio, soil_ratio)
+    if max_ratio <= 1.0:
+        toxicity_level = "منخفض"
+        toxicity_color = "green"
+    elif max_ratio <= 3.0:
+        toxicity_level = "متوسط"
+        toxicity_color = "yellow"
+    elif max_ratio <= 10.0:
+        toxicity_level = "مرتفع"
+        toxicity_color = "orange"
+    else:
+        toxicity_level = "مرتفع جدا"
+        toxicity_color = "red"
+
+    return {
+        "water": {
+            "value": water_mg_L,
+            "limit": water_limit,
+            "status": water_status,
+            "ratio": round(water_ratio, 2),
+            "source": WHO_LIMITS["cyanide_free_mg_L"]["source"],
+        },
+        "soil": {
+            "value": soil_mg_kg,
+            "limit": soil_limit,
+            "status": soil_status,
+            "ratio": round(soil_ratio, 2),
+            "source": WHO_LIMITS["cyanide_soil_mg_kg"]["source"],
+        },
+        "toxicity_level": toxicity_level,
+        "toxicity_color": toxicity_color,
+        "max_ratio": round(max_ratio, 2),
+    }
+
+
+# ============================================================
+# 3. مؤشر السمية المرجّح
+# ============================================================
+def weighted_toxicity_index(hg_water: float, hg_soil: float,
+                             cn_water: float, cn_soil: float) -> Dict[str, Any]:
+    """
+    حساب مؤشر سمية مرجّح يجمع Hg + CN.
+
+    الأوزان:
+        Hg (المياه) = 40% (الأشد خطورة)
+        Hg (التربة) = 20%
+        CN (المياه) = 30%
+        CN (التربة) = 10%
+    """
+    hg_w_limit = WHO_LIMITS["mercury_inorganic_mg_L"]["limit"]
+    hg_s_limit = WHO_LIMITS["mercury_soil_mg_kg"]["limit"]
+    cn_w_limit = WHO_LIMITS["cyanide_free_mg_L"]["limit"]
+    cn_s_limit = WHO_LIMITS["cyanide_soil_mg_kg"]["limit"]
+
+    hg_w_ratio = hg_water / hg_w_limit if hg_w_limit > 0 else 0
+    hg_s_ratio = hg_soil / hg_s_limit if hg_s_limit > 0 else 0
+    cn_w_ratio = cn_water / cn_w_limit if cn_w_limit > 0 else 0
+    cn_s_ratio = cn_soil / cn_s_limit if cn_s_limit > 0 else 0
+
+    weighted = (hg_w_ratio * 0.40) + (hg_s_ratio * 0.20) + \
+               (cn_w_ratio * 0.30) + (cn_s_ratio * 0.10)
+
+    if weighted <= 1.0:
+        category = "آمن"
+        color = "green"
+        action = "لا يتطلب تدخل"
+    elif weighted <= 3.0:
+        category = "تحت المراقبة"
+        color = "yellow"
+        action = "مراقبة دورية"
+    elif weighted <= 10.0:
+        category = "خطر"
+        color = "orange"
+        action = "تدخل عاجل"
+    else:
+        category = "خطر داهم"
+        color = "red"
+        action = "إيقاف النشاط"
+
+    return {
+        "index": round(weighted, 2),
+        "category": category,
+        "color": color,
+        "action": action,
+        "components": {
+            "Hg_water_ratio": round(hg_w_ratio, 2),
+            "Hg_soil_ratio": round(hg_s_ratio, 2),
+            "CN_water_ratio": round(cn_w_ratio, 2),
+            "CN_soil_ratio": round(cn_s_ratio, 2),
+        },
+    }
+
+
+# ============================================================
+# 4. نظام التنبيهات
+# ============================================================
+def generate_alerts(idx: int, hg_analysis: Dict = None,
+                     cn_analysis: Dict = None,
+                     toxicity_index: Dict = None) -> List[Dict[str, str]]:
+    """
+    توليد تنبيهات ذكية حسب مستوى الخطورة.
+
+    Returns:
+        قائمة من التنبيهات (كل تنبيه فيه: level, message, action)
+    """
+    alerts = []
+
+    # تنبيهات DRASTIC
+    if idx >= 180:
+        alerts.append({
+            "level": "critical",
+            "icon": "🔴",
+            "message": "مؤشر DRASTIC مرتفع جداً (" + str(idx) + "/230)",
+            "action": "إيقاف النشاط فوراً وإبلاغ GRAS",
+        })
+    elif idx >= 140:
+        alerts.append({
+            "level": "high",
+            "icon": "🟠",
+            "message": "مؤشر DRASTIC مرتفع (" + str(idx) + "/230)",
+            "action": "تدخل عاجل خلال 30 يوم",
+        })
+    elif idx >= 100:
+        alerts.append({
+            "level": "medium",
+            "icon": "🟡",
+            "message": "مؤشر DRASTIC متوسط (" + str(idx) + "/230)",
+            "action": "مراقبة ربع سنوية",
+        })
+
+    # تنبيهات الزئبق
+    if hg_analysis:
+        if hg_analysis["water"]["status"] == "exceeded":
+            alerts.append({
+                "level": "critical",
+                "icon": "⚠️",
+                "message": "الزئبق في المياه يتجاوز WHO (" +
+                           str(hg_analysis["water"]["ratio"]) + "x)",
+                "action": "تحذير المستخدمين + تحليل مياه بديلة",
+            })
+        if hg_analysis["soil"]["status"] == "exceeded":
+            alerts.append({
+                "level": "high",
+                "icon": "⚠️",
+                "message": "الزئبق في التربة يتجاوز الحد (" +
+                           str(hg_analysis["soil"]["ratio"]) + "x)",
+                "action": "معالجة التربة",
+            })
+
+    # تنبيهات السيانيد
+    if cn_analysis:
+        if cn_analysis["water"]["status"] == "exceeded":
+            alerts.append({
+                "level": "critical",
+                "icon": "☠️",
+                "message": "السيانيد في المياه يتجاوز WHO (" +
+                           str(cn_analysis["water"]["ratio"]) + "x)",
+                "action": "إخلاء فوري + إبلاغ الطوارئ",
+            })
+        if cn_analysis["soil"]["status"] == "exceeded":
+            alerts.append({
+                "level": "high",
+                "icon": "☠️",
+                "message": "السيانيد في التربة يتجاوز ICMC (" +
+                           str(cn_analysis["soil"]["ratio"]) + "x)",
+                "action": "معالجة عاجلة",
+            })
+
+    # تنبيه مؤشر السمية
+    if toxicity_index:
+        if toxicity_index["index"] > 10:
+            alerts.append({
+                "level": "critical",
+                "icon": "🚨",
+                "message": "مؤشر السمية المرجّح: " +
+                           str(toxicity_index["index"]) + " (خطر داهم)",
+                "action": "تدخل فوري + إخلاء المنطقة",
+            })
+
+    return alerts
+
+
+def get_module_info() -> Dict[str, Any]:
+    """معلومات عن الوحدة."""
+    return {
+        "name": "Hg & CN Analysis",
+        "version": __version__,
+        "limits": WHO_LIMITS,
+        "functions": [
+            "analyze_mercury", "analyze_cyanide",
+            "weighted_toxicity_index", "generate_alerts",
+        ],
+    }
