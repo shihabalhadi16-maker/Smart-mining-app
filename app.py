@@ -652,4 +652,312 @@ with tabs[5]:
         "drastic_index": [150, 80, 130, 165],
         "actual_status": [1, 0, 0, 1]})
     st.download_button("نموذج",
-        data=sample.to_csv(index=False).encode("utf 
+        data=sample.to_csv(index=False).encode("utf-8-sig"),
+        file_name="accuracy_template.csv", mime="text/csv")
+    f2 = st.file_uploader("ارفع:", type=["csv", "xlsx"], key="acc")
+    if f2:
+        try:
+            df = pd.read_csv(f2) if f2.name.endswith(".csv") else pd.read_excel(f2)
+            if "drastic_index" in df.columns and "actual_status" in df.columns:
+                preds = [1 if float(v) >= 140 else 0 for v in df["drastic_index"]]
+                actuals = [int(v) for v in df["actual_status"]]
+                tp = sum(1 for p, a in zip(preds, actuals) if p == 1 and a == 1)
+                tn = sum(1 for p, a in zip(preds, actuals) if p == 0 and a == 0)
+                fp = sum(1 for p, a in zip(preds, actuals) if p == 1 and a == 0)
+                fn = sum(1 for p, a in zip(preds, actuals) if p == 0 and a == 1)
+                total = tp + tn + fp + fn
+                acc = (tp + tn) / total * 100 if total > 0 else 0
+                prec = (tp / (tp + fp) * 100) if (tp + fp) > 0 else 0
+                rec = (tp / (tp + fn) * 100) if (tp + fn) > 0 else 0
+                spec = (tn / (tn + fp) * 100) if (tn + fp) > 0 else 0
+                f1 = (2 * prec * rec / (prec + rec)) if (prec + rec) > 0 else 0
+                po = (tp + tn) / total if total > 0 else 0
+                pe = ((tp + fp) * (tp + fn) + (tn + fn) * (tn + fp)) / (total ** 2) if total > 0 else 0
+                kappa = ((po - pe) / (1 - pe)) if (1 - pe) > 0 else 0
+
+                a1, a2, a3, a4 = st.columns(4)
+                a1.metric("Accuracy", str(round(acc, 2)) + " %")
+                a2.metric("Recall", str(round(rec, 2)) + " %")
+                a3.metric("Precision", str(round(prec, 2)) + " %")
+                a4.metric("F1", str(round(f1, 2)) + " %")
+                b1, b2, b3, b4 = st.columns(4)
+                b1.metric("Kappa", round(kappa, 4))
+                b2.metric("Specificity", str(round(spec, 2)) + " %")
+                b3.metric("Total", total)
+                b4.metric("TP/TN", str(tp) + "/" + str(tn))
+                st.dataframe(pd.DataFrame({
+                    "Contaminated": [tp, fn], "Clean": [fp, tn]},
+                    index=["Pred Cont", "Pred Clean"]))
+            else:
+                st.error("Need: drastic_index, actual_status")
+        except Exception as e:
+            st.error("خطأ: " + str(e))
+
+
+# ==================== Tab 7 ====================
+with tabs[6]:
+    st.header("تحليل الحساسية")
+    if "ci" in st.session_state:
+        r = st.session_state["cr"]
+        st.info("الموقع: " + st.session_state["cs"] +
+                " | المؤشر: " + str(st.session_state["ci"]))
+        variation = st.slider("نسبة التغيير (%):", 5, 30, 10, 5) / 100.0
+        result = sensitivity_analysis(r["D"], r["R"], r["A"], r["S"],
+                                       r["T"], r["I"], r["C"], variation)
+        for p in result["parameters"]:
+            pd_ = result["parameters"][p]
+            weight = {"D": 5, "R": 4, "A": 3, "S": 2, "T": 1, "I": 5, "C": 3}[p]
+            with st.expander(p + " — وزن " + str(weight) +
+                             " (تأثير: " + str(pd_["sensitivity"]) + "%)"):
+                c1, c2, c3 = st.columns(3)
+                c1.metric("الأصلي", pd_["original"])
+                c2.metric("المعدل", pd_["modified"])
+                c3.metric("التغير", pd_["change"])
+        st.success("الأكثر تأثيراً: " + str(result["most_sensitive"]))
+        chart = pd.DataFrame({
+            "المعامل": list(result["parameters"].keys()),
+            "الحساسية": [result["parameters"][p]["sensitivity"]
+                        for p in result["parameters"]]}).set_index("المعامل")
+        st.bar_chart(chart)
+    else:
+        st.warning("افتح تبويب المدخلات أولا")
+
+
+# ==================== Tab 8 ====================
+with tabs[7]:
+    st.header("مقارنة موقعين")
+    if DS_OK:
+        c1, c2 = st.columns(2)
+        with c1:
+            st.subheader("الأول")
+            sa = st.selectbox("اختر:", list(preset.keys()), key="sa")
+            sda = preset[sa]
+            da = st.slider("D:", 0.5, 100.0, float(sda["depth"]), 0.5, key="da")
+            ra = st.slider("R:", 0.0, 400.0, 150.0, 10.0, key="ra")
+            ta = st.slider("T:", 0.0, 30.0, 4.0, 0.5, key="ta")
+            ca = st.slider("C:", 0.01, 100.0, float(sda["conductivity"]), 0.1, key="ca")
+        with c2:
+            st.subheader("الثاني")
+            sb = st.selectbox("اختر:", list(preset.keys()), key="sb")
+            sdb = preset[sb]
+            db_ = st.slider("D:", 0.5, 100.0, float(sdb["depth"]), 0.5, key="db")
+            rb = st.slider("R:", 0.0, 400.0, 150.0, 10.0, key="rb")
+            tb = st.slider("T:", 0.0, 30.0, 4.0, 0.5, key="tb")
+            cb = st.slider("C:", 0.01, 100.0, float(sdb["conductivity"]), 0.1, key="cb")
+
+        Dra = get_d_rating(da); Rra = get_r_rating(ra)
+        Ara = get_a_rating("massive_sandstone"); Sra = get_s_rating("sand")
+        Tra = get_t_rating(ta); Ira = get_i_rating("sand_gravel")
+        Cra = get_c_rating(ca)
+        idxa = calc_index(Dra, Rra, Ara, Sra, Tra, Ira, Cra)
+
+        Drb = get_d_rating(db_); Rrb = get_r_rating(rb)
+        Arb = get_a_rating("massive_sandstone"); Srb = get_s_rating("sand")
+        Trb = get_t_rating(tb); Irb = get_i_rating("sand_gravel")
+        Crb = get_c_rating(cb)
+        idxb = calc_index(Drb, Rrb, Arb, Srb, Trb, Irb, Crb)
+
+        st.markdown("---")
+        m1, m2, m3 = st.columns(3)
+        m1.metric(sa, str(idxa) + "/230")
+        m2.metric("الفرق", str(abs(idxa - idxb)))
+        m3.metric(sb, str(idxb) + "/230")
+        st.dataframe(pd.DataFrame({
+            "المعامل": ["D", "R", "A", "S", "T", "I", "C"],
+            sa: [Dra, Rra, Ara, Sra, Tra, Ira, Cra],
+            sb: [Drb, Rrb, Arb, Srb, Trb, Irb, Crb]}),
+            use_container_width=True)
+    else:
+        st.warning("data_sources غير متوفر")
+
+
+# ==================== Tab 9 ====================
+with tabs[8]:
+    st.header("تحليل الزئبق والسيانيد")
+    st.markdown("**المعايير:** WHO (2022) + Minamata + ICMC (2002)")
+
+    if "ci" in st.session_state:
+        ci = st.session_state["ci"]
+        cs = st.session_state["cs"]
+        st.info("الموقع: " + cs + " | المؤشر: " + str(ci))
+
+        st.markdown("---")
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("**الزئبق (Hg)**")
+            hgw = st.number_input("Hg مياه (mg/L):", 0.0, 10.0, 0.05,
+                                   0.001, key="hgw", format="%.4f")
+            hgs = st.number_input("Hg تربة (mg/kg):", 0.0, 100.0, 0.5,
+                                   0.1, key="hgs")
+        with c2:
+            st.markdown("**السيانيد (CN)**")
+            cnw = st.number_input("CN مياه (mg/L):", 0.0, 10.0, 0.10,
+                                   0.01, key="cnw", format="%.4f")
+            cns = st.number_input("CN تربة (mg/kg):", 0.0, 100.0, 5.0,
+                                   0.5, key="cns")
+
+        if st.button("تحليل", type="primary", key="analyze"):
+            st.session_state["hg_r"] = analyze_mercury(hgw, hgs)
+            st.session_state["cn_r"] = analyze_cyanide(cnw, cns)
+            st.session_state["tox_r"] = weighted_toxicity(hgw, hgs, cnw, cns)
+            st.session_state["alerts_r"] = generate_alerts(
+                ci, st.session_state["hg_r"], st.session_state["cn_r"],
+                st.session_state["tox_r"])
+
+        if "tox_r" in st.session_state:
+            hg = st.session_state["hg_r"]
+            cn = st.session_state["cn_r"]
+            tox = st.session_state["tox_r"]
+            alerts = st.session_state["alerts_r"]
+
+            st.markdown("---")
+            st.subheader("Hg")
+            c1, c2 = st.columns(2)
+            with c1:
+                st.metric("مياه", str(hg["water"]["value"]) + " mg/L",
+                          "الحد: " + str(hg["water"]["limit"]))
+                st.success("آمن") if hg["water"]["status"] == "safe" else st.error("تجاوز " + str(hg["water"]["ratio"]) + "x")
+            with c2:
+                st.metric("تربة", str(hg["soil"]["value"]) + " mg/kg",
+                          "الحد: " + str(hg["soil"]["limit"]))
+                st.success("آمن") if hg["soil"]["status"] == "safe" else st.error("تجاوز " + str(hg["soil"]["ratio"]) + "x")
+
+            st.markdown("---")
+            st.subheader("CN")
+            c1, c2 = st.columns(2)
+            with c1:
+                st.metric("مياه", str(cn["water"]["value"]) + " mg/L",
+                          "الحد: " + str(cn["water"]["limit"]))
+                st.success("آمن") if cn["water"]["status"] == "safe" else st.error("تجاوز " + str(cn["water"]["ratio"]) + "x")
+            with c2:
+                st.metric("تربة", str(cn["soil"]["value"]) + " mg/kg",
+                          "الحد: " + str(cn["soil"]["limit"]))
+                st.success("آمن") if cn["soil"]["status"] == "safe" else st.error("تجاوز " + str(cn["soil"]["ratio"]) + "x")
+
+            st.markdown("---")
+            st.subheader("مؤشر السمية")
+            c1, c2, c3 = st.columns(3)
+            c1.metric("المؤشر", tox["index"])
+            c2.metric("التصنيف", tox["category"])
+            c3.metric("الإجراء", tox["action"])
+
+            st.markdown("---")
+            st.subheader("التنبيهات")
+            if alerts:
+                for a in alerts:
+                    st.warning(a["icon"] + " " + a["msg"] +
+                               " | **" + a["act"] + "**")
+            else:
+                st.success("لا تنبيهات")
+    else:
+        st.warning("افتح تبويب المدخلات أولا")
+
+
+# ==================== Tab 10 ====================
+with tabs[9]:
+    st.header("📚 تاريخ التقييمات")
+    df = get_history_df()
+    if df.empty:
+        st.info("لا توجد تقييمات محفوظة بعد.")
+        st.markdown("**اذهب لتبويب المدخلات واضغط 'حفظ التقييم'.**")
+    else:
+        st.subheader("إحصائيات")
+        try:
+            idx_col = df["المؤشر"].astype(float)
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("الإجمالي", len(df))
+            c2.metric("المتوسط", round(idx_col.mean(), 1))
+            c3.metric("الأعلى", int(idx_col.max()))
+            c4.metric("خطرة", int((idx_col >= 140).sum()))
+        except Exception:
+            st.metric("الإجمالي", len(df))
+
+        st.markdown("---")
+        st.dataframe(df, use_container_width=True)
+
+        st.markdown("---")
+        st.download_button("📥 تصدير CSV",
+            data=df.to_csv(index=False).encode("utf-8-sig"),
+            file_name="history.csv", mime="text/csv")
+
+        if st.button("مسح الكل", key="clr"):
+            st.session_state["history"] = []
+            st.rerun()
+
+
+# ==================== Tab 11 ====================
+with tabs[10]:
+    st.header("🌍 تصدير GIS")
+    st.markdown("**صدّر البيانات لـ QGIS / ArcGIS / Google Earth**")
+
+    st.markdown("---")
+    source = st.radio("المصدر:",
+                      ["المواقع المدمجة", "سجل التقييمات"],
+                      key="gis_src")
+
+    sites = []
+    if source == "المواقع المدمجة" and DS_OK:
+        for name, data in preset.items():
+            try:
+                coords = data.get("coords", (0, 0))
+                sites.append({"name": str(name), "lat": float(coords[0]),
+                             "lon": float(coords[1]), "index": 0,
+                             "level": "غير محدد"})
+            except Exception:
+                continue
+        st.info("📌 " + str(len(sites)) + " موقع مدمج")
+    elif source == "سجل التقييمات":
+        df_h = get_history_df()
+        if not df_h.empty:
+            for _, row in df_h.iterrows():
+                try:
+                    sites.append({
+                        "name": row.get("الموقع", ""),
+                        "lat": float(row.get("lat", 0)),
+                        "lon": float(row.get("lon", 0)),
+                        "index": int(float(row.get("المؤشر", 0))),
+                        "level": row.get("المستوى", "")})
+                except Exception:
+                    continue
+            st.info("📌 " + str(len(sites)) + " تقييم")
+        else:
+            st.warning("لا توجد تقييمات. اذهب لتبويب المدخلات واحفظ.")
+
+    if sites:
+        st.markdown("---")
+        st.subheader("معاينة")
+        st.dataframe(pd.DataFrame(sites), use_container_width=True)
+
+        st.markdown("---")
+        st.subheader("تحميل")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.download_button("📄 GeoJSON",
+                data=sites_to_geojson(sites).encode("utf-8"),
+                file_name="drastic_sites.geojson",
+                mime="application/geo+json",
+                use_container_width=True, key="dl_gj")
+        with c2:
+            st.download_button("🌍 KML",
+                data=sites_to_kml(sites).encode("utf-8"),
+                file_name="drastic_sites.kml",
+                mime="application/vnd.google-earth.kml+xml",
+                use_container_width=True, key="dl_kml")
+        with c3:
+            st.download_button("📊 CSV",
+                data=pd.DataFrame(sites).to_csv(index=False).encode("utf-8-sig"),
+                file_name="drastic_sites.csv",
+                mime="text/csv",
+                use_container_width=True, key="dl_csv")
+
+        st.markdown("---")
+        st.markdown("""
+        **كيف تستخدم:**
+        - **QGIS:** GeoJSON → Add Vector Layer
+        - **Google Earth:** KML → File → Open
+        - **Excel:** CSV → افتح مباشرة
+        """)
+
+
+st.markdown("---")
+st.caption("2026 University of Khartoum - DRASTIC Sudan v26.0") 
