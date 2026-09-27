@@ -1,0 +1,99 @@
+"""Satellite Data Module v1.0"""
+from datetime import datetime, timedelta
+
+try:
+    import ee
+    EE_AVAILABLE = True
+except ImportError:
+    EE_AVAILABLE = False
+
+
+def initialize_gee():
+    if not EE_AVAILABLE:
+        return False
+    try:
+        ee.Initialize()
+        return True
+    except Exception:
+        try:
+            ee.Initialize(project='earthengine-legacy')
+            return True
+        except Exception:
+            return False
+
+
+def get_ndvi(lat, lon, start_date, end_date):
+    try:
+        point = ee.Geometry.Point([lon, lat])
+        s2 = (ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+              .filterBounds(point)
+              .filterDate(start_date, end_date)
+              .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20)))
+        if s2.size().getInfo() == 0:
+            return None
+        def add_ndvi(img):
+            return img.addBands(img.normalizedDifference(['B8', 'B4']).rename('NDVI'))
+        mean_ndvi = s2.map(add_ndvi).select('NDVI').mean()
+        result = mean_ndvi.reduceRegion(
+            reducer=ee.Reducer.mean(), geometry=point,
+            scale=10, maxPixels=1e9).getInfo()
+        return result.get('NDVI')
+    except Exception:
+        return None
+
+
+def get_rainfall(lat, lon, start_date, end_date):
+    try:
+        point = ee.Geometry.Point([lon, lat])
+        chirps = (ee.ImageCollection('UCSB-CHG/CHIRPS/DAILY')
+                  .filterBounds(point).filterDate(start_date, end_date))
+        if chirps.size().getInfo() == 0:
+            return None
+        total = chirps.select('precipitation').sum()
+        result = total.reduceRegion(
+            reducer=ee.Reducer.mean(), geometry=point,
+            scale=5000, maxPixels=1e9).getInfo()
+        return result.get('precipitation')
+    except Exception:
+        return None
+
+
+def classify_land_use(lat, lon):
+    try:
+        point = ee.Geometry.Point([lon, lat])
+        worldcover = ee.ImageCollection('ESA/WorldCover/v200').first()
+        result = worldcover.reduceRegion(
+            reducer=ee.Reducer.mode(), geometry=point,
+            scale=10, maxPixels=1e9).getInfo()
+        code = result.get('Map')
+        land_use_map = {
+            10: "Tree cover", 20: "Shrubland", 30: "Grassland",
+            40: "Cropland", 50: "Built-up", 60: "Bare/sparse",
+            70: "Snow/Ice", 80: "Water", 90: "Wetland",
+            95: "Mangroves", 100: "Moss/Lichen"
+        }
+        return {"code": code, "name": land_use_map.get(code, "Unknown")}
+    except Exception:
+        return {"code": None, "name": "Unknown"}
+
+
+def get_satellite_indicators(lat, lon, years=3):
+    if not initialize_gee():
+        return {"error": "GEE not initialized. Check authentication."}
+    end_date = datetime.now().strftime('%Y-%m-%d')
+    start_date = (datetime.now() - timedelta(days=365*years)).strftime('%Y-%m-%d')
+    return {
+        "ndvi": get_ndvi(lat, lon, start_date, end_date),
+        "rainfall_mm": get_rainfall(lat, lon, start_date, end_date),
+        "land_use": classify_land_use(lat, lon),
+        "period": start_date + " to " + end_date,
+        "source": "Google Earth Engine",
+    }
+
+
+def get_gee_status():
+    if not EE_AVAILABLE:
+        return {"status": "not_installed", "message": "earthengine-api not installed"}
+    if initialize_gee():
+        return {"status": "connected", "message": "Connected to GEE"}
+    return {"status": "disconnected", "message": "GEE not authenticated"}
