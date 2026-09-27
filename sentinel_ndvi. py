@@ -1,0 +1,231 @@
+"""
+Sentinel-2 NDVI Module
+=======================
+وحدة حساب NDVI من صور Sentinel-2 الحقيقية
+
+Source:
+    Sentinel Hub Process API
+    https://www.sentinel-hub.com/
+
+References:
+    - ESA (2023). Sentinel-2 User Handbook.
+    - Sentinel Hub Documentation.
+
+Version: 1.0.0
+"""
+
+import requests
+import datetime
+
+__version__ = "1.0.0"
+
+TOKEN_URL = "https://services.sentinel-hub.com/oauth/token"
+PROCESS_URL = "https://services.sentinel-hub.com/api/v1/process"
+
+
+def get_access_token(client_id, client_secret):
+    """الحصول على access token من Sentinel Hub."""
+    try:
+        r = requests.post(
+            TOKEN_URL,
+            data={
+                "grant_type": "client_credentials",
+                "client_id": client_id,
+                "client_secret": client_secret,
+            },
+            timeout=30)
+        if r.status_code == 200:
+            return r.json().get("access_token")
+        return None
+    except Exception:
+        return None
+
+
+def get_ndvi_sentinel(lat, lon, client_id, client_secret,
+                       days_back=30, box_size=0.01):
+    """
+    حساب NDVI حقيقي من Sentinel-2 L2A.
+
+    Args:
+        lat, lon: الإحداثيات
+        client_id, client_secret: بيانات Sentinel Hub
+        days_back: عدد الأيام (افتراضي 30)
+        box_size: حجم المنطقة (0.01 درجة ~ 1 كم)
+
+    Returns:
+        dict مع NDVI والأدلة
+    """
+    token = get_access_token(client_id, client_secret)
+    if not token:
+        return {"error": "فشل الحصول على token"}
+
+    end_date = datetime.date.today()
+    start_date = end_date - datetime.timedelta(days=days_back)
+
+    bbox = [lon - box_size, lat - box_size,
+            lon + box_size, lat + box_size]
+
+    evalscript = """
+    //VERSION=3
+    function setup() {
+      return {
+        input: ["B04", "B08", "SCL"],
+        output: { bands: 1, sampleType: "FLOAT32" }
+      };
+    }
+    function evaluatePixel(s) {
+      // SCL: 4=vegetation, 5=not-vegetated, 6=water, 7=unclassified
+      // استثناء السحب (8,9,10) والظلال (3)
+      if (s.SCL == 8 || s.SCL == 9 || s.SCL == 10 || s.SCL == 3) {
+        return [NaN];
+      }
+      let ndvi = (s.B08 - s.B04) / (s.B08 + s.B04);
+      return [ndvi];
+    }
+    """
+
+    payload = {
+        "input": {
+            "bounds": {
+                "bbox": bbox,
+                "properties": {"crs": "http://www.opengis.net/def/crs/EPSG/0/4326"}
+            },
+            "data": [{
+                "type": "sentinel-2-l2a",
+                "dataFilter": {
+                    "timeRange": {
+                        "from": start_date.strftime("%Y-%m-%dT00:00:00Z"),
+                        "to": end_date.strftime("%Y-%m-%dT23:59:59Z")
+                    },
+                    "maxCloudCoverage": 30
+                }
+            }]
+        },
+        "output": {
+            "width": 100,
+            "height": 100,
+            "responses": [{
+                "identifier": "default",
+                "format": {"type": "image/tiff"}
+            }]
+        },
+        "evalscript": evalscript
+    }
+
+    try:
+        r = requests.post(
+            PROCESS_URL,
+            headers={
+                "Authorization": "Bearer " + token,
+                "Content-Type": "application/json",
+                "Accept": "image/tiff"
+            },
+            json=payload,
+            timeout=60)
+
+        if r.status_code != 200:
+            return {"error": "Process API failed: " + str(r.status_code)}
+
+        # نحتاج لحساب NDVI من TIFF — لكن لا نريد مكتبات ثقيلة
+        # الحل: نستخدم Statistical API بدلاً من Process API
+        return _get_ndvi_stats(lat, lon, token, start_date, end_date,
+                                box_size, evalscript)
+
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def _get_ndvi_stats(lat, lon, token, start_date, end_date,
+                     box_size, evalscript):
+    """حساب NDVI عبر Statistical API."""
+    stats_url = "https://services.sentinel-hub.com/api/v1/statistics"
+    bbox = [lon - box_size, lat - box_size,
+            lon + box_size, lat + box_size]
+
+    payload = {
+        "input": {
+            "bounds": {
+                "bbox": bbox,
+                "properties": {"crs": "http://www.opengis.net/def/crs/EPSG/0/4326"}
+            },
+            "data": [{
+                "type": "sentinel-2-l2a",
+                "dataFilter": {
+                    "maxCloudCoverage": 30
+                }
+            }]
+        },
+        "aggregation": {
+            "timeRange": {
+                "from": start_date.strftime("%Y-%m-%dT00:00:00Z"),
+                "to": end_date.strftime("%Y-%m-%dT23:59:59Z")
+            },
+            "aggregationInterval": {
+                "of": "P30D"
+            },
+            "evalscript": evalscript,
+            "resx": 0.001,
+            "resy": 0.001
+        },
+        "calculations": {
+            "default": {
+                "statistics": {
+                    "default": {
+                        "percentiles": {"k": [50]}
+                    }
+                }
+            }
+        }
+    }
+
+    try:
+        r = requests.post(
+            stats_url,
+            headers={
+                "Authorization": "Bearer " + token,
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            },
+            json=payload,
+            timeout=60)
+
+        if r.status_code != 200:
+            return {"error": "Stats API failed: " + str(r.status_code)}
+
+        data = r.json()
+        intervals = data.get("data", [])
+        if not intervals:
+            return {"error": "لا توجد بيانات"}
+
+        # نجمع كل القيم الصحيحة
+        ndvi_values = []
+        for interval in intervals:
+            outputs = interval.get("outputs", {})
+            default = outputs.get("default", {})
+            bands = default.get("bands", {})
+            b0 = bands.get("B0", {})
+            stats = b0.get("stats", {})
+            mean = stats.get("mean")
+            if mean is not None:
+                ndvi_values.append(mean)
+
+        if not ndvi_values:
+            return {"error": "لا NDVI صالح"}
+
+        avg_ndvi = sum(ndvi_values) / len(ndvi_values)
+        return {
+            "ndvi": round(avg_ndvi, 3),
+            "samples": len(ndvi_values),
+            "period": start_date.strftime("%Y-%m-%d") + " → " +
+                      end_date.strftime("%Y-%m-%d"),
+            "source": "Sentinel-2 L2A (Real NDVI)",
+            "lat": lat, "lon": lon,
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def get_module_info():
+    return {"name": "Sentinel-2 NDVI", "version": __version__,
+            "source": "Sentinel Hub Process API",
+            "functions": ["get_ndvi_sentinel"]}
