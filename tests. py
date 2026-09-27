@@ -1,0 +1,306 @@
+"""
+Unit Tests for DRASTIC Sudan
+=============================
+اختبارات وحدة للتحقق من صحة الحسابات.
+
+التشغيل:
+    python -m pytest tests.py -v
+    أو
+    python tests.py
+"""
+
+import drastic
+
+
+# ============================================================
+# اختبارات Depth Rating (D)
+# ============================================================
+def test_d_rating_boundaries():
+    """اختبار حدود عمق المياه."""
+    assert drastic.get_d_rating(0.5) == 10
+    assert drastic.get_d_rating(1.5) == 10
+    assert drastic.get_d_rating(1.6) == 9
+    assert drastic.get_d_rating(4.6) == 9
+    assert drastic.get_d_rating(4.7) == 7
+    assert drastic.get_d_rating(15.2) == 5
+    assert drastic.get_d_rating(22.9) == 3
+    assert drastic.get_d_rating(30.5) == 2
+    assert drastic.get_d_rating(31.0) == 1
+    assert drastic.get_d_rating(100.0) == 1
+    print("[PASS] test_d_rating_boundaries")
+
+
+def test_d_rating_negative():
+    """اختبار رفض القيم السالبة."""
+    try:
+        drastic.get_d_rating(-1)
+        assert False, "Should raise ValueError"
+    except ValueError:
+        pass
+    print("[PASS] test_d_rating_negative")
+
+
+# ============================================================
+# اختبارات Recharge Rating (R)
+# ============================================================
+def test_r_rating_boundaries():
+    assert drastic.get_r_rating(0) == 1
+    assert drastic.get_r_rating(50.8) == 1
+    assert drastic.get_r_rating(50.9) == 3
+    assert drastic.get_r_rating(101.6) == 3
+    assert drastic.get_r_rating(101.7) == 6
+    assert drastic.get_r_rating(177.8) == 6
+    assert drastic.get_r_rating(177.9) == 8
+    assert drastic.get_r_rating(254.0) == 8
+    assert drastic.get_r_rating(254.1) == 9
+    assert drastic.get_r_rating(400) == 9
+    print("[PASS] test_r_rating_boundaries")
+
+
+# ============================================================
+# اختبارات Aquifer (A), Soil (S), Vadose (I)
+# ============================================================
+def test_aquifer_rating():
+    assert drastic.get_a_rating("massive_sandstone") == 6
+    assert drastic.get_a_rating("sand_and_gravel") == 8
+    assert drastic.get_a_rating("karst_limestone") == 10
+    assert drastic.get_a_rating("unknown") == 6  # default
+    print("[PASS] test_aquifer_rating")
+
+
+def test_soil_rating():
+    assert drastic.get_s_rating("sand") == 9
+    assert drastic.get_s_rating("loam") == 5
+    assert drastic.get_s_rating("nonshrinking_clay") == 1
+    assert drastic.get_s_rating("shrinking_aggregated_clay") == 7
+    print("[PASS] test_soil_rating")
+
+
+def test_vadose_rating():
+    assert drastic.get_i_rating("sand_gravel") == 8
+    assert drastic.get_i_rating("silt_clay") == 1
+    assert drastic.get_i_rating("confining_layer") == 1
+    assert drastic.get_i_rating("karst_limestone") == 10
+    print("[PASS] test_vadose_rating")
+
+
+# ============================================================
+# اختبارات Topography (T), Conductivity (C)
+# ============================================================
+def test_topography_rating():
+    assert drastic.get_t_rating(1.0) == 10
+    assert drastic.get_t_rating(5.0) == 9
+    assert drastic.get_t_rating(10.0) == 5
+    assert drastic.get_t_rating(15.0) == 3
+    assert drastic.get_t_rating(25.0) == 1
+    print("[PASS] test_topography_rating")
+
+
+def test_conductivity_rating():
+    assert drastic.get_c_rating(1.0) == 1
+    assert drastic.get_c_rating(10.0) == 2
+    assert drastic.get_c_rating(20.0) == 4
+    assert drastic.get_c_rating(35.0) == 6
+    assert drastic.get_c_rating(60.0) == 8
+    assert drastic.get_c_rating(100.0) == 10
+    print("[PASS] test_conductivity_rating")
+
+
+# ============================================================
+# اختبارات Index Calculation
+# ============================================================
+def test_index_minimum():
+    """الحد الأدنى: كل القيم = 1."""
+    idx = drastic.calc_index(1, 1, 1, 1, 1, 1, 1)
+    assert idx == 23, f"Expected 23, got {idx}"
+    print("[PASS] test_index_minimum (23)")
+
+
+def test_index_maximum():
+    """الحد الأقصى: كل القيم = 10."""
+    idx = drastic.calc_index(10, 10, 10, 10, 10, 10, 10)
+    assert idx == 230, f"Expected 230, got {idx}"
+    print("[PASS] test_index_maximum (230)")
+
+
+def test_index_typical():
+    """حالة نموذجية."""
+    idx = drastic.calc_index(5, 3, 6, 9, 4, 8, 5)
+    expected = (5*5) + (3*4) + (6*3) + (9*2) + (4*1) + (8*5) + (5*3)
+    assert idx == expected, f"Expected {expected}, got {idx}"
+    print(f"[PASS] test_index_typical ({idx})")
+
+
+def test_index_invalid():
+    """اختبار رفض القيم غير الصحيحة."""
+    try:
+        drastic.calc_index(0, 1, 1, 1, 1, 1, 1)
+        assert False, "Should raise for 0"
+    except ValueError:
+        pass
+    try:
+        drastic.calc_index(11, 1, 1, 1, 1, 1, 1)
+        assert False, "Should raise for 11"
+    except ValueError:
+        pass
+    print("[PASS] test_index_invalid")
+
+
+# ============================================================
+# اختبارات Classification
+# ============================================================
+def test_classification():
+    assert drastic.classify(50)["level_en"] == "Low"
+    assert drastic.classify(120)["level_en"] == "Moderate"
+    assert drastic.classify(150)["level_en"] == "High"
+    assert drastic.classify(200)["level_en"] == "Very High"
+    print("[PASS] test_classification")
+
+
+def test_classification_boundaries():
+    assert drastic.classify(99)["level_en"] == "Low"
+    assert drastic.classify(100)["level_en"] == "Moderate"
+    assert drastic.classify(139)["level_en"] == "Moderate"
+    assert drastic.classify(140)["level_en"] == "High"
+    assert drastic.classify(179)["level_en"] == "High"
+    assert drastic.classify(180)["level_en"] == "Very High"
+    print("[PASS] test_classification_boundaries")
+
+
+# ============================================================
+# اختبارات Travel Time (Darcy)
+# ============================================================
+def test_travel_time_basic():
+    result = drastic.calc_travel_time(depth_m=10, porosity=0.25, conductivity=5)
+    assert "days" in result
+    assert "years" in result
+    assert "velocity" in result
+    # v = (5 * 1) / 0.25 = 20 m/day
+    assert result["velocity"] == 20.0
+    # days = 10 / 20 = 0.5
+    assert result["days"] == 0.5
+    print(f"[PASS] test_travel_time_basic (velocity={result['velocity']} m/day)")
+
+
+def test_travel_time_invalid():
+    try:
+        drastic.calc_travel_time(10, 0.005, 5)
+        assert False
+    except ValueError:
+        pass
+    try:
+        drastic.calc_travel_time(-5, 0.25, 5)
+        assert False
+    except ValueError:
+        pass
+    print("[PASS] test_travel_time_invalid")
+
+
+# ============================================================
+# اختبارات Mitigation
+# ============================================================
+def test_mitigation_hdpe_only():
+    result = drastic.mitigate(160, hdpe=True)
+    assert result["mitigated_index"] == 64.0  # 160 * 0.40
+    assert result["reduction_pct"] == 60.0
+    print("[PASS] test_mitigation_hdpe_only")
+
+
+def test_mitigation_all():
+    result = drastic.mitigate(200, hdpe=True, treatment=True, monitoring=True)
+    expected = 200 * 0.40 * 0.60 * 0.85
+    assert abs(result["mitigated_index"] - round(expected, 1)) < 0.2
+    assert len(result["methods"]) == 3
+    print(f"[PASS] test_mitigation_all ({result['mitigated_index']})")
+
+
+def test_mitigation_none():
+    result = drastic.mitigate(150)
+    assert result["mitigated_index"] == 150.0
+    assert result["reduction_pct"] == 0.0
+    print("[PASS] test_mitigation_none")
+
+
+# ============================================================
+# اختبارات Sensitivity Analysis
+# ============================================================
+def test_sensitivity_analysis():
+    result = drastic.sensitivity_analysis(5, 3, 6, 9, 4, 8, 5, variation=0.10)
+    assert "base_index" in result
+    assert "parameters" in result
+    assert "most_sensitive" in result
+    assert len(result["parameters"]) == 7
+    # D له وزن 5، يجب أن يكون من الأكثر تأثيراً
+    print(f"[PASS] test_sensitivity_analysis (most sensitive: {result['most_sensitive']})")
+
+
+# ============================================================
+# اختبارات Module Info
+# ============================================================
+def test_module_info():
+    info = drastic.get_module_info()
+    assert info["version"] == "1.0.0"
+    assert len(info["functions"]) >= 10
+    print("[PASS] test_module_info")
+
+
+# ============================================================
+# تشغيل جميع الاختبارات
+# ============================================================
+def run_all_tests():
+    """تشغيل جميع الاختبارات يدوياً."""
+    print("=" * 60)
+    print("DRASTIC Sudan - Unit Tests")
+    print("=" * 60)
+    print()
+    
+    tests = [
+        test_d_rating_boundaries,
+        test_d_rating_negative,
+        test_r_rating_boundaries,
+        test_aquifer_rating,
+        test_soil_rating,
+        test_vadose_rating,
+        test_topography_rating,
+        test_conductivity_rating,
+        test_index_minimum,
+        test_index_maximum,
+        test_index_typical,
+        test_index_invalid,
+        test_classification,
+        test_classification_boundaries,
+        test_travel_time_basic,
+        test_travel_time_invalid,
+        test_mitigation_hdpe_only,
+        test_mitigation_all,
+        test_mitigation_none,
+        test_sensitivity_analysis,
+        test_module_info,
+    ]
+    
+    passed = 0
+    failed = 0
+    
+    for test in tests:
+        try:
+            test()
+            passed += 1
+        except AssertionError as e:
+            print(f"[FAIL] {test.__name__}: {e}")
+            failed += 1
+        except Exception as e:
+            print(f"[ERROR] {test.__name__}: {e}")
+            failed += 1
+    
+    print()
+    print("=" * 60)
+    print(f"Results: {passed} passed, {failed} failed")
+    print(f"Total: {len(tests)} tests")
+    print("=" * 60)
+    
+    return failed == 0
+
+
+if __name__ == "__main__":
+    success = run_all_tests()
+    exit(0 if success else 1)
