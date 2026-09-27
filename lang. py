@@ -1,0 +1,93 @@
+"""
+Language Module (Bilingual AR/EN)
+==================================
+وحدة اللغة - عربي/إنجليزي
+
+Version: 1.0.0
+"""
+
+import streamlit as st
+
+__version__ = "1.0.0"
+
+TRANSLATIONS = {
+    "ar": {
+        "app_title": "نظام التقييم البيئي للتعدين",
+        "university": "جامعة الخرطوم - كلية الهندسة",
+        "tab1": "المدخلات والنتائج",
+        "tab2": "الجماعي",
+        "tab3": "الحلول",
+        "tab4": "التقرير",
+        "tab5": "الخريطة",
+        "tab6": "الدقة",
+        "tab7": "تحليل الحساسية",
+        "tab8": "مقارنة موقعين",
+        "tab9": "تحليل السمية",
+        "tab10": "التاريخ",
+        "select_site": "اختر الموقع:",
+        "satellite_data": "بيانات الاقمار الصناعية (ERA5)",
+        "fetch_data": "جلب البيانات من Open-Meteo",
+        "inputs": "المدخلات",
+        "results": "النتائج",
+        "drastic_index": "مؤشر DRASTIC",
+        "level": "المستوى",
+        "travel_time": "زمن وصول الملوثات",
+        "years": "سنوات",
+        "days": "أيام",
+        "velocity": "السرعة",
+        "save_history": "💾 حفظ التقييم في التاريخ",
+        "saved": "✅ تم الحفظ",
+        "language": "اللغة / Language",
+    },
+    "en": {
+        "app_title": "Mining Environmental Assessment System",
+        "university": "University of Khartoum - Faculty of Engineering",
+        "tab1": "Inputs & Results",
+        "tab2": "Bulk",
+        "tab3": "Mitigation",
+        "tab4": "Report",
+        "tab5": "Map",
+        "tab6": "Accuracy",
+        "tab7": "Sensitivity",
+        "tab8": "Compare Sites",
+        "tab9": "Toxicity",
+        "tab10": "History",
+        "select_site": "Select site:",
+        "satellite_data": "Satellite Data (ERA5)",
+        "fetch_data": "Fetch from Open-Meteo",
+        "inputs": "Inputs",
+        "results": "Results",
+        "drastic_index": "DRASTIC Index",
+        "level": "Level",
+        "travel_time": "Contaminant Travel Time",
+        "years": "Years",
+        "days": "Days",
+        "velocity": "Velocity",
+        "save_history": "💾 Save to History",
+        "saved": "✅ Saved",
+        "language": "Language / اللغة",
+    },
+}
+
+
+def init_lang():
+    """تهيئة اللغة."""
+    if "lang" not in st.session_state:
+        st.session_state["lang"] = "ar"
+
+
+def t(key: str) -> str:
+    """ترجمة مفتاح."""
+    lang = st.session_state.get("lang", "ar")
+    return TRANSLATIONS.get(lang, TRANSLATIONS["ar"]).get(
+        key, key)
+
+
+def get_current() -> str:
+    """اللغة الحالية."""
+    return st.session_state.get("lang", "ar")
+
+
+def get_module_info() -> dict:
+    return {"name": "Language Module", "version": __version__,
+            "languages": ["ar", "en"]}
