@@ -1,0 +1,232 @@
+"""
+Reports Generation Module
+==========================
+وحدة توليد التقارير الفنية
+
+References:
+    - Aller et al. (1987). EPA/600/2-87/035
+    - WHO (2022). Guidelines for Drinking-water Quality
+
+Version: 1.0.0
+"""
+
+import datetime
+
+__version__ = "1.0.0"
+
+
+# ============================================================
+# قوالب التقارير
+# ============================================================
+TEMPLATES = {
+    "low": {
+        "level": "منخفض",
+        "range": "23-99",
+        "assessment": "الموقع يظهر خطورة منخفضة. الطبقات الجيولوجية توفر حماية جيدة.",
+        "recs": [
+            "الاستمرار مع المراقبة السنوية.",
+            "فحص سنوي لجودة المياه الجوفية.",
+            "توثيق أي تغيير في المنشآت.",
+            "التزام العمال بمعدات الحماية الشخصية.",
+            "الإبلاغ الفوري عن أي حادث تلوث.",
+        ],
+    },
+    "moderate": {
+        "level": "متوسط",
+        "range": "100-139",
+        "assessment": "الموقع يظهر خطورة متوسطة. احتمال لتسرب الملوثات دون إجراءات وقائية.",
+        "recs": [
+            "إجراء مراقبة ربع سنوية.",
+            "تركيب 2-3 آبار مراقبة.",
+            "تحسين إدارة المخلفات التعدينية.",
+            "استخدام تقنيات معالجة السيانيد.",
+            "إعداد خطة استجابة للطوارئ.",
+            "تدريب العمال على السلامة البيئية.",
+        ],
+    },
+    "high": {
+        "level": "مرتفع",
+        "range": "140-179",
+        "assessment": "خطورة مرتفعة. الطبقات الجيولوجية لا توفر حماية كافية. التدخل العاجل ضروري.",
+        "recs": [
+            "تركيب HDPE Liner تحت أحواض المعالجة.",
+            "إنشاء وحدة معالجة السيانيد.",
+            "حفر 4-6 آبار مراقبة.",
+            "مراقبة شهرية لجودة المياه.",
+            "إعداد دراسة أثر بيئي شاملة (EIA).",
+            "تقليل استخدام السيانيد.",
+            "إبلاغ المجلس الأعلى للبيئة.",
+        ],
+    },
+    "very_high": {
+        "level": "مرتفع جدا",
+        "range": "180-230",
+        "assessment": "خطورة مرتفعة جدا. خطر داهم على مصادر مياه الشرب. التدخل الفوري إلزامي.",
+        "recs": [
+            "إيقاف النشاط التعديني مؤقتا.",
+            "تركيب HDPE ومعالجة سيانيد فورية.",
+            "حفر 8-10 آبار مراقبة.",
+            "مراقبة أسبوعية.",
+            "إخلاء المناطق السكنية القريبة إذا لزم.",
+            "إعداد تقرير طارئ للمجلس الأعلى للبيئة.",
+            "توفير مصادر مياه بديلة.",
+            "خطة إعادة تأهيل شاملة.",
+        ],
+    },
+}
+
+
+def get_template_key(idx: int) -> str:
+    """إرجاع مفتاح القالب المناسب حسب مؤشر DRASTIC."""
+    if idx >= 180:
+        return "very_high"
+    if idx >= 140:
+        return "high"
+    if idx >= 100:
+        return "moderate"
+    return "low"
+
+
+def generate_report(site_name, coords, idx, ratings, values,
+                    travel_time=None, satellite_data=None) -> str:
+    """
+    توليد تقرير فني كامل من القالب.
+
+    Args:
+        site_name: اسم الموقع
+        coords: tuple (lat, lon)
+        idx: مؤشر DRASTIC
+        ratings: dict فيه D, R, A, S, T, I, C
+        values: dict فيه depth, recharge, aquifer, soil, slope, vadose, conductivity
+        travel_time: زمن وصول الملوثات (اختياري)
+        satellite_data: بيانات الأقمار الصناعية (اختياري)
+
+    Returns:
+        نص التقرير الكامل (string)
+    """
+    key = get_template_key(idx)
+    tpl = TEMPLATES[key]
+    today = datetime.date.today()
+    ref = "GRAS-" + today.strftime("%Y%m%d") + "-" + key.upper()[:3]
+
+    lines = []
+    lines.append("=" * 60)
+    lines.append("تقرير تقييم هشاشة المياه الجوفية")
+    lines.append("جامعة الخرطوم - كلية الهندسة")
+    lines.append("مكتب الاستشارات الهندسية")
+    lines.append("=" * 60)
+    lines.append("")
+    lines.append("الرقم المرجعي: " + ref)
+    lines.append("التاريخ: " + today.strftime("%Y-%m-%d"))
+    lines.append("القالب: " + key.upper())
+    lines.append("")
+    lines.append("-" * 60)
+    lines.append("القسم 1: بيانات الموقع")
+    lines.append("-" * 60)
+    lines.append("الاسم: " + str(site_name))
+    lines.append("الإحداثيات: " + str(coords[0]) + ", " + str(coords[1]))
+    lines.append("نظام الإحداثيات: WGS84")
+    lines.append("")
+    lines.append("-" * 60)
+    lines.append("القسم 2: نتائج DRASTIC")
+    lines.append("-" * 60)
+    lines.append("مؤشر DRASTIC: " + str(idx) + " / 230")
+    lines.append("المستوى: " + tpl["level"] + " (" + tpl["range"] + ")")
+    lines.append("")
+    lines.append("D - العمق: " + str(values.get("depth", "N/A")))
+    lines.append("R - التغذية: " + str(values.get("recharge", "N/A")))
+    lines.append("A - الخزان: " + str(values.get("aquifer", "N/A")))
+    lines.append("S - التربة: " + str(values.get("soil", "N/A")))
+    lines.append("T - الانحدار: " + str(values.get("slope", "N/A")))
+    lines.append("I - غير المشبعة: " + str(values.get("vadose", "N/A")))
+    lines.append("C - النفاذية: " + str(values.get("conductivity", "N/A")))
+    lines.append("")
+    if travel_time:
+        lines.append("زمن وصول الملوثات: " + str(round(travel_time, 2)) + " سنة")
+        lines.append("")
+    if satellite_data and satellite_data.get("rainfall_mm"):
+        lines.append("-" * 60)
+        lines.append("القسم 3: بيانات الأقمار الصناعية (مرجع مساعد)")
+        lines.append("-" * 60)
+        lines.append("الأمطار: " + str(satellite_data.get("rainfall_mm")) + " مم/سنة")
+        lines.append("الحرارة: " + str(satellite_data.get("temperature_c")) + " C")
+        lines.append("المناخ: " + str(satellite_data.get("aridity")))
+        lines.append("NDVI مقدر: " + str(satellite_data.get("ndvi_estimated")))
+        lines.append("المصدر: " + str(satellite_data.get("source")))
+        lines.append("")
+    lines.append("-" * 60)
+    lines.append("القسم 4: التقييم الهيدروجيولوجي")
+    lines.append("-" * 60)
+    lines.append(tpl["assessment"])
+    lines.append("")
+    lines.append("-" * 60)
+    lines.append("القسم 5: التوصيات الهندسية")
+    lines.append("-" * 60)
+    for i, rec in enumerate(tpl["recs"], 1):
+        lines.append(str(i) + ". " + rec)
+    lines.append("")
+    lines.append("-" * 60)
+    lines.append("القسم 6: الامتثال التشريعي")
+    lines.append("-" * 60)
+    lines.append("- المادة (26) من قانون التعدين 2015")
+    lines.append("- قانون حماية البيئة 2001 (رقم 18)")
+    lines.append("- لائحة التعدين التقليدي 2016")
+    lines.append("- معايير WHO (2022)")
+    lines.append("")
+    lines.append("-" * 60)
+    lines.append("القسم 7: المراجع العلمية")
+    lines.append("-" * 60)
+    lines.append("1. Aller et al. (1987). EPA/600/2-87/035")
+    lines.append("2. Fetter (2001). Applied Hydrogeology, 4th ed.")
+    lines.append("3. US EPA (1993). EPA/600/R-93/174")
+    lines.append("4. WHO (2022). Drinking-water Quality Guidelines")
+    lines.append("")
+    lines.append("-" * 60)
+    lines.append("القسم 8: المراجعة والاعتماد")
+    lines.append("-" * 60)
+    lines.append("هذا التقرير مولد آليا. لا يعتمد رسميا إلا بعد")
+    lines.append("مراجعة وتوقيع مهندس مختص.")
+    lines.append("")
+    lines.append("اسم المهندس: _______________________")
+    lines.append("الرقم الوظيفي: _______________________")
+    lines.append("التاريخ: ___/___/______")
+    lines.append("التوقيع: _______________________")
+    lines.append("")
+    lines.append("=" * 60)
+    lines.append("2026 جامعة الخرطوم")
+    lines.append("=" * 60)
+    return "\n".join(lines)
+
+
+def generate_html(report_text: str, site_name: str) -> str:
+    """
+    تحويل التقرير النصي إلى HTML بتنسيق عربي (RTL).
+    """
+    return (
+        "<!DOCTYPE html>"
+        "<html dir='rtl' lang='ar'>"
+        "<head>"
+        "<meta charset='UTF-8'>"
+        "<title>تقرير " + site_name + "</title>"
+        "<style>"
+        "body{font-family:Arial,Tahoma,sans-serif;direction:rtl;"
+        "text-align:right;padding:30px;max-width:900px;margin:auto;"
+        "line-height:1.9;background:#f8f9fa;}"
+        "pre{white-space:pre-wrap;background:#ffffff;padding:25px;"
+        "border-radius:8px;border:1px solid #ddd;font-family:inherit;}"
+        "</style>"
+        "</head>"
+        "<body><pre>" + report_text + "</pre></body>"
+        "</html>"
+    )
+
+
+def get_module_info():
+    """معلومات عن الوحدة."""
+    return {
+        "name": "Reports Generation",
+        "version": __version__,
+        "templates": list(TEMPLATES.keys()),
+        "functions": ["get_template_key", "generate_report",
+                      "generate_html"],
+    }
