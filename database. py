@@ -1,0 +1,121 @@
+"""
+History Database Module
+========================
+وحدة حفظ تاريخ التقييمات
+
+Version: 1.0.0
+"""
+
+import pandas as pd
+import datetime
+
+__version__ = "1.0.0"
+
+
+def get_history() -> list:
+    """الحصول على قائمة تاريخ التقييمات."""
+    try:
+        import streamlit as st
+        if "eval_history" not in st.session_state:
+            st.session_state["eval_history"] = []
+        return st.session_state["eval_history"]
+    except Exception:
+        return []
+
+
+def save_evaluation(site, coords, idx, risk_level, values, ratings,
+                     travel=None, sat=None, tox=None) -> dict:
+    """حفظ تقييم في التاريخ."""
+    import streamlit as st
+    entry = {
+        "التاريخ": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "الموقع": str(site),
+        "lat": coords[0] if coords else 0,
+        "lon": coords[1] if coords else 0,
+        "مؤشر DRASTIC": idx,
+        "المستوى": risk_level,
+        "العمق (م)": values.get("depth", "N/A"),
+        "التغذية (مم)": values.get("recharge", "N/A"),
+        "الخزان": values.get("aquifer", "N/A"),
+        "التربة": values.get("soil", "N/A"),
+        "الانحدار": values.get("slope", "N/A"),
+        "غير المشبعة": values.get("vadose", "N/A"),
+        "النفاذية": values.get("conductivity", "N/A"),
+        "زمن الوصول": travel if travel else "N/A",
+        "الأمطار (مم)": sat.get("rainfall_mm", "N/A") if sat else "N/A",
+        "الحرارة": sat.get("temperature_c", "N/A") if sat else "N/A",
+        "مؤشر السمية": tox.get("index", "N/A") if tox else "N/A",
+    }
+    if "eval_history" not in st.session_state:
+        st.session_state["eval_history"] = []
+    st.session_state["eval_history"].append(entry)
+    return entry
+
+
+def history_to_dataframe() -> pd.DataFrame:
+    """تحويل التاريخ إلى DataFrame."""
+    history = get_history()
+    if not history:
+        return pd.DataFrame()
+    return pd.DataFrame(history)
+
+
+def clear_history():
+    """مسح كل التاريخ."""
+    import streamlit as st
+    st.session_state["eval_history"] = []
+
+
+def delete_entry(index: int):
+    """حذف إدخال واحد."""
+    import streamlit as st
+    if "eval_history" in st.session_state:
+        if 0 <= index < len(st.session_state["eval_history"]):
+            st.session_state["eval_history"].pop(index)
+
+
+def export_csv() -> bytes:
+    """تصدير التاريخ كـ CSV."""
+    df = history_to_dataframe()
+    if df.empty:
+        return b""
+    return df.to_csv(index=False).encode("utf-8-sig")
+
+
+def import_csv(uploaded_file):
+    """استيراد تاريخ من CSV."""
+    import streamlit as st
+    try:
+        df = pd.read_csv(uploaded_file)
+        records = df.to_dict("records")
+        st.session_state["eval_history"] = records
+        return len(records)
+    except Exception:
+        return 0
+
+
+def get_statistics() -> dict:
+    """إحصائيات التاريخ."""
+    df = history_to_dataframe()
+    if df.empty:
+        return {"total": 0, "avg": 0, "max": 0, "min": 0,
+                "high_risk": 0, "low_risk": 0}
+    try:
+        idx = df["مؤشر DRASTIC"].astype(float)
+        return {
+            "total": len(df),
+            "avg": round(idx.mean(), 1),
+            "max": int(idx.max()),
+            "min": int(idx.min()),
+            "high_risk": int((idx >= 140).sum()),
+            "low_risk": int((idx < 100).sum()),
+        }
+    except Exception:
+        return {"total": len(df), "avg": 0, "max": 0, "min": 0,
+                "high_risk": 0, "low_risk": 0}
+
+
+def get_module_info() -> dict:
+    return {"name": "History Database", "version": __version__,
+            "functions": ["save_evaluation", "get_history",
+                          "export_csv", "import_csv", "clear_history"]}
