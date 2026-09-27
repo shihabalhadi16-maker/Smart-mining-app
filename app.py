@@ -1,4 +1,4 @@
-"""DRASTIC Sudan v20.0 - Single File (Working)"""
+"""DRASTIC Sudan v21.0 - With Sensitivity Analysis"""
 import streamlit as st
 import folium
 from streamlit_folium import st_folium
@@ -106,6 +106,35 @@ def mitigate(idx, hdpe=False, treatment=False, monitoring=False):
             "reduction_pct": round(red, 1), "methods": methods}
 
 
+def sensitivity_analysis(D, R, A, S, T, I, C, variation=0.10):
+    """تحليل حساسية النموذج لكل معامل - Napolitano & Fabbri (1996)."""
+    base_idx = calc_index(D, R, A, S, T, I, C)
+    base_vals = {"D": D, "R": R, "A": A, "S": S, "T": T, "I": I, "C": C}
+    results = {}
+    for param, val in base_vals.items():
+        new_val = max(1, min(10, val * (1 + variation)))
+        modified = dict(base_vals)
+        modified[param] = new_val
+        new_idx = calc_index(**modified)
+        change = new_idx - base_idx
+        results[param] = {
+            "original": val,
+            "modified": round(new_val, 2),
+            "new_index": new_idx,
+            "change": change,
+            "sensitivity": round(abs(change) / base_idx * 100, 3) if base_idx > 0 else 0,
+        }
+    sorted_results = dict(sorted(results.items(),
+                                  key=lambda x: x[1]["sensitivity"],
+                                  reverse=True))
+    return {
+        "base_index": base_idx,
+        "variation": variation,
+        "parameters": sorted_results,
+        "most_sensitive": list(sorted_results.keys())[0] if sorted_results else None,
+    }
+
+
 def get_rainfall(lat, lon, years=3):
     try:
         end_date = datetime.datetime.now().strftime('%Y-%m-%d')
@@ -203,7 +232,7 @@ def gen_report(site, coords, idx, ratings, values, travel=None, sat=None):
     ref = "GRAS-" + today.strftime("%Y%m%d") + "-" + key.upper()[:3]
     L = []
     L.append("=" * 60)
-    L.append("تقرير تقييم هاشمية المياه الجوفية")
+    L.append("تقرير تقييم هشاشة المياه الجوفية")
     L.append("جامعة الخرطوم - كلية الهندسة")
     L.append("=" * 60)
     L.append("")
@@ -258,7 +287,7 @@ def gen_html(rep, site):
 
 st.title("نظام التقييم البيئي للتعدين")
 st.markdown("### جامعة الخرطوم - كلية الهندسة")
-st.markdown("#### DRASTIC Sudan v20.0")
+st.markdown("#### DRASTIC Sudan v21.0")
 st.markdown("---")
 
 if DS_OK:
@@ -269,9 +298,9 @@ else:
               "depth": 15.0, "conductivity": 5.0, "source": "افتراضي"}}
     summary = {"Total Data Points": 1}
 
-t1, t2, t3, t4, t5, t6 = st.tabs([
+t1, t2, t3, t4, t5, t6, t7 = st.tabs([
     "المدخلات والنتائج", "الجماعي", "الحلول",
-    "التقرير", "الخريطة", "الدقة"
+    "التقرير", "الخريطة", "الدقة", "تحليل الحساسية"
 ])
 
 
@@ -550,5 +579,73 @@ with t6:
             st.error("خطأ: " + str(e))
 
 
+with t7:
+    st.header("تحليل الحساسية (Sensitivity Analysis)")
+    st.markdown("""
+    **الغرض:** تحديد المعاملات الأكثر تأثيراً على مؤشر DRASTIC.
+
+    **المرجع:** Napolitano & Fabbri (1996).
+    """)
+
+    if "ci" in st.session_state:
+        ratings = st.session_state["cr"]
+        D_r = ratings["D"]
+        R_r = ratings["R"]
+        A_r = ratings["A"]
+        S_r = ratings["S"]
+        T_r = ratings["T"]
+        I_r = ratings["I"]
+        C_r = ratings["C"]
+
+        st.info("الموقع: " + st.session_state["cs"] +
+                " | المؤشر الأساسي: " + str(st.session_state["ci"]))
+
+        variation = st.slider("نسبة التغيير لكل معامل (%):",
+                              5, 30, 10, 5) / 100.0
+
+        result = sensitivity_analysis(D_r, R_r, A_r, S_r,
+                                       T_r, I_r, C_r, variation)
+
+        st.markdown("---")
+        st.subheader("المعاملات مرتبة حسب التأثير")
+        st.caption("الأعلى = الأكثر تأثيراً على المؤشر")
+
+        for param in result["parameters"]:
+            p = result["parameters"][param]
+            weight = {"D": 5, "R": 4, "A": 3, "S": 2,
+                      "T": 1, "I": 5, "C": 3}[param]
+            with st.expander("**" + param + "** — الوزن " + str(weight) +
+                             " (التأثير: " + str(p["sensitivity"]) + "%)"):
+                c1, c2, c3 = st.columns(3)
+                c1.metric("الأصلي", p["original"])
+                c2.metric("المعدل (+" + str(int(variation*100)) + "%)",
+                          p["modified"])
+                c3.metric("التغير في المؤشر", str(p["change"]))
+
+        st.markdown("---")
+        st.subheader("الخلاصة")
+        most = result["most_sensitive"]
+        st.success("**المعامل الأكثر تأثيراً: " + str(most) + "**")
+
+        chart_data = pd.DataFrame({
+            "المعامل": list(result["parameters"].keys()),
+            "الحساسية (%)": [result["parameters"][p]["sensitivity"]
+                             for p in result["parameters"]]
+        })
+        st.bar_chart(chart_data.set_index("المعامل"))
+
+        st.markdown("---")
+        st.info("""
+        **التفسير:**
+        - **D (العمق)** و **I (غير المشبعة)**: الأكثر تأثيراً (وزن 5).
+        - **R (التغذية)**: وزن 4.
+        - **A (الخزان)** و **C (النفاذية)**: وزن 3.
+        - **S (التربة)**: وزن 2.
+        - **T (الانحدار)**: الأقل تأثيراً (وزن 1).
+        """)
+    else:
+        st.warning("افتح تبويب المدخلات أولا")
+
+
 st.markdown("---")
-st.caption("2026 University of Khartoum - DRASTIC Sudan v20.0")
+st.caption("2026 University of Khartoum - DRASTIC Sudan v21.0")
