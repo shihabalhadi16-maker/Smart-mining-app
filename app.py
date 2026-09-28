@@ -1,4 +1,4 @@
-"""نظام التعدين السوداني v31.0 - مع اللوقو والاسم الجديد"""
+"""نظام التعدين السوداني v33.0 - النسخة الكاملة"""
 import streamlit as st
 import folium
 from streamlit_folium import st_folium
@@ -27,49 +27,23 @@ if PIL_OK:
             initial_sidebar_state="collapsed",
             menu_items={
                 "Get Help": "mailto:your_email@example.com",
-                "Report a bug": "mailto:your_email@example.com",
                 "About": "نظام التعدين السوداني - جامعة الخرطوم"
             }
         )
     except Exception:
-        st.set_page_config(
-            page_title="نظام التعدين السوداني",
-            page_icon="⛏️",
-            layout="wide",
-        )
+        st.set_page_config(page_title="نظام التعدين السوداني",
+                          page_icon="⛏️", layout="wide")
 else:
-    st.set_page_config(
-        page_title="نظام التعدين السوداني",
-        page_icon="⛏️",
-        layout="wide",
-    )
+    st.set_page_config(page_title="نظام التعدين السوداني",
+                      page_icon="⛏️", layout="wide")
 
-# ============ CSS مخصص ============
+# ============ CSS ============
 st.markdown("""
 <style>
     html, body, [class*="css"] {
         font-family: 'Segoe UI', 'Tahoma', 'Arial', sans-serif;
     }
-    .main-title {
-        color: #5c2c16;
-        font-size: 2.2em;
-        font-weight: bold;
-        text-align: center;
-        margin-bottom: 5px;
-    }
-    .sub-title {
-        color: #c19a6b;
-        font-size: 1.1em;
-        text-align: center;
-        margin-bottom: 20px;
-    }
-    .stButton > button {
-        border-radius: 8px;
-        font-weight: bold;
-    }
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 4px;
-    }
+    .stButton > button { border-radius: 8px; font-weight: bold; }
     .stTabs [data-baseweb="tab"] {
         border-radius: 8px 8px 0 0;
         padding: 8px 12px;
@@ -81,9 +55,6 @@ st.markdown("""
         border-radius: 10px;
         padding: 12px;
         box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    }
-    .stAlert {
-        border-radius: 8px;
     }
     [data-testid="stSidebar"] {
         background-color: #f5eedc;
@@ -97,21 +68,10 @@ st.markdown("""
         color: white;
         text-align: center;
     }
-    .header-title {
-        font-size: 1.8em;
-        font-weight: bold;
-        margin: 0;
-    }
-    .header-subtitle {
-        font-size: 1.0em;
-        opacity: 0.9;
-        margin: 5px 0 0 0;
-    }
+    .header-title { font-size: 1.8em; font-weight: bold; margin: 0; }
+    .header-subtitle { font-size: 1.0em; opacity: 0.9; margin: 5px 0 0 0; }
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
-    @media print {
-        .stButton, .stDownloadButton, .stSlider { display: none; }
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -568,7 +528,8 @@ def gen_report(site, coords, idx, values, travel=None, sat=None, tox=None):
     today = datetime.date.today()
     ref = "GRAS-" + today.strftime("%Y%m%d") + "-" + key.upper()[:3]
     L = ["=" * 60, "تقرير تقييم هشاشة المياه الجوفية",
-         "نظام التعدين السوداني - جامعة الخرطوم", "=" * 60, "",
+         "نظام التعدين السوداني", "جامعة الخرطوم - كلية الهندسة",
+         "=" * 60, "",
          "الرقم المرجعي: " + ref,
          "التاريخ: " + today.strftime("%Y-%m-%d"),
          "الموقع: " + str(site),
@@ -622,16 +583,15 @@ def gen_html(rep, site):
 
 
 # ============ UI ============
-# عرض اللوقو
 _col1, _col2, _col3 = st.columns([1, 2, 1])
 with _col2:
     if PIL_OK:
         try:
             st.image("logo.png", use_container_width=True)
         except Exception:
-            st.markdown("<h1 style='text-align:center;'>⛏️</h1>", unsafe_allow_html=True)
+            st.markdown("<h1 style='text-align:center;'>⛏️</h1>",
+                        unsafe_allow_html=True)
 
-# الترويسة
 st.markdown("""
 <div class="header-container">
     <div class="header-title">⛏️ نظام التعدين السوداني</div>
@@ -771,7 +731,7 @@ with tabs[1]:
         file_name="template.csv", mime="text/csv")
 
     f = st.file_uploader("📤 ارفع ملف CSV أو Excel:",
-                          type=["csv", "xlsx"], key="bulk_v31")
+                          type=["csv", "xlsx"], key="bulk_v33")
     if f:
         try:
             df = pd.read_csv(f) if f.name.endswith(".csv") else pd.read_excel(f)
@@ -935,25 +895,167 @@ with tabs[3]:
         st.warning("افتح تبويب المدخلات أولا")
 
 
-# ============ TAB 5 ============
+# ============ TAB 5: الخريطة الاحترافية ============
 with tabs[4]:
-    st.header("الخريطة")
-    m = folium.Map(location=[15.5, 32.5], zoom_start=6)
+    st.header("🗺️ الخريطة التفاعلية — وفق معايير US EPA و ESRI")
+    
     if DS_OK:
+        m = folium.Map(
+            location=[15.5, 32.5],
+            zoom_start=6,
+            tiles=None,
+            control_scale=True,
+        )
+        
+        folium.TileLayer(tiles="OpenStreetMap", name="🗺️ خريطة عادية",
+            overlay=False, control=True).add_to(m)
+        
+        folium.TileLayer(
+            tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+            attr="Esri World Imagery", name="🛰️ صور الأقمار الصناعية",
+            overlay=False, control=True).add_to(m)
+        
+        folium.TileLayer(
+            tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
+            attr="Esri Topo", name="⛰️ التضاريس",
+            overlay=False, control=True).add_to(m)
+        
+        fg_wells = folium.FeatureGroup(name="🔵 آبار NARIS")
+        fg_darfur = folium.FeatureGroup(name="🟢 آبار دارفور")
+        fg_mining = folium.FeatureGroup(name="🔴 مواقع التعدين")
+        fg_khartoum = folium.FeatureGroup(name="🟣 محليات الخرطوم")
+        
         for n, d in NARIS_WELLS.items():
-            folium.Marker([d["coords"][1], d["coords"][0]],
-                popup=n, icon=folium.Icon(color="blue")).add_to(m)
+            folium.Marker(
+                [d["coords"][1], d["coords"][0]],
+                popup=folium.Popup("<b>" + n + "</b><br>NARIS Well<br>العمق: " +
+                    str(d.get("depth", "N/A")) + " م", max_width=250),
+                tooltip=n,
+                icon=folium.Icon(color="blue", icon="tint", prefix="fa"),
+            ).add_to(fg_wells)
+        
         for n, d in DARFUR_WELLS.items():
-            folium.Marker([d["coords"][1], d["coords"][0]],
-                popup=n, icon=folium.Icon(color="green")).add_to(m)
+            folium.Marker(
+                [d["coords"][1], d["coords"][0]],
+                popup=folium.Popup("<b>" + n + "</b><br>Darfur Well<br>العمق: " +
+                    str(d.get("depth", "N/A")) + " م", max_width=250),
+                tooltip=n,
+                icon=folium.Icon(color="green", icon="tint", prefix="fa"),
+            ).add_to(fg_darfur)
+        
         for n, d in KNOWN_MINING_SITES.items():
+            lat, lon = d["coords"][1], d["coords"][0]
+            
+            folium.Circle([lat, lon], radius=2000, color="yellow",
+                weight=1, fill=True, fill_opacity=0.08,
+                popup="نطاق 2000م — " + n).add_to(fg_mining)
+            
+            folium.Circle([lat, lon], radius=1000, color="orange",
+                weight=1.5, fill=True, fill_opacity=0.12,
+                popup="نطاق 1000م — " + n).add_to(fg_mining)
+            
+            folium.Circle([lat, lon], radius=500, color="red",
+                weight=2, fill=True, fill_opacity=0.20,
+                popup="نطاق 500م — خطر مباشر — " + n).add_to(fg_mining)
+            
             col = "red" if d.get("cyanide_use") else "orange"
-            folium.Marker([d["coords"][1], d["coords"][0]],
-                popup=n, icon=folium.Icon(color=col)).add_to(m)
+            folium.Marker(
+                [lat, lon],
+                popup=folium.Popup("<b>" + n + "</b><br>النشاط: " +
+                    str(d.get("activity", "N/A")) + "<br>سيانيد: " +
+                    ("✅" if d.get("cyanide_use") else "❌") + "<br>زئبق: " +
+                    ("✅" if d.get("mercury_use") else "❌"), max_width=250),
+                tooltip=n,
+                icon=folium.Icon(color=col, icon="exclamation-triangle", prefix="fa"),
+            ).add_to(fg_mining)
+        
         for n, d in KHARTOUM_LOCALITIES.items():
-            folium.CircleMarker([d["coords"][1], d["coords"][0]],
-                radius=8, color="purple", fill=True, popup=n).add_to(m)
-    st_folium(m, width=None, height=600, key="map")
+            folium.CircleMarker(
+                [d["coords"][1], d["coords"][0]],
+                radius=8, color="purple", weight=2,
+                fill=True, fill_opacity=0.5,
+                popup="<b>" + n + "</b><br>عدد الآبار: " +
+                    str(d.get("wells_sampled", "N/A")),
+                tooltip=n,
+            ).add_to(fg_khartoum)
+        
+        fg_wells.add_to(m)
+        fg_darfur.add_to(m)
+        fg_mining.add_to(m)
+        fg_khartoum.add_to(m)
+        
+        legend_html = (
+            '<div style="position: fixed; bottom: 50px; right: 50px; '
+            'width: 230px; background: white; border: 2px solid #5c2c16; '
+            'border-radius: 8px; z-index: 9999; font-size: 13px; '
+            'padding: 12px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); direction: rtl;">'
+            '<h4 style="margin: 0 0 8px 0; color: #5c2c16; text-align: center;">'
+            '🗺️ دليل الخريطة</h4>'
+            '<hr style="margin: 5px 0;">'
+            '<p style="margin: 3px 0;"><b>العلامات:</b></p>'
+            '<p style="margin: 2px 0;">🔵 آبار NARIS</p>'
+            '<p style="margin: 2px 0;">🟢 آبار دارفور (UNEP)</p>'
+            '<p style="margin: 2px 0;">🔴 مواقع تعدين (سيانيد)</p>'
+            '<p style="margin: 2px 0;">🟠 مواقع تعدين (زئبق)</p>'
+            '<p style="margin: 2px 0;">🟣 محليات الخرطوم</p>'
+            '<hr style="margin: 5px 0;">'
+            '<p style="margin: 3px 0;"><b>نطاقات التأثير:</b></p>'
+            '<p style="margin: 2px 0;">🔴 500 م — خطر مباشر</p>'
+            '<p style="margin: 2px 0;">🟠 1000 م — انتشار</p>'
+            '<p style="margin: 2px 0;">🟡 2000 م — تأثير عام</p>'
+            '</div>'
+        )
+        m.get_root().html.add_child(folium.Element(legend_html))
+        
+        north_html = (
+            '<div style="position: fixed; top: 80px; right: 20px; '
+            'width: 50px; height: 50px; z-index: 9999; '
+            'background: white; border-radius: 50%; padding: 5px; '
+            'box-shadow: 0 2px 5px rgba(0,0,0,0.3); '
+            'border: 2px solid #5c2c16;">'
+            '<svg viewBox="0 0 100 100">'
+            '<polygon points="50,5 60,50 50,40 40,50" fill="red"/>'
+            '<polygon points="50,95 60,50 50,60 40,50" fill="gray"/>'
+            '<text x="50" y="15" text-anchor="middle" font-size="14" '
+            'fill="black" font-weight="bold">N</text>'
+            '</svg></div>'
+        )
+        m.get_root().html.add_child(folium.Element(north_html))
+        
+        folium.LayerControl(position="topright", collapsed=False).add_to(m)
+        
+        folium.plugins.Fullscreen(
+            position="topleft", title="تكبير الشاشة",
+            title_cancel="خروج", force_separate_button=True,
+        ).add_to(m)
+        
+        folium.plugins.MeasureControl(
+            position="bottomleft",
+            primary_length_unit="kilometers",
+            secondary_length_unit="meters",
+            primary_area_unit="sqkilometers",
+        ).add_to(m)
+        
+        folium.plugins.MousePosition(
+            position="bottomright", separator=" | ",
+            prefix="الإحداثيات:",
+            lat_formatter="function(num) {return L.Util.formatNum(num, 4) + '°N';}",
+            lng_formatter="function(num) {return L.Util.formatNum(num, 4) + '°E';}",
+        ).add_to(m)
+        
+        st_folium(m, width=None, height=700, key="main_map_v33")
+        
+        st.info(
+            "**دليل استخدام الخريطة:**\n"
+            "- **العلامات:** انقر على أي علامة لعرض التفاصيل.\n"
+            "- **الطبقات:** استخدم القائمة أعلى يمين لتشغيل/إيقاف الطبقات.\n"
+            "- **النطاقات:** الدوائر تُظهر نطاق تأثير التعدين (500م، 1000م، 2000م).\n"
+            "- **القياس:** استخدم أداة القياس أسفل يسار لقياس المسافات.\n"
+            "- **الإحداثيات:** تظهر أسفل يمين عند تحريك المؤشر.\n"
+            "- **التكبير:** استخدم زر التكبير أعلى يسار."
+        )
+    else:
+        st.warning("⚠️ ملف data_sources.py غير متوفر.")
 
 
 # ============ TAB 6 ============
@@ -1199,7 +1301,7 @@ with tabs[10]:
     source = st.radio("المصدر:",
                       ["المواقع المدمجة (تقييم محسوب)",
                        "سجل التقييمات"],
-                      key="gis_src_v31")
+                      key="gis_src_v33")
     sites = []
     if source == "المواقع المدمجة (تقييم محسوب)" and DS_OK:
         sites = get_preset_sites_with_drastic(preset)
@@ -1331,4 +1433,4 @@ with tabs[11]:
 
 
 st.markdown("---")
-st.caption("2026 جامعة الخرطوم - نظام التعدين السوداني v31.0")
+st.caption("2026 جامعة الخرطوم - نظام التعدين السوداني v33.0")
