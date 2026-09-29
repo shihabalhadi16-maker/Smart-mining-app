@@ -1,207 +1,80 @@
-# ============================================================
-# ============ MODE: MODFLOW ============
-# ============================================================
-if mode == "🌊 MODFLOW (المحاكاة العددية)":
-    st.header("🌊 محاكاة MODFLOW للمياه الجوفية")
-    
-    # فحص توفر MODFLOW
-    mf_ok, mf_msg = is_modflow_available()
-    if not mf_ok:
-        st.error(f"❌ {mf_msg}")
-        st.info("""
-        **لتثبيت MODFLOW:**
-        1. ثبّت FloPy: `pip install flopy`
-        2. حمّل MODFLOW 6 من: https://water.usgs.gov/ogw/modflow/
-        3. أضف ملف `mf6` التنفيذي إلى PATH
-        """)
-    else:
-        st.success(f"✅ {mf_msg}")
-        
-        # ===== اختيار الموقع المرجعي =====
-        st.markdown("---")
-        st.subheader("📍 اختيار الموقع المرجعي")
-        
-        if HYDRO_OK:
-            location = st.selectbox(
-                "اختر الموقع (لتعبئة القيم الافتراضية):",
-                ["Omdurman_2023", "North_Khartoum_2024", "Gash_Kassala_2025"],
-                key="mf_location")
-            
-            # عرض معلومات الموقع
-            if location in HYDRAULIC_CONDUCTIVITY:
-                info = HYDRAULIC_CONDUCTIVITY[location]
-                with st.expander(f"ℹ️ معلومات {location}"):
-                    if location == "Gash_Kassala_2025":
-                        st.write(f"**المنبع:** {info['upstream']['value']} م/يوم")
-                        st.write(f"**كسلا:** {info['kassala']['value']} م/يوم")
-                        st.write(f"**المصب:** {info['downstream']['value']} م/يوم")
-                    else:
-                        st.write(f"**K:** {info['min']} - {info['max']} م/يوم")
-                        st.write(f"**المتوسط:** {info['mean']} م/يوم")
-                    st.write(f"**المصدر:** {info['source']}")
-        else:
-            location = "Omdurman_2023"
-            st.warning("⚠️ hydro_data.py غير متوفر، سيتم استخدام قيم افتراضية")
-        
-        # ===== مدخلات النموذج =====
-        st.markdown("---")
-        st.subheader("⚙️ مدخلات النموذج")
-        
-        c1, c2 = st.columns(2)
-        with c1:
-            nlay = st.number_input("عدد الطبقات:", 1, 5, 1, key="mf_nlay")
-            nrow = st.number_input("عدد الصفوف:", 5, 100, 20, key="mf_nrow")
-            ncol = st.number_input("عدد الأعمدة:", 5, 100, 20, key="mf_ncol")
-            delr = st.number_input("عرض الخلية (m):", 50.0, 5000.0, 500.0,
-                                    50.0, key="mf_delr")
-            delc = st.number_input("ارتفاع الخلية (m):", 50.0, 5000.0, 500.0,
-                                    50.0, key="mf_delc")
-        
-        with c2:
-            top = st.number_input("منسوب السطح (m):", 10.0, 2000.0, 350.0,
-                                   10.0, key="mf_top")
-            botm = st.number_input("منسوب القاعدة (m):", 0.0, 1000.0, 50.0,
-                                    10.0, key="mf_botm")
-            
-            if HYDRO_OK:
-                default_k = get_default_k(location)
-                default_r = get_default_recharge("Omdurman" if "Omdurman" in location else "Gash_Kassala")
-            else:
-                default_k = 3.5
-                default_r = 15.0
-            
-            k_value = st.number_input("K - التوصيلية (m/day):", 0.01, 500.0,
-                                       float(default_k), 0.1, key="mf_k")
-            recharge_mm = st.number_input("التغذية (mm/year):", 0.0, 500.0,
-                                           float(default_r) if default_r < 500 else 15.0,
-                                           1.0, key="mf_rech")
-        
-        # ===== الآبار =====
-        st.markdown("---")
-        st.subheader("🕳️ الآبار (اختياري)")
-        n_wells = st.number_input("عدد الآبار:", 0, 10, 0, key="mf_nwells")
-        
-        well_locations = []
-        well_rates = []
-        if n_wells > 0:
-            for i in range(int(n_wells)):
-                c1, c2, c3, c4 = st.columns(4)
-                with c1:
-                    wl = st.number_input(f"طبقة {i+1}:", 0, nlay-1, 0,
-                                          key=f"mf_wl_{i}")
-                with c2:
-                    wr = st.number_input(f"صف {i+1}:", 0, nrow-1, nrow//2,
-                                          key=f"mf_wr_{i}")
-                with c3:
-                    wc = st.number_input(f"عمود {i+1}:", 0, ncol-1, ncol//2,
-                                          key=f"mf_wc_{i}")
-                with c4:
-                    rate = st.number_input(f"معدل الضخ {i+1} (m³/day):",
-                                            -10000.0, 10000.0, -1000.0,
-                                            100.0, key=f"mf_rate_{i}")
-                well_locations.append((int(wl), int(wr), int(wc)))
-                well_rates.append(float(rate))
-        
-        # ===== زر التشغيل =====
-        st.markdown("---")
-        if st.button("🚀 تشغيل MODFLOW", type="primary", key="run_mf"):
-            with st.spinner("جاري بناء وتشغيل النموذج... (قد يستغرق دقيقة)"):
-                result = build_and_run_model(
-                    workspace=f"./modflow_workspace/{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}",
-                    nlay=int(nlay), nrow=int(nrow), ncol=int(ncol),
-                    delr=float(delr), delc=float(delc),
-                    top=float(top), botm=float(botm),
-                    k_value=float(k_value),
-                    recharge_mm=float(recharge_mm),
-                    well_locations=well_locations if well_locations else None,
-                    well_rates=well_rates if well_rates else None
-                )
-                
-                st.session_state["mf_result"] = result
-        
-        # ===== عرض النتائج =====
-        if "mf_result" in st.session_state:
-            result = st.session_state["mf_result"]
-            
-            if not result.get("success"):
-                st.error(f"❌ فشل التشغيل: {result.get('error')}")
-                if result.get("buff"):
-                    with st.expander("تفاصيل الخطأ"):
-                        st.code(result["buff"])
-            else:
-                st.success("✅ تم التشغيل بنجاح!")
-                
-                # المقاييس
-                c1, c2, c3, c4 = st.columns(4)
-                c1.metric("أدنى منسوب", f"{result['head_min']:.2f} m")
-                c2.metric("أعلى منسوب", f"{result['head_max']:.2f} m")
-                c3.metric("متوسط المنسوب", f"{result['head_mean']:.2f} m")
-                c4.metric("حجم الشبكة",
-                          f"{result['nrow']}×{result['ncol']}")
-                
-                # ===== خريطة المنسوب =====
-                st.markdown("---")
-                st.subheader("🗺️ خريطة منسوب المياه")
-                
-                try:
-                    import plotly.express as px
-                    heads = result["heads"]
-                    fig = px.imshow(
-                        heads,
-                        labels={"x": "عمود", "y": "صف", "color": "منسوب (m)"},
-                        color_continuous_scale="Viridis",
-                        title="منسوب المياه الجوفية (m)",
-                        aspect="auto")
-                    st.plotly_chart(fig, use_container_width=True)
-                except ImportError:
-                    st.dataframe(pd.DataFrame(result["heads"]))
-                    st.info("ℹ️ ثبّت plotly لعرض الخريطة: pip install plotly")
-                
-                # ===== زمن الوصول =====
-                st.markdown("---")
-                st.subheader("⏱️ زمن وصول الملوثات (من MODFLOW)")
-                
-                if HYDRO_OK:
-                    porosity = get_default_porosity()
-                else:
-                    porosity = 0.20
-                
-                travel = estimate_travel_time_modflow(
-                    result["heads"], float(k_value), porosity, float(delr))
-                
-                if travel:
-                    c1, c2, c3 = st.columns(3)
-                    c1.metric("متوسط التدرج", f"{travel['mean_gradient']:.6f}")
-                    c2.metric("السرعة (m/day)",
-                              f"{travel['velocity_m_day']:.4f}")
-                    c3.metric("السرعة (m/year)",
-                              f"{travel['velocity_m_year']:.2f}")
-                    
-                    st.info(f"""
-                    **ملاحظة:** هذا الحساب مبني على التدرج الهيدروليكي
-                    الفعلي المحسوب من MODFLOW (وليس افتراضياً).
-                    
-                    - K = {k_value} m/day
-                    - n = {porosity}
-                    - التدرج = {travel['mean_gradient']:.6f}
-                    """)
-                
-                # ===== البيانات المرجعية =====
-                if HYDRO_OK:
-                    st.markdown("---")
-                    with st.expander("📚 القيم المرجعية من الدراسات السودانية"):
-                        st.markdown("**K (م/يوم):**")
-                        for loc, data in HYDRAULIC_CONDUCTIVITY.items():
-                            if loc == "Gash_Kassala_2025":
-                                st.write(f"- {loc}: {data['kassala']['value']}")
-                            else:
-                                st.write(f"- {loc}: {data['min']} - {data['max']}")
-                        
-                        st.markdown("**معامل النقل (T):**")
-                        for loc, data in TRANSMISSIVITY.items():
-                            st.write(f"- {loc}: {data['min']} - {data['max']} m²/day")
-                        
-                        st.markdown("**المعايرة:**")
-                        for loc, data in CALIBRATION.items():
-                            st.write(f"- {loc}: R² = {data['R2']}, "
-                                     f"RMSE = {data['RMSE_m']} m")
+"""بيانات هيدروجيولوجية حقيقية من دراسات سودانية محكمة"""
+
+HYDRAULIC_CONDUCTIVITY = {
+    "Omdurman_2023": {
+        "min": 1.4, "max": 5.2, "mean": 3.3, "unit": "m/day",
+        "source": "دراسة أم درمان 2023 (VES + Pumping tests)",
+        "location": "أم درمان", "lat": 15.65, "lon": 32.48},
+    "North_Khartoum_2024": {
+        "min": 1.9, "max": 7.8, "mean": 4.85, "unit": "m/day",
+        "source": "دراسة شمال الخرطوم 2024 (Nubian Sandstone)",
+        "location": "شمال الخرطوم", "lat": 15.75, "lon": 32.55},
+    "Gash_Kassala_2025": {
+        "upstream": {"value": 110.0, "location": "المنبع"},
+        "kassala": {"value": 30.0, "location": "كسلا"},
+        "downstream": {"value": 50.0, "location": "المصب"},
+        "unit": "m/day", "source": "دراسة القاش 2025 (MODFLOW)",
+        "location": "كسلا", "lat": 15.45, "lon": 36.40}
+}
+
+TRANSMISSIVITY = {
+    "Omdurman_VES": {"min": 435, "max": 1564, "mean": 1000,
+        "unit": "m²/day", "source": "دراسة أم درمان 2023 (VES)"},
+    "Omdurman_Pumping": {"min": 583, "max": 1226, "mean": 900,
+        "unit": "m²/day", "source": "دراسة أم درمان 2023 (Pumping tests)"}
+}
+
+STORAGE_COEFFICIENT = {
+    "Gash_Kassala": {"value": 0.13, "unit": "dimensionless",
+        "source": "دراسة القاش 2025"}
+}
+
+EFFECTIVE_POROSITY = {
+    "Gash_Kassala": {"value": 0.15, "source": "دراسة القاش 2025"},
+    "Nubian_Sandstone": {"value": 0.20,
+        "source": "قيم مرجعية لخزان الحجر الرملي النوبي"}
+}
+
+RECHARGE = {
+    "Gash_Kassala": {"total_m3_year": 211_000_000,
+        "percentages": {"upstream": 56, "kassala": 36, "downstream": 8},
+        "unit": "m³/year", "source": "دراسة القاش 2025"},
+    "Omdurman": {"estimated_mm_year": 15, "unit": "mm/year",
+        "source": "تقديرات عامة للمنطقة الجافة"}
+}
+
+CALIBRATION = {
+    "Gash_Kassala_2025": {"period": "2008-2017", "years": 9,
+        "R2": 0.9947, "RMSE_m": 1.2, "source": "دراسة القاش 2025"}
+}
+
+GEOLOGICAL_LAYERS = {
+    "Omdurman": {
+        "top_layer": {"name": "الطين", "thickness_m": 20, "type": "confining"},
+        "main_aquifer": {"name": "الحجر الرملي النوبي",
+                          "thickness_m": 300, "type": "aquifer"},
+        "source": "دراسات أم درمان"},
+    "Gash_Kassala": {
+        "top_layer": {"name": "الطمي", "thickness_m": 10, "type": "semi_confining"},
+        "main_aquifer": {"name": "الحجر الرملي",
+                          "thickness_m": 150, "type": "aquifer"},
+        "source": "دراسة القاش 2025"}
+}
+
+
+def get_default_k(location="Omdurman_2023"):
+    data = HYDRAULIC_CONDUCTIVITY.get(location, {})
+    if location == "Gash_Kassala_2025":
+        return data.get("kassala", {}).get("value", 30.0)
+    return data.get("mean", 3.5)
+
+
+def get_default_recharge(location="Omdurman"):
+    data = RECHARGE.get(location, {})
+    if location == "Gash_Kassala":
+        return 211_000_000
+    return data.get("estimated_mm_year", 15)
+
+
+def get_default_porosity(location="Nubian_Sandstone"):
+    return EFFECTIVE_POROSITY.get(location, {}).get("value", 0.20) 
