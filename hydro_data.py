@@ -1,0 +1,81 @@
+"""بيانات هيدروجيولوجية حقيقية من دراسات سودانية محكمة"""
+
+HYDRAULIC_CONDUCTIVITY = {
+    "Omdurman_2023": {
+        "min": 1.4, "max": 5.2, "mean": 3.3, "unit": "m/day",
+        "source": "دراسة أم درمان 2023 (VES + Pumping tests)",
+        "location": "أم درمان", "lat": 15.65, "lon": 32.48},
+    "North_Khartoum_2024": {
+        "min": 1.9, "max": 7.8, "mean": 4.85, "unit": "m/day",
+        "source": "دراسة شمال الخرطوم 2024 (Nubian Sandstone)",
+        "location": "شمال الخرطوم", "lat": 15.75, "lon": 32.55},
+    "Gash_Kassala_2025": {
+        "upstream": {"value": 110.0, "location": "المنبع"},
+        "kassala": {"value": 30.0, "location": "كسلا"},
+        "downstream": {"value": 50.0, "location": "المصب"},
+        "unit": "m/day", "source": "دراسة القاش 2025 (MODFLOW)",
+        "location": "كسلا", "lat": 15.45, "lon": 36.40}
+}
+
+TRANSMISSIVITY = {
+    "Omdurman_VES": {"min": 435, "max": 1564, "mean": 1000,
+        "unit": "m²/day", "source": "دراسة أم درمان 2023 (VES)"},
+    "Omdurman_Pumping": {"min": 583, "max": 1226, "mean": 900,
+        "unit": "m²/day", "source": "دراسة أم درمان 2023 (Pumping tests)"}
+}
+
+STORAGE_COEFFICIENT = {
+    "Gash_Kassala": {"value": 0.13, "unit": "dimensionless",
+        "source": "دراسة القاش 2025"}
+}
+
+EFFECTIVE_POROSITY = {
+    "Gash_Kassala": {"value": 0.15, "source": "دراسة القاش 2025"},
+    "Nubian_Sandstone": {"value": 0.20,
+        "source": "قيم مرجعية لخزان الحجر الرملي النوبي"}
+}
+
+RECHARGE = {
+    "Gash_Kassala": {"total_m3_year": 211000000,
+        "percentages": {"upstream": 56, "kassala": 36, "downstream": 8},
+        "unit": "m³/year", "source": "دراسة القاش 2025"},
+    "Omdurman": {"estimated_mm_year": 15, "unit": "mm/year",
+        "source": "تقديرات عامة للمنطقة الجافة"}
+}
+
+CALIBRATION = {
+    "Gash_Kassala_2025": {"period": "2008-2017", "years": 9,
+        "R2": 0.9947, "RMSE_m": 1.2, "source": "دراسة القاش 2025"}
+}
+
+GEOLOGICAL_LAYERS = {
+    "Omdurman": {
+        "top_layer": {"name": "الطين", "thickness_m": 20, "type": "confining"},
+        "main_aquifer": {"name": "الحجر الرملي النوبي",
+                          "thickness_m": 300, "type": "aquifer"},
+        "source": "دراسات أم درمان"},
+    "Gash_Kassala": {
+        "top_layer": {"name": "الطمي", "thickness_m": 10,
+                       "type": "semi_confining"},
+        "main_aquifer": {"name": "الحجر الرملي",
+                          "thickness_m": 150, "type": "aquifer"},
+        "source": "دراسة القاش 2025"}
+}
+
+
+def get_default_k(location="Omdurman_2023"):
+    data = HYDRAULIC_CONDUCTIVITY.get(location, {})
+    if location == "Gash_Kassala_2025":
+        return data.get("kassala", {}).get("value", 30.0)
+    return data.get("mean", 3.5)
+
+
+def get_default_recharge(location="Omdurman"):
+    data = RECHARGE.get(location, {})
+    if location == "Gash_Kassala":
+        return 211000000
+    return data.get("estimated_mm_year", 15)
+
+
+def get_default_porosity(location="Nubian_Sandstone"):
+    return EFFECTIVE_POROSITY.get(location, {}).get("value", 0.20)
