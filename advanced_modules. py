@@ -1,0 +1,512 @@
+"""وحدات متقدمة لنظام التعدين السوداني v37.0
+- وحدة التحقق الفعلي (Validation)
+- وحدة المؤشرات المعدلة (DRASTIC-P)
+- وحدة التقييم الديناميكي (Dynamic)
+"""
+import numpy as np
+import pandas as pd
+from datetime import datetime
+
+
+# ============================================================
+# ============ 1. وحدة التحقق الفعلي (Validation Module) ============
+# ============================================================
+def calculate_confusion_matrix(predicted, actual, threshold=140):
+    """
+    حساب مصفوفة الالتباس (Confusion Matrix) مع المقاييس الإحصائية
+    
+    Parameters:
+    -----------
+    predicted : array-like - قيم المؤشر المتوقعة
+    actual : array-like - الحالة الفعلية (1 = ملوث، 0 = نظيف)
+    threshold : int - عتبة التصنيف (افتراضي 140)
+    
+    Returns:
+    --------
+    dict: جميع مقاييس الدقة
+    """
+    predicted = np.array(predicted)
+    actual = np.array(actual)
+    pred_class = (predicted >= threshold).astype(int)
+    
+    tp = int(np.sum((pred_class == 1) & (actual == 1)))
+    tn = int(np.sum((pred_class == 0) & (actual == 0)))
+    fp = int(np.sum((pred_class == 1) & (actual == 0)))
+    fn = int(np.sum((pred_class == 0) & (actual == 1)))
+    
+    total = tp + tn + fp + fn
+    
+    # المقاييس الأساسية
+    accuracy = (tp + tn) / total if total > 0 else 0
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+    specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
+    f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0
+    npv = tn / (tn + fn) if (tn + fn) > 0 else 0  # Negative Predictive Value
+    
+    # Cohen's Kappa
+    po = accuracy
+    pe = ((tp + fp) * (tp + fn) + (tn + fn) * (tn + fp)) / (total ** 2) if total > 0 else 0
+    kappa = ((po - pe) / (1 - pe)) if (1 - pe) > 0 else 0
+    
+    # Matthews Correlation Coefficient
+    mcc_num = (tp * tn) - (fp * fn)
+    mcc_den = np.sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
+    mcc = mcc_num / mcc_den if mcc_den > 0 else 0
+    
+    # ROC-AUC (تبسيط)
+    tpr = recall
+    fpr = fp / (fp + tn) if (fp + tn) > 0 else 0
+    youden_j = tpr - fpr
+    
+    # Balanced Accuracy
+    balanced_acc = (recall + specificity) / 2
+    
+    return {
+        "confusion_matrix": {
+            "TP": tp, "TN": tn, "FP": fp, "FN": fn,
+            "Total": total
+        },
+        "accuracy": round(accuracy * 100, 2),
+        "precision": round(precision * 100, 2),
+        "recall": round(recall * 100, 2),
+        "specificity": round(specificity * 100, 2),
+        "f1_score": round(f1 * 100, 2),
+        "npv": round(npv * 100, 2),
+        "balanced_accuracy": round(balanced_acc * 100, 2),
+        "kappa": round(kappa, 4),
+        "mcc": round(mcc, 4),
+        "youden_j": round(youden_j, 4),
+        "threshold": threshold
+    }
+
+
+def analyze_validation_by_level(predicted, actual, thresholds=None):
+    """
+    تحليل التحقق حسب مستويات DRASTIC
+    
+    Returns:
+    --------
+    DataFrame: دقة التصنيف لكل مستوى
+    """
+    if thresholds is None:
+        thresholds = [100, 140, 180]
+    
+    predicted = np.array(predicted)
+    actual = np.array(actual)
+    
+    levels = []
+    for i, idx in enumerate(predicted):
+        if idx < 100: level = "منخفض"
+        elif idx < 140: level = "متوسط"
+        elif idx < 180: level = "مرتفع"
+        else: level = "مرتفع جدا"
+        levels.append(level)
+    
+    df = pd.DataFrame({
+        "predicted_index": predicted,
+        "actual": actual,
+        "level": levels
+    })
+    
+    # حساب الدقة لكل مستوى
+    results = []
+    for level in ["منخفض", "متوسط", "مرتفع", "مرتفع جدا"]:
+        subset = df[df["level"] == level]
+        if len(subset) > 0:
+            # في المستويات المرتفعة: نتوقع actual=1
+            if level in ["مرتفع", "مرتفع جدا"]:
+                correct = (subset["actual"] == 1).sum()
+            elif level == "منخفض":
+                correct = (subset["actual"] == 0).sum()
+            else:  # متوسط - لا نتوقع
+                correct = 0
+            
+            results.append({
+                "المستوى": level,
+                "العدد": len(subset),
+                "التصنيفات الصحيحة": int(correct),
+                "نسبة الدقة": round(correct / len(subset) * 100, 1)
+                           if len(subset) > 0 else 0
+            })
+    
+    return pd.DataFrame(results)
+
+
+def generate_validation_report(metrics, level_df):
+    """تقرير التحقق الكامل"""
+    L = ["=" * 60, "تقرير التحقق الفعلي (Model Validation)",
+         "نظام التعدين السوداني", "=" * 60, ""]
+    L.append("التاريخ: " + datetime.now().strftime("%Y-%m-%d %H:%M"))
+    L.append("")
+    L.append("=" * 60)
+    L.append("مصفوفة الالتباس (Confusion Matrix)")
+    L.append("=" * 60)
+    cm = metrics["confusion_matrix"]
+    L.append(f"  True Positive  (TP): {cm['TP']}")
+    L.append(f"  True Negative  (TN): {cm['TN']}")
+    L.append(f"  False Positive (FP): {cm['FP']}")
+    L.append(f"  False Negative (FN): {cm['FN']}")
+    L.append(f"  المجموع: {cm['Total']}")
+    L.append("")
+    L.append("=" * 60)
+    L.append("مقاييس الدقة")
+    L.append("=" * 60)
+    L.append(f"  Accuracy:            {metrics['accuracy']} %")
+    L.append(f"  Precision:           {metrics['precision']} %")
+    L.append(f"  Recall (Sensitivity):{metrics['recall']} %")
+    L.append(f"  Specificity:         {metrics['specificity']} %")
+    L.append(f"  F1-Score:            {metrics['f1_score']} %")
+    L.append(f"  NPV:                 {metrics['npv']} %")
+    L.append(f"  Balanced Accuracy:   {metrics['balanced_accuracy']} %")
+    L.append(f"  Cohen's Kappa:       {metrics['kappa']}")
+    L.append(f"  MCC:                 {metrics['mcc']}")
+    L.append(f"  Youden's J:          {metrics['youden_j']}")
+    L.append("")
+    L.append("=" * 60)
+    L.append("تفسير Cohen's Kappa")
+    L.append("=" * 60)
+    k = metrics["kappa"]
+    if k < 0: interp = "أسوأ من الصدفة"
+    elif k < 0.20: interp = "ضعيف جداً"
+    elif k < 0.40: interp = "ضعيف"
+    elif k < 0.60: interp = "متوسط"
+    elif k < 0.80: interp = "جيد"
+    else: interp = "ممتاز"
+    L.append(f"  التفسير: {interp}")
+    L.append("")
+    L.append("=" * 60)
+    return "\n".join(L)
+
+
+# ============================================================
+# ============ 2. وحدة DRASTIC-P (المؤشر المعدل للتعدين) ============
+# ============================================================
+def calculate_cyanide_risk_index(cyanide_water_mg_l, cyanide_soil_mg_kg,
+                                   distance_to_water_m, seepage_rate):
+    """
+    مؤشر مخاطر السيانيد الخاص (Cyanide Risk Index - CRI)
+    
+    Parameters:
+    -----------
+    cyanide_water_mg_l : float - تركيز CN في المياه (mg/L)
+    cyanide_soil_mg_kg : float - تركيز CN في التربة (mg/kg)
+    distance_to_water_m : float - المسافة إلى أقرب مصدر مياه (m)
+    seepage_rate : float - معدل التسرب (0-1)
+    
+    Returns:
+    --------
+    dict: CRI + التصنيف + التوصيات
+    """
+    # الحدود القياسية
+    CN_WATER_LIMIT = 0.07  # mg/L (WHO)
+    CN_SOIL_LIMIT = 10.0   # mg/kg
+    
+    # حساب النسب
+    w_ratio = cyanide_water_mg_l / CN_WATER_LIMIT
+    s_ratio = cyanide_soil_mg_kg / CN_SOIL_LIMIT
+    
+    # معامل المسافة (كلما زادت المسافة، قل الخطر)
+    distance_factor = max(0.1, min(1.0, 100.0 / max(1, distance_to_water_m)))
+    
+    # معامل التسرب
+    seepage_factor = max(0.1, min(1.0, seepage_rate))
+    
+    # CRI = (تركيز المياه × 0.5 + تركيز التربة × 0.3) × معامل المسافة × معامل التسرب
+    cri = (w_ratio * 0.5 + s_ratio * 0.3) * distance_factor * seepage_factor
+    
+    # التصنيف
+    if cri <= 0.5:
+        level, color, action = "منخفض", "green", "مراقبة روتينية"
+    elif cri <= 2.0:
+        level, color, action = "متوسط", "yellow", "مراقبة دورية"
+    elif cri <= 5.0:
+        level, color, action = "مرتفع", "orange", "تدخل عاجل"
+    else:
+        level, color, action = "مرتفع جدا", "red", "إيقاف فوري"
+    
+    return {
+        "cri": round(cri, 3),
+        "water_ratio": round(w_ratio, 2),
+        "soil_ratio": round(s_ratio, 2),
+        "distance_factor": round(distance_factor, 3),
+        "seepage_factor": round(seepage_factor, 3),
+        "level": level, "color": color, "action": action
+    }
+
+
+def calculate_mercury_risk_index(hg_water_mg_l, hg_soil_mg_kg,
+                                  bioaccumulation_factor=1.5,
+                                  water_use="drinking"):
+    """
+    مؤشر مخاطر الزئبق (Mercury Risk Index - MRI)
+    
+    Parameters:
+    -----------
+    hg_water_mg_l : float - تركيز Hg في المياه
+    hg_soil_mg_kg : float - تركيز Hg في التربة
+    bioaccumulation_factor : float - معامل التراكم الحيوي (1.0 - 3.0)
+    water_use : str - استخدام المياه: "drinking", "irrigation", "industrial"
+    """
+    # الحدود حسب الاستخدام
+    limits = {
+        "drinking": {"water": 0.006, "soil": 1.0},
+        "irrigation": {"water": 0.001, "soil": 1.0},
+        "industrial": {"water": 0.05, "soil": 5.0}
+    }
+    limit = limits.get(water_use, limits["drinking"])
+    
+    w_ratio = hg_water_mg_l / limit["water"]
+    s_ratio = hg_soil_mg_kg / limit["soil"]
+    
+    # MRI مع معامل التراكم الحيوي
+    mri = (w_ratio * 0.6 + s_ratio * 0.4) * bioaccumulation_factor
+    
+    if mri <= 0.5:
+        level, color, action = "منخفض", "green", "مراقبة روتينية"
+    elif mri <= 2.0:
+        level, color, action = "متوسط", "yellow", "مراقبة دورية"
+    elif mri <= 5.0:
+        level, color, action = "مرتفع", "orange", "تدخل عاجل"
+    else:
+        level, color, action = "مرتفع جدا", "red", "إيقاف فوري"
+    
+    return {
+        "mri": round(mri, 3),
+        "water_ratio": round(w_ratio, 2),
+        "soil_ratio": round(s_ratio, 2),
+        "bioaccumulation_factor": bioaccumulation_factor,
+        "water_use": water_use,
+        "level": level, "color": color, "action": action
+    }
+
+
+def calculate_modified_drastic(base_drastic, cri=0, mri=0, amd_risk=0):
+    """
+    DRASTIC-P المعدل: يدمج DRASTIC مع مؤشرات التعدين
+    
+    DRASTIC-Modified = DRASTIC × (1 + α×CRI + β×MRI + γ×AMD)
+    
+    Parameters:
+    -----------
+    base_drastic : float - مؤشر DRASTIC الأساسي (0-230)
+    cri : float - مؤشر مخاطر السيانيد
+    mri : float - مؤشر مخاطر الزئبق
+    amd_risk : float - مخاطر الصرف الحمضي للمناجم (0-1)
+    """
+    alpha, beta, gamma = 0.15, 0.20, 0.10  # أوزان
+    
+    # معامل التعديل
+    modifier = 1.0 + (alpha * cri) + (beta * mri) + (gamma * amd_risk)
+    
+    # المؤشر المعدل (يُطبق على 230 ليبقى في نفس النطاق)
+    modified = min(230, base_drastic * modifier)
+    
+    # نسبة الزيادة
+    increase_pct = ((modified - base_drastic) / base_drastic * 100) if base_drastic > 0 else 0
+    
+    # التصنيف
+    if modified >= 180:
+        level, color = "مرتفع جدا", "red"
+    elif modified >= 140:
+        level, color = "مرتفع", "orange"
+    elif modified >= 100:
+        level, color = "متوسط", "yellow"
+    else:
+        level, color = "منخفض", "green"
+    
+    return {
+        "base_drastic": base_drastic,
+        "modified_drastic": round(modified, 1),
+        "modifier_factor": round(modifier, 3),
+        "increase_pct": round(increase_pct, 1),
+        "cri": cri, "mri": mri, "amd_risk": amd_risk,
+        "level": level, "color": color
+    }
+
+
+# ============================================================
+# ============ 3. وحدة التقييم الديناميكي (Dynamic) ============
+# ============================================================
+def project_drastic_change(base_index, years=10,
+                            mining_expansion_rate=0.05,
+                            climate_change_effect=-0.02,
+                            population_growth=0.03):
+    """
+    توقع تغير مؤشر DRASTIC مع الزمن
+    
+    Parameters:
+    -----------
+    base_index : float - المؤشر الأساسي
+    years : int - عدد سنوات التوقع
+    mining_expansion_rate : float - معدل توسع التعدين السنوي
+    climate_change_effect : float - تأثير التغير المناخي (سالب = جفاف)
+    population_growth : float - معدل النمو السكاني
+    
+    Returns:
+    --------
+    dict: القيم المتوقعة لكل سنة
+    """
+    projections = []
+    current = base_index
+    
+    for year in range(years + 1):
+        if year == 0:
+            projections.append({
+                "السنة": 0,
+                "المؤشر": round(current, 1),
+                "الزيادة_المئوية": 0
+            })
+            continue
+        
+        # معامل التعدين (يزيد الخطر)
+        mining_factor = 1 + (mining_expansion_rate * year)
+        
+        # معامل المناخ (جفاف يزيد التلوث - يقلل التخفيف)
+        climate_factor = 1 + (climate_change_effect * year)
+        
+        # معامل السكان (يزيد الطلب على المياه = يزيد الخطر)
+        pop_factor = 1 + (population_growth * year * 0.5)
+        
+        # المؤشر الجديد
+        new_idx = base_index * mining_factor * climate_factor * pop_factor
+        new_idx = min(230, new_idx)  # الحد الأقصى
+        
+        increase_pct = ((new_idx - base_index) / base_index * 100) if base_index > 0 else 0
+        
+        projections.append({
+            "السنة": year,
+            "المؤشر": round(new_idx, 1),
+            "الزيادة_المئوية": round(increase_pct, 1)
+        })
+    
+    return {
+        "base_index": base_index,
+        "years": years,
+        "projections": projections,
+        "final_index": projections[-1]["المؤشر"],
+        "total_increase_pct": projections[-1]["الزيادة_المئوية"]
+    }
+
+
+def estimate_mitigation_impact(base_index, years=10,
+                                mitigation_year=3,
+                                hdpe=True, treatment=True, monitoring=True):
+    """
+    تقدير تأثير الحلول متعددة السنوات
+    
+    Parameters:
+    -----------
+    base_index : float - المؤشر الأساسي
+    years : int - عدد سنوات التوقع
+    mitigation_year : int - السنة التي يبدأ فيها التخفيف
+    """
+    scenarios = []
+    
+    for year in range(years + 1):
+        # بدون تخفيف
+        mining_factor = 1 + (0.05 * year)
+        climate_factor = 1 + (-0.02 * year)
+        no_mitigation = min(230, base_index * mining_factor * climate_factor)
+        
+        # مع التخفيف
+        if year >= mitigation_year:
+            years_of_mitigation = year - mitigation_year + 1
+            # كل سنة تخفيف تزيد التأثير
+            mitigation_effect = 1 - (0.15 * min(years_of_mitigation, 5))
+            mitigation_effect = max(0.3, mitigation_effect)
+        else:
+            mitigation_effect = 1.0
+        
+        with_mitigation = min(230, base_index * mining_factor *
+                              climate_factor * mitigation_effect)
+        
+        scenarios.append({
+            "السنة": year,
+            "بدون تخفيف": round(no_mitigation, 1),
+            "مع تخفيف": round(with_mitigation, 1),
+            "الفرق": round(no_mitigation - with_mitigation, 1),
+            "التخفيض %": round((no_mitigation - with_mitigation) /
+                              no_mitigation * 100, 1)
+                          if no_mitigation > 0 else 0
+        })
+    
+    return pd.DataFrame(scenarios)
+
+
+def calculate_dynamic_risk(base_index, years, mining_rate,
+                            climate_effect, pop_growth,
+                            base_cri=0, base_mri=0):
+    """
+    التقييم الديناميكي الشامل (DRASTIC + CRIs)
+    """
+    # DRASTIC الديناميكي
+    drastic_proj = project_drastic_change(
+        base_index, years, mining_rate, climate_effect, pop_growth)
+    
+    # CRIs الديناميكية (تزيد مع التعدين)
+    cri_projections = []
+    for year in range(years + 1):
+        cri_factor = 1 + (mining_rate * year * 2)  # CRI يزيد بسرعة
+        cri_projections.append(base_cri * cri_factor)
+    
+    mri_projections = []
+    for year in range(years + 1):
+        mri_factor = 1 + (mining_rate * year * 1.5)
+        mri_projections.append(base_mri * mri_factor)
+    
+    # التقييم الشامل
+    combined = []
+    for i, proj in enumerate(drastic_proj["projections"]):
+        year = proj["السنة"]
+        drastic_val = proj["المؤشر"]
+        cri_val = cri_projections[i]
+        mri_val = mri_projections[i]
+        
+        # DRASTIC المعدل
+        modified = calculate_modified_drastic(
+            drastic_val, cri_val, mri_val, amd_risk=min(1.0, 0.1 * year))
+        
+        combined.append({
+            "السنة": year,
+            "DRASTIC": drastic_val,
+            "CRI": round(cri_val, 2),
+            "MRI": round(mri_val, 2),
+            "DRASTIC-Modified": modified["modified_drastic"],
+            "المستوى": modified["level"],
+            "اللون": modified["color"]
+        })
+    
+    return {
+        "drastic_projection": drastic_proj,
+        "combined": pd.DataFrame(combined),
+        "final_modified": combined[-1]["DRASTIC-Modified"],
+        "final_level": combined[-1]["المستوى"]
+    }
+
+
+def generate_dynamic_report(dynamic_result, years):
+    """تقرير التقييم الديناميكي"""
+    L = ["=" * 60, "تقرير التقييم الديناميكي (Dynamic Assessment)",
+         "نظام التعدين السوداني", "=" * 60, ""]
+    L.append("فترة التوقع: " + str(years) + " سنوات")
+    L.append("")
+    L.append("=" * 60)
+    L.append("تطور المؤشر مع الزمن")
+    L.append("=" * 60)
+    L.append(f"{'السنة':<8} {'DRASTIC':<12} {'CRI':<8} {'MRI':<8} "
+             f"{'المعدل':<10} {'المستوى':<15}")
+    L.append("-" * 60)
+    
+    for _, row in dynamic_result["combined"].iterrows():
+        L.append(f"{int(row['السنة']):<8} {row['DRASTIC']:<12} "
+                 f"{row['CRI']:<8} {row['MRI']:<8} "
+                 f"{row['DRASTIC-Modified']:<10} {row['المستوى']:<15}")
+    
+    L.append("")
+    L.append("=" * 60)
+    L.append(f"المؤشر النهائي (السنة {years}): "
+             f"{dynamic_result['final_modified']}")
+    L.append(f"المستوى النهائي: {dynamic_result['final_level']}")
+    L.append("=" * 60)
+    return "\n".join(L)
