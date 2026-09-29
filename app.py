@@ -1,4 +1,4 @@
-"""نظام التعدين السوداني v35.0 - النسخة الكاملة النهائية"""
+"""نظام التعدين السوداني v36.0 - النسخة الكاملة مع التصحيحات الفنية"""
 import streamlit as st
 import folium
 from streamlit_folium import st_folium
@@ -6,7 +6,7 @@ import pandas as pd
 import datetime
 import requests
 import json
-import random as _rnd
+import numpy as np
 from datetime import timedelta
 
 # ============ استيراد PIL ============
@@ -32,17 +32,11 @@ if PIL_OK:
             }
         )
     except Exception:
-        st.set_page_config(
-            page_title="نظام التعدين السوداني",
-            page_icon="⛏️",
-            layout="wide",
-        )
+        st.set_page_config(page_title="نظام التعدين السوداني",
+                           page_icon="⛏️", layout="wide")
 else:
-    st.set_page_config(
-        page_title="نظام التعدين السوداني",
-        page_icon="⛏️",
-        layout="wide",
-    )
+    st.set_page_config(page_title="نظام التعدين السوداني",
+                       page_icon="⛏️", layout="wide")
 
 # ============ CSS مخصص ============
 st.markdown("""
@@ -50,10 +44,7 @@ st.markdown("""
     html, body, [class*="css"] {
         font-family: 'Segoe UI', 'Tahoma', 'Arial', sans-serif;
     }
-    .stButton > button {
-        border-radius: 8px;
-        font-weight: bold;
-    }
+    .stButton > button { border-radius: 8px; font-weight: bold; }
     .stTabs [data-baseweb="tab-list"] { gap: 4px; }
     .stTabs [data-baseweb="tab"] {
         border-radius: 8px 8px 0 0;
@@ -82,14 +73,6 @@ st.markdown("""
     }
     .header-title { font-size: 1.8em; font-weight: bold; margin: 0; }
     .header-subtitle { font-size: 1.0em; opacity: 0.9; margin: 5px 0 0 0; }
-    .legend-box {
-        background: #ffffff;
-        border: 2px solid #c19a6b;
-        border-radius: 8px;
-        padding: 12px;
-        margin: 5px 0;
-        font-size: 0.95em;
-    }
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     @media print {
@@ -109,9 +92,12 @@ except ImportError:
     DS_OK = False
 
 
-# ============ DRASTIC ============
+# ============================================================
+# ============ DRASTIC RATING FUNCTIONS ============
+# ============================================================
 def get_d_rating(d):
-    if d < 0: raise ValueError("Neg")
+    """Depth to water table (m) -> rating"""
+    if d < 0: raise ValueError("Depth must be >= 0")
     if d <= 1.5: return 10
     if d <= 4.6: return 9
     if d <= 9.1: return 7
@@ -121,7 +107,8 @@ def get_d_rating(d):
     return 1
 
 def get_r_rating(r):
-    if r < 0: raise ValueError("Neg")
+    """Net recharge (mm/year) -> rating"""
+    if r < 0: raise ValueError("Recharge must be >= 0")
     if r <= 50.8: return 1
     if r <= 101.6: return 3
     if r <= 177.8: return 6
@@ -129,19 +116,22 @@ def get_r_rating(r):
     return 9
 
 def get_a_rating(a):
+    """Aquifer media -> rating"""
     return {"massive_shale": 2, "metamorphic_igneous": 3,
         "weathered_metamorphic_igneous": 4, "thin_bedded_sequences": 6,
         "massive_sandstone": 6, "massive_limestone": 6,
         "sand_and_gravel": 8, "basalt": 9, "karst_limestone": 10}.get(a, 6)
 
 def get_s_rating(s):
+    """Soil media -> rating"""
     return {"thin_or_absent": 10, "gravel": 10, "sand": 9, "peat": 8,
         "shrinking_aggregated_clay": 7, "sandy_loam": 6, "loam": 5,
         "silty_loam": 4, "clay_loam": 3, "muck": 2,
         "nonshrinking_clay": 1}.get(s, 5)
 
 def get_t_rating(t):
-    if t < 0: raise ValueError("Neg")
+    """Topography (slope %) -> rating"""
+    if t < 0: raise ValueError("Slope must be >= 0")
     if t <= 2.0: return 10
     if t <= 6.0: return 9
     if t <= 12.0: return 5
@@ -149,13 +139,15 @@ def get_t_rating(t):
     return 1
 
 def get_i_rating(i):
+    """Impact of vadose zone -> rating"""
     return {"confining_layer": 1, "silt_clay": 1, "shale": 3,
         "metamorphic_igneous": 4, "limestone": 6, "sandstone": 6,
         "sand_gravel_silt_clay": 6, "sand_gravel": 8,
         "basalt": 9, "karst_limestone": 10}.get(i, 6)
 
 def get_c_rating(c):
-    if c < 0: raise ValueError("Neg")
+    """Hydraulic conductivity (m/day) -> rating"""
+    if c < 0: raise ValueError("Conductivity must be >= 0")
     if c <= 4.074: return 1
     if c <= 12.222: return 2
     if c <= 28.518: return 4
@@ -164,24 +156,58 @@ def get_c_rating(c):
     return 10
 
 def calc_index(D, R, A, S, T, I, C):
+    """DRASTIC index = sum(rating * weight)"""
     return (D*5) + (R*4) + (A*3) + (S*2) + (T*1) + (I*5) + (C*3)
 
 def classify(idx):
+    """Classify DRASTIC index"""
     if idx >= 180: return {"level": "مرتفع جدا", "color": "red", "action": "معالجة فورية"}
     if idx >= 140: return {"level": "مرتفع", "color": "orange", "action": "مراقبة عاجلة"}
     if idx >= 100: return {"level": "متوسط", "color": "yellow", "action": "مراقبة دورية"}
     return {"level": "منخفض", "color": "green", "action": "مراقبة روتينية"}
 
-def calc_travel(d, p, k, g=1.0):
-    if d <= 0: raise ValueError("D>0")
-    if not (0.01 < p < 0.60): raise ValueError("Porosity")
-    if k <= 0: raise ValueError("K>0")
-    v = (k * g) / p
+
+# ============================================================
+# ============ تصحيح 1: calc_travel مع التدرج الهيدروليكي ============
+# ============================================================
+def calc_travel(d, p, k, i=0.01):
+    """
+    حساب زمن وصول الملوثات باستخدام قانون دارسي
+    
+    Parameters:
+    -----------
+    d : float - عمق المياه الجوفية (m)
+    p : float - المسامية الفعالة (0.01 - 0.60)
+    k : float - التوصيلية الهيدروليكية (m/day)
+    i : float - التدرج الهيدروليكي (Hydraulic Gradient) - dimensionless
+              القيم النموذجية: 0.001 - 0.05 (0.01 افتراضي)
+    
+    Returns:
+    --------
+    dict: days, years, velocity (m/day)
+    
+    Formula:
+    --------
+    v = K * i / n     (Darcy velocity)
+    time = d / v
+    """
+    if d <= 0: raise ValueError("Depth must be > 0")
+    if not (0.01 < p < 0.60): raise ValueError("Porosity must be between 0.01 and 0.60")
+    if k <= 0: raise ValueError("Conductivity must be > 0")
+    if not (0.0001 <= i <= 0.5): raise ValueError("Hydraulic gradient must be between 0.0001 and 0.5")
+    
+    v = (k * i) / p  # Darcy velocity (m/day)
     days = d / v
-    return {"days": round(days, 2), "years": round(days / 365.25, 3),
-            "velocity": round(v, 6)}
+    return {
+        "days": round(days, 2),
+        "years": round(days / 365.25, 3),
+        "velocity": round(v, 6),
+        "gradient": i
+    }
+
 
 def mitigate(idx, hdpe=False, treat=False, mon=False):
+    """تخفيف المؤشر بناءً على الحلول المطبقة"""
     m = float(idx)
     if hdpe: m *= 0.40
     if treat: m *= 0.60
@@ -194,55 +220,245 @@ def mitigate(idx, hdpe=False, treat=False, mon=False):
     return {"mitigated_index": round(m, 1),
             "reduction_pct": round(red, 1), "methods": methods}
 
-def sensitivity_analysis(D, R, A, S, T, I, C, variation=0.10):
-    base = calc_index(D, R, A, S, T, I, C)
-    bv = {"D": D, "R": R, "A": A, "S": S, "T": T, "I": I, "C": C}
-    res = {}
-    for p, v in bv.items():
-        nv = max(1, min(10, v * (1 + variation)))
-        md = dict(bv)
-        md[p] = nv
-        ni = calc_index(**md)
-        ch = ni - base
-        res[p] = {"original": v, "modified": round(nv, 2),
-                  "new_index": ni, "change": ch,
-                  "sensitivity": round(abs(ch) / base * 100, 3) if base > 0 else 0}
-    sr = dict(sorted(res.items(), key=lambda x: x[1]["sensitivity"], reverse=True))
-    return {"base_index": base, "variation": variation, "parameters": sr,
-            "most_sensitive": list(sr.keys())[0] if sr else None}
 
-def monte_carlo_analysis(D, R, A, S, T, I, C, n_iter=1000, variation=0.15):
-    base = calc_index(D, R, A, S, T, I, C)
-    bv = [D, R, A, S, T, I, C]
-    wt = [5, 4, 3, 2, 1, 5, 3]
-    results = []
-    for _ in range(n_iter):
-        total = 0
-        for v, w in zip(bv, wt):
-            nv = v * (1 + _rnd.uniform(-variation, variation))
-            nv = max(1, min(10, nv))
-            total += nv * w
-        results.append(round(total))
-    results.sort()
+# ============================================================
+# ============ تصحيح 2: sensitivity_analysis على القيم الفيزيائية ============
+# ============================================================
+def sensitivity_analysis(physical_values, variation=0.10):
+    """
+    تحليل الحساسية بتطبيق التغيير على القيم الفيزيائية الأصلية
+    
+    Parameters:
+    -----------
+    physical_values : dict
+        يحتوي على القيم الفيزيائية:
+        D (depth_m), R (recharge_mm), A (aquifer_name),
+        S (soil_name), T (slope_pct), I (vadose_name), C (conductivity)
+    variation : float - نسبة التغيير (0.10 = 10%)
+    
+    Returns:
+    --------
+    dict: base_index, parameters (sensitivity per parameter), most_sensitive
+    """
+    # استخراج القيم الفيزيائية
+    D_phys = float(physical_values.get("depth", 15.0))
+    R_phys = float(physical_values.get("recharge", 100.0))
+    A_phys = str(physical_values.get("aquifer", "massive_sandstone"))
+    S_phys = str(physical_values.get("soil", "sand"))
+    T_phys = float(physical_values.get("slope", 4.0))
+    I_phys = str(physical_values.get("vadose", "sand_gravel"))
+    C_phys = float(physical_values.get("conductivity", 5.0))
+    
+    # حساب المؤشر الأساسي
+    def compute_index(d, r, a, s, t, i, c):
+        return calc_index(
+            get_d_rating(d), get_r_rating(r), get_a_rating(a),
+            get_s_rating(s), get_t_rating(t), get_i_rating(i),
+            get_c_rating(c))
+    
+    base = compute_index(D_phys, R_phys, A_phys, S_phys, T_phys, I_phys, C_phys)
+    
+    # كل معامل: نغير قيمته الفيزيائية ثم نعيد حساب التصنيف
+    results = {}
+    
+    # D: تغيير فيزيائي
+    D_mod = max(0.5, min(100.0, D_phys * (1 + variation)))
+    new_idx = compute_index(D_mod, R_phys, A_phys, S_phys, T_phys, I_phys, C_phys)
+    results["D"] = {"original_phys": D_phys, "modified_phys": round(D_mod, 2),
+                    "original_rating": get_d_rating(D_phys),
+                    "new_rating": get_d_rating(D_mod),
+                    "new_index": new_idx, "change": new_idx - base,
+                    "sensitivity": round(abs(new_idx - base) / base * 100, 3)}
+    
+    # R: تغيير فيزيائي
+    R_mod = max(0.0, min(400.0, R_phys * (1 + variation)))
+    new_idx = compute_index(D_phys, R_mod, A_phys, S_phys, T_phys, I_phys, C_phys)
+    results["R"] = {"original_phys": R_phys, "modified_phys": round(R_mod, 2),
+                    "original_rating": get_r_rating(R_phys),
+                    "new_rating": get_r_rating(R_mod),
+                    "new_index": new_idx, "change": new_idx - base,
+                    "sensitivity": round(abs(new_idx - base) / base * 100, 3)}
+    
+    # A: قيمي - نغير التصنيف مباشرة ±1
+    A_orig_r = get_a_rating(A_phys)
+    A_new_r = max(1, min(10, A_orig_r + 1))
+    new_idx = base - A_orig_r * 3 + A_new_r * 3
+    results["A"] = {"original_phys": A_phys, "modified_phys": "rating +1",
+                    "original_rating": A_orig_r, "new_rating": A_new_r,
+                    "new_index": new_idx, "change": new_idx - base,
+                    "sensitivity": round(abs(new_idx - base) / base * 100, 3)}
+    
+    # S: قيمي
+    S_orig_r = get_s_rating(S_phys)
+    S_new_r = max(1, min(10, S_orig_r + 1))
+    new_idx = base - S_orig_r * 2 + S_new_r * 2
+    results["S"] = {"original_phys": S_phys, "modified_phys": "rating +1",
+                    "original_rating": S_orig_r, "new_rating": S_new_r,
+                    "new_index": new_idx, "change": new_idx - base,
+                    "sensitivity": round(abs(new_idx - base) / base * 100, 3)}
+    
+    # T: تغيير فيزيائي
+    T_mod = max(0.0, min(30.0, T_phys * (1 + variation)))
+    new_idx = compute_index(D_phys, R_phys, A_phys, S_phys, T_mod, I_phys, C_phys)
+    results["T"] = {"original_phys": T_phys, "modified_phys": round(T_mod, 2),
+                    "original_rating": get_t_rating(T_phys),
+                    "new_rating": get_t_rating(T_mod),
+                    "new_index": new_idx, "change": new_idx - base,
+                    "sensitivity": round(abs(new_idx - base) / base * 100, 3)}
+    
+    # I: قيمي
+    I_orig_r = get_i_rating(I_phys)
+    I_new_r = max(1, min(10, I_orig_r + 1))
+    new_idx = base - I_orig_r * 5 + I_new_r * 5
+    results["I"] = {"original_phys": I_phys, "modified_phys": "rating +1",
+                    "original_rating": I_orig_r, "new_rating": I_new_r,
+                    "new_index": new_idx, "change": new_idx - base,
+                    "sensitivity": round(abs(new_idx - base) / base * 100, 3)}
+    
+    # C: تغيير فيزيائي
+    C_mod = max(0.01, min(100.0, C_phys * (1 + variation)))
+    new_idx = compute_index(D_phys, R_phys, A_phys, S_phys, T_phys, I_phys, C_mod)
+    results["C"] = {"original_phys": C_phys, "modified_phys": round(C_mod, 2),
+                    "original_rating": get_c_rating(C_phys),
+                    "new_rating": get_c_rating(C_mod),
+                    "new_index": new_idx, "change": new_idx - base,
+                    "sensitivity": round(abs(new_idx - base) / base * 100, 3)}
+    
+    sorted_results = dict(sorted(results.items(),
+                                  key=lambda x: x[1]["sensitivity"], reverse=True))
+    return {"base_index": base, "variation": variation,
+            "parameters": sorted_results,
+            "most_sensitive": list(sorted_results.keys())[0] if sorted_results else None}
+
+
+# ============================================================
+# ============ تصحيح 3: Monte Carlo بـ numpy وتوزيعات واقعية ============
+# ============================================================
+def monte_carlo_analysis(physical_values, n_iter=1000, variation=0.15):
+    """
+    محاكاة Monte Carlo باستخدام numpy مع توزيعات احتمالية واقعية
+    
+    يستخدم:
+    - Log-Normal للـ K (التوصيلية الهيدروليكية) - توزيع شائع
+    - Normal للـ D, R, T
+    - Uniform للـ A, S, I (قيم قيمية)
+    
+    Parameters:
+    -----------
+    physical_values : dict - القيم الفيزيائية
+    n_iter : int - عدد المحاكاات
+    variation : float - معامل الاختلاف (Coefficient of Variation)
+    """
+    np.random.seed(42)  # للنتائج القابلة للتكرار
+    
+    # استخراج القيم
+    D = float(physical_values.get("depth", 15.0))
+    R = float(physical_values.get("recharge", 100.0))
+    A_name = str(physical_values.get("aquifer", "massive_sandstone"))
+    S_name = str(physical_values.get("soil", "sand"))
+    T = float(physical_values.get("slope", 4.0))
+    I_name = str(physical_values.get("vadose", "sand_gravel"))
+    C = float(physical_values.get("conductivity", 5.0))
+    
+    # تحويل القيم القيمية إلى تصنيفات
+    A_base = get_a_rating(A_name)
+    S_base = get_s_rating(S_name)
+    I_base = get_i_rating(I_name)
+    
+    # ===== توليد العينات =====
+    # D: Normal distribution
+    D_samples = np.random.normal(D, max(0.5, D * variation), n_iter)
+    D_samples = np.clip(D_samples, 0.5, 100.0)
+    
+    # R: Log-Normal (شائع للتغذية)
+    if R > 0:
+        R_samples = np.random.lognormal(np.log(max(1, R)) - 0.5 * variation**2,
+                                         variation, n_iter)
+        R_samples = np.clip(R_samples, 0.0, 400.0)
+    else:
+        R_samples = np.zeros(n_iter)
+    
+    # A, S, I: تصنيفات - نأخذ قيماً من التصنيفات المجاورة
+    A_ratings = [2, 3, 4, 6, 8, 9, 10]  # القيم المحتملة
+    S_ratings = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    I_ratings = [1, 3, 4, 6, 8, 9, 10]
+    
+    A_samples = np.random.choice(
+        [max(1, A_base - 1), A_base, min(10, A_base + 1)],
+        size=n_iter, p=[0.15, 0.70, 0.15])
+    S_samples = np.random.choice(
+        [max(1, S_base - 1), S_base, min(10, S_base + 1)],
+        size=n_iter, p=[0.15, 0.70, 0.15])
+    I_samples = np.random.choice(
+        [max(1, I_base - 1), I_base, min(10, I_base + 1)],
+        size=n_iter, p=[0.15, 0.70, 0.15])
+    
+    # T: Normal
+    T_samples = np.random.normal(T, max(0.5, T * variation), n_iter)
+    T_samples = np.clip(T_samples, 0.0, 30.0)
+    
+    # C: Log-Normal (K عادة log-normal)
+    C_samples = np.random.lognormal(np.log(max(0.01, C)) - 0.5 * variation**2,
+                                     variation, n_iter)
+    C_samples = np.clip(C_samples, 0.01, 100.0)
+    
+    # ===== حساب التصنيفات لكل عينة (باستخدام vectorization) =====
+    # D rating
+    D_ratings = np.select(
+        [D_samples <= 1.5, D_samples <= 4.6, D_samples <= 9.1,
+         D_samples <= 15.2, D_samples <= 22.9, D_samples <= 30.5],
+        [10, 9, 7, 5, 3, 2], default=1)
+    
+    # R rating
+    R_ratings = np.select(
+        [R_samples <= 50.8, R_samples <= 101.6, R_samples <= 177.8, R_samples <= 254.0],
+        [1, 3, 6, 8], default=9)
+    
+    # T rating
+    T_ratings = np.select(
+        [T_samples <= 2.0, T_samples <= 6.0, T_samples <= 12.0, T_samples <= 18.0],
+        [10, 9, 5, 3], default=1)
+    
+    # C rating
+    C_ratings = np.select(
+        [C_samples <= 4.074, C_samples <= 12.222, C_samples <= 28.518,
+         C_samples <= 40.740, C_samples <= 81.480],
+        [1, 2, 4, 6, 8], default=10)
+    
+    # ===== حساب DRASTIC لكل عينة =====
+    drastic_samples = (D_ratings * 5 + R_ratings * 4 + A_samples * 3 +
+                       S_samples * 2 + T_ratings * 1 + I_samples * 5 +
+                       C_ratings * 3)
+    
+    # ===== الإحصائيات =====
+    results = np.sort(drastic_samples.astype(int))
     n = len(results)
-    mean = sum(results) / n
-    var = sum((x - mean) ** 2 for x in results) / n
-    std = var ** 0.5
+    mean = float(np.mean(results))
+    std = float(np.std(results))
+    
     def pct(p):
-        i = max(0, min(n - 1, int((p / 100) * n)))
-        return results[i]
-    over_140 = sum(1 for x in results if x >= 140) / n * 100
-    over_180 = sum(1 for x in results if x >= 180) / n * 100
-    return {"base": base, "n": n, "mean": round(mean, 1),
-            "std": round(std, 2), "min": results[0], "max": results[-1],
-            "p5": pct(5), "p25": pct(25), "p50": pct(50),
-            "p75": pct(75), "p95": pct(95),
-            "ci_90": (pct(5), pct(95)), "ci_50": (pct(25), pct(75)),
-            "prob_over_140": round(over_140, 1),
-            "prob_over_180": round(over_180, 1)}
+        return int(np.percentile(results, p))
+    
+    over_140 = float(np.mean(results >= 140) * 100)
+    over_180 = float(np.mean(results >= 180) * 100)
+    
+    return {
+        "base": calc_index(get_d_rating(D), get_r_rating(R), A_base,
+                           S_base, get_t_rating(T), I_base, get_c_rating(C)),
+        "n": n, "mean": round(mean, 1), "std": round(std, 2),
+        "min": int(results[0]), "max": int(results[-1]),
+        "p5": pct(5), "p25": pct(25), "p50": pct(50),
+        "p75": pct(75), "p95": pct(95),
+        "ci_90": (pct(5), pct(95)), "ci_50": (pct(25), pct(75)),
+        "prob_over_140": round(over_140, 1),
+        "prob_over_180": round(over_180, 1),
+        "samples": results  # للرسم البياني
+    }
 
 
+# ============================================================
 # ============ Validation ============
+# ============================================================
 VALID_AQUIFERS = ["massive_shale", "metamorphic_igneous",
     "weathered_metamorphic_igneous", "thin_bedded_sequences",
     "massive_sandstone", "massive_limestone", "sand_and_gravel",
@@ -258,13 +474,16 @@ REQUIRED_COLS = ["depth_m", "recharge_mm", "slope_pct",
 
 
 def validate_single_input(depth, recharge, slope, conductivity,
-                          aquifer, soil, vadose):
+                          aquifer, soil, vadose, gradient=0.01):
+    """التحقق من صحة المدخلات الفردية"""
     errors = []
     warnings = []
-    if not (0.5 <= depth <= 100): errors.append("D خارج النطاق")
-    if not (0 <= recharge <= 400): errors.append("R خارج النطاق")
-    if not (0 <= slope <= 30): errors.append("T خارج النطاق")
-    if not (0.01 <= conductivity <= 100): errors.append("C خارج النطاق")
+    if not (0.5 <= depth <= 100): errors.append("D خارج النطاق (0.5-100)")
+    if not (0 <= recharge <= 400): errors.append("R خارج النطاق (0-400)")
+    if not (0 <= slope <= 30): errors.append("T خارج النطاق (0-30)")
+    if not (0.01 <= conductivity <= 100): errors.append("C خارج النطاق (0.01-100)")
+    if not (0.0001 <= gradient <= 0.5):
+        errors.append("i خارج النطاق (0.0001-0.5)")
     if aquifer not in VALID_AQUIFERS: warnings.append("A غير معروف")
     if soil not in VALID_SOILS: warnings.append("S غير معروف")
     if vadose not in VALID_VADOSE: warnings.append("I غير معروف")
@@ -272,6 +491,7 @@ def validate_single_input(depth, recharge, slope, conductivity,
 
 
 def validate_bulk_row(row, idx):
+    """التحقق من صف واحد في التقييم الجماعي"""
     errors = []
     warnings = []
     try:
@@ -303,6 +523,7 @@ def validate_bulk_row(row, idx):
 
 
 def generate_quality_report(df, results_df):
+    """تقرير جودة الملف"""
     L = ["=" * 60, "تقرير جودة الملف المُرفوع", "=" * 60, ""]
     L.append("عدد الصفوف: " + str(len(df)))
     L.append("عدد الأعمدة: " + str(len(df.columns)))
@@ -322,37 +543,67 @@ def generate_quality_report(df, results_df):
     return "\n".join(L)
 
 
-# ============ GIS ============
+# ============================================================
+# ============ تصحيح 4: DRASTIC للمواقع المدمجة بقيم مخصصة ============
+# ============================================================
 def get_preset_sites_with_drastic(preset):
+    """
+    حساب DRASTIC لكل موقع مدمج باستخدام القيم المخصصة لكل موقع
+    
+    إذا كانت القيم الفيزيائية (recharge, aquifer, soil, slope, vadose)
+    غير متوفرة في بيانات الموقع، يتم استخدام القيم الافتراضية.
+    """
     sites = []
     for name, data in preset.items():
         try:
             coords = data.get("coords", (0, 0))
-            depth_v = float(data.get("depth", 15))
-            cond_v = float(data.get("conductivity", 5))
-            D_r = get_d_rating(depth_v)
-            R_r = get_r_rating(150.0)
-            A_r = get_a_rating("massive_sandstone")
-            S_r = get_s_rating("sand")
-            T_r = get_t_rating(4.0)
-            I_r = get_i_rating("sand_gravel")
-            C_r = get_c_rating(cond_v)
+            
+            # استخراج القيم الفيزيائية (مع قيم افتراضية)
+            D_phys = float(data.get("depth", 15.0))
+            R_phys = float(data.get("recharge", 100.0))  # mm/year
+            A_phys = str(data.get("aquifer", "massive_sandstone"))
+            S_phys = str(data.get("soil", "sand"))
+            T_phys = float(data.get("slope", 4.0))
+            I_phys = str(data.get("vadose", "sand_gravel"))
+            C_phys = float(data.get("conductivity", 5.0))
+            
+            # حساب التصنيفات
+            D_r = get_d_rating(D_phys)
+            R_r = get_r_rating(R_phys)
+            A_r = get_a_rating(A_phys)
+            S_r = get_s_rating(S_phys)
+            T_r = get_t_rating(T_phys)
+            I_r = get_i_rating(I_phys)
+            C_r = get_c_rating(C_phys)
+            
             ix = calc_index(D_r, R_r, A_r, S_r, T_r, I_r, C_r)
             rk = classify(ix)
+            
             sites.append({
-                "name": str(name), "lat": float(coords[0]),
-                "lon": float(coords[1]), "index": ix,
+                "name": str(name),
+                "lat": float(coords[0]),
+                "lon": float(coords[1]),
+                "index": ix,
                 "level": rk["level"],
+                "color": rk["color"],
+                "depth": D_phys,
+                "recharge": R_phys,
+                "conductivity": C_phys,
                 "source": data.get("source", "غير محدد"),
-                "type": "preset"})
-        except Exception:
+                "type": "preset"
+            })
+        except Exception as e:
+            print(f"Error processing {name}: {e}")
             continue
     return sites
 
 
-# ============ Hg + CN ============
+# ============================================================
+# ============ Mercury + Cyanide Analysis ============
+# ============================================================
 def analyze_mercury(w, s):
-    wl, sl = 0.006, 1.0
+    """تحليل الزئبق - WHO 2022 limits"""
+    wl, sl = 0.006, 1.0  # mg/L for water, mg/kg for soil
     wr, sr = w / wl, s / sl
     mr = max(wr, sr)
     if mr <= 1.0: lvl = "منخفض"
@@ -366,6 +617,7 @@ def analyze_mercury(w, s):
             "toxicity_level": lvl, "max_ratio": round(mr, 2)}
 
 def analyze_cyanide(w, s):
+    """تحليل السيانيد - WHO 2022 limits"""
     wl, sl = 0.07, 10.0
     wr, sr = w / wl, s / sl
     mr = max(wr, sr)
@@ -380,6 +632,7 @@ def analyze_cyanide(w, s):
             "toxicity_level": lvl, "max_ratio": round(mr, 2)}
 
 def weighted_toxicity(hgw, hgs, cnw, cns):
+    """مؤشر سمية مرجح"""
     w = (hgw / 0.006 * 0.40) + (hgs / 1.0 * 0.20) + \
         (cnw / 0.07 * 0.30) + (cns / 10.0 * 0.10)
     if w <= 1.0: cat, act = "آمن", "لا يتطلب تدخل"
@@ -389,10 +642,14 @@ def weighted_toxicity(hgw, hgs, cnw, cns):
     return {"index": round(w, 2), "category": cat, "action": act}
 
 def generate_alerts(idx, hg=None, cn=None, tox=None):
+    """توليد التنبيهات"""
     al = []
-    if idx >= 180: al.append({"icon": "🔴", "msg": "DRASTIC " + str(idx), "act": "إيقاف النشاط"})
-    elif idx >= 140: al.append({"icon": "🟠", "msg": "DRASTIC " + str(idx), "act": "تدخل عاجل"})
-    elif idx >= 100: al.append({"icon": "🟡", "msg": "DRASTIC " + str(idx), "act": "مراقبة"})
+    if idx >= 180:
+        al.append({"icon": "🔴", "msg": "DRASTIC " + str(idx), "act": "إيقاف النشاط"})
+    elif idx >= 140:
+        al.append({"icon": "🟠", "msg": "DRASTIC " + str(idx), "act": "تدخل عاجل"})
+    elif idx >= 100:
+        al.append({"icon": "🟡", "msg": "DRASTIC " + str(idx), "act": "مراقبة"})
     if hg:
         if hg["water"]["status"] == "exceeded":
             al.append({"icon": "⚠️", "msg": "Hg مياه " + str(hg["water"]["ratio"]) + "x", "act": "تحذير"})
@@ -408,8 +665,11 @@ def generate_alerts(idx, hg=None, cn=None, tox=None):
     return al
 
 
-# ============ Satellite ============
+# ============================================================
+# ============ Satellite Data ============
+# ============================================================
 def get_rainfall(lat, lon, years=3):
+    """جلب بيانات الأمطار من Open-Meteo"""
     try:
         end = datetime.datetime.now().strftime('%Y-%m-%d')
         start = (datetime.datetime.now() - timedelta(days=365*years)).strftime('%Y-%m-%d')
@@ -425,6 +685,7 @@ def get_rainfall(lat, lon, years=3):
         return None
 
 def get_temperature(lat, lon, years=3):
+    """جلب بيانات الحرارة من Open-Meteo"""
     try:
         end = datetime.datetime.now().strftime('%Y-%m-%d')
         start = (datetime.datetime.now() - timedelta(days=365*years)).strftime('%Y-%m-%d')
@@ -440,6 +701,7 @@ def get_temperature(lat, lon, years=3):
         return None
 
 def classify_aridity(r):
+    """تصنيف المناخ حسب الأمطار"""
     if r is None: return "غير محدد"
     if r < 100: return "صحراوي"
     if r < 250: return "شبه جاف"
@@ -447,12 +709,14 @@ def classify_aridity(r):
     return "رطب"
 
 def estimate_recharge(r, soil="sand"):
+    """تقدير التغذية من الأمطار"""
     if r is None: return None
     ratios = {"sand": 0.20, "sandy_loam": 0.15, "loam": 0.12,
               "silty_loam": 0.10, "clay_loam": 0.07, "nonshrinking_clay": 0.04}
     return round(r * ratios.get(soil, 0.12), 1)
 
 def fetch_satellite(lat, lon, years=3):
+    """جلب البيانات الفضائية"""
     rain = get_rainfall(lat, lon, years)
     temp = get_temperature(lat, lon, years)
     return {"rainfall_mm": rain, "temperature_c": temp,
@@ -461,8 +725,11 @@ def fetch_satellite(lat, lon, years=3):
             "source": "ERA5 (ECMWF) via Open-Meteo"}
 
 
+# ============================================================
 # ============ History ============
+# ============================================================
 def save_to_history(site, coords, idx, level, values, travel, sat, tox):
+    """حفظ التقييم في التاريخ"""
     if "history" not in st.session_state:
         st.session_state["history"] = []
     st.session_state["history"].append({
@@ -478,31 +745,38 @@ def save_to_history(site, coords, idx, level, values, travel, sat, tox):
         "مؤشر السمية": tox.get("index", 0) if tox else 0})
 
 def get_history_df():
+    """الحصول على تاريخ التقييمات كـ DataFrame"""
     if "history" not in st.session_state or not st.session_state["history"]:
         return pd.DataFrame()
     return pd.DataFrame(st.session_state["history"])
 
 
+# ============================================================
 # ============ GIS Export ============
+# ============================================================
 def sites_to_geojson(sites):
+    """تحويل المواقع إلى GeoJSON"""
     features = []
     for s in sites:
         try:
-            features.append({"type": "Feature",
+            features.append({
+                "type": "Feature",
                 "geometry": {"type": "Point",
                     "coordinates": [float(s.get("lon", 0)), float(s.get("lat", 0))]},
-                "properties": {"name": str(s.get("name", "")),
-                    "index": int(s.get("index", 0)),
-                    "level": str(s.get("level", ""))}})
+                "properties": {
+                    "name": str(s.get("name", "")),
+                    "drastic_index": int(s.get("index", 0)),
+                    "risk_level": str(s.get("level", ""))}})
         except Exception:
             continue
     return json.dumps({"type": "FeatureCollection", "features": features},
                       ensure_ascii=False, indent=2)
 
 def sites_to_kml(sites):
+    """تحويل المواقع إلى KML"""
     kml = '<?xml version="1.0" encoding="UTF-8"?>\n'
     kml += '<kml xmlns="http://www.opengis.net/kml/2.2"><Document>\n'
-    kml += '<name>Sudan Mining System</name>\n'
+    kml += '<name>Sudan Mining System - DRASTIC Sites</name>\n'
     for s in sites:
         try:
             kml += '  <Placemark><name>' + str(s.get("name", "")) + '</name>\n'
@@ -517,7 +791,9 @@ def sites_to_kml(sites):
     return kml
 
 
-# ============ Templates ============
+# ============================================================
+# ============ Report Templates ============
+# ============================================================
 TEMPLATES = {
     "low": {"level": "منخفض", "range": "23-99",
         "assessment": "خطورة منخفضة. حماية جيدة.",
@@ -540,12 +816,14 @@ TEMPLATES = {
 }
 
 def get_tpl_key(idx):
+    """الحصول على مفتاح القالب حسب المؤشر"""
     if idx >= 180: return "very_high"
     if idx >= 140: return "high"
     if idx >= 100: return "moderate"
     return "low"
 
-def gen_report(site, coords, idx, values, travel=None, sat=None, tox=None):
+def gen_report(site, coords, idx, values, travel_data=None, sat=None, tox=None):
+    """توليد التقرير النصي"""
     key = get_tpl_key(idx)
     tpl = TEMPLATES[key]
     today = datetime.date.today()
@@ -565,8 +843,11 @@ def gen_report(site, coords, idx, values, travel=None, sat=None, tox=None):
          "T: " + str(values.get("slope", "N/A")),
          "I: " + str(values.get("vadose", "N/A")),
          "C: " + str(values.get("conductivity", "N/A")), ""]
-    if travel:
-        L.append("زمن الوصول: " + str(round(travel, 2)) + " سنة")
+    if travel_data:
+        if isinstance(travel_data, dict):
+            L.append("زمن الوصول: " + str(travel_data.get("years", 0)) + " سنة")
+        else:
+            L.append("زمن الوصول: " + str(round(travel_data, 2)) + " سنة")
         L.append("")
     if sat and sat.get("rainfall_mm"):
         L.append("بيانات الاقمار الصناعية:")
@@ -590,6 +871,7 @@ def gen_report(site, coords, idx, values, travel=None, sat=None, tox=None):
     return "\n".join(L)
 
 def gen_html(rep, site):
+    """توليد HTML للتقرير"""
     return ("<!DOCTYPE html><html dir='rtl' lang='ar'><head>"
          "<meta charset='UTF-8'><title>" + site + "</title>"
          "<style>body{font-family:Arial;direction:rtl;text-align:right;"
@@ -604,7 +886,9 @@ def gen_html(rep, site):
          "</body></html>")
 
 
+# ============================================================
 # ============ UI ============
+# ============================================================
 _col1, _col2, _col3 = st.columns([1, 2, 1])
 with _col2:
     if PIL_OK:
@@ -615,7 +899,7 @@ with _col2:
 
 st.markdown("""
 <div class="header-container">
-    <div class="header-title">⛏️ نظام التعدين السوداني</div>
+    <div class="header-title">⛏️ نظام التعدين السوداني v36.0</div>
     <div class="header-subtitle">جامعة الخرطوم - كلية الهندسة</div>
     <div class="header-subtitle">نظام تقييم هشاشة المياه الجوفية</div>
 </div>
@@ -626,7 +910,10 @@ if DS_OK:
     summary = get_data_summary()
 else:
     preset = {"موقع تجريبي": {"coords": (19.53, 33.32),
-              "depth": 15.0, "conductivity": 5.0, "source": "افتراضي"}}
+              "depth": 15.0, "conductivity": 5.0,
+              "recharge": 100.0, "aquifer": "massive_sandstone",
+              "soil": "sand", "slope": 4.0, "vadose": "sand_gravel",
+              "source": "افتراضي"}}
     summary = {"Total Data Points": 1}
 
 tabs = st.tabs(["📍 المدخلات", "📊 الجماعي", "🛡️ الحلول", "📄 التقرير",
@@ -634,7 +921,7 @@ tabs = st.tabs(["📍 المدخلات", "📊 الجماعي", "🛡️ الح�
                 "☠️ السمية", "📚 التاريخ", "🌍 GIS", "🎲 Monte Carlo"])
 
 
-# ============ TAB 1 ============
+# ============ TAB 1: المدخلات ============
 with tabs[0]:
     st.header("اختيار الموقع والمدخلات")
     site = st.selectbox("الموقع:", list(preset.keys()))
@@ -660,22 +947,47 @@ with tabs[0]:
                     str(estimate_recharge(s["rainfall_mm"])) + " مم/سنة")
 
     st.markdown("---")
-    st.subheader("المدخلات")
+    st.subheader("المدخلات الفيزيائية")
     c1, c2 = st.columns(2)
     with c1:
-        depth = st.slider("D (م):", 0.5, 100.0, float(sd["depth"]), 0.5)
-        recharge = st.slider("R (مم):", 0.0, 400.0, 150.0, 10.0)
-        slope = st.slider("T (%):", 0.0, 30.0, 4.0, 0.5)
-        conductivity = st.slider("C (م/يوم):", 0.01, 100.0,
-                                  float(sd["conductivity"]), 0.1)
+        depth = st.slider("D - عمق المياه (م):", 0.5, 100.0,
+                          float(sd.get("depth", 15.0)), 0.5)
+        recharge = st.slider("R - التغذية (مم/سنة):", 0.0, 400.0,
+                             float(sd.get("recharge", 150.0)), 10.0)
+        slope = st.slider("T - الميل (%):", 0.0, 30.0,
+                          float(sd.get("slope", 4.0)), 0.5)
+        conductivity = st.slider("C - التوصيلية (م/يوم):", 0.01, 100.0,
+                                  float(sd.get("conductivity", 5.0)), 0.1)
     with c2:
-        aquifer = st.selectbox("A:", VALID_AQUIFERS)
-        soil = st.selectbox("S:", VALID_SOILS)
-        vadose = st.selectbox("I:", VALID_VADOSE)
-        porosity = st.slider("θ:", 0.02, 0.55, 0.25, 0.01)
+        aquifer = st.selectbox("A - الوسط المائي:",
+            VALID_AQUIFERS,
+            index=VALID_AQUIFERS.index(sd.get("aquifer", "massive_sandstone"))
+                  if sd.get("aquifer") in VALID_AQUIFERS else 0)
+        soil = st.selectbox("S - التربة:",
+            VALID_SOILS,
+            index=VALID_SOILS.index(sd.get("soil", "sand"))
+                  if sd.get("soil") in VALID_SOILS else 0)
+        vadose = st.selectbox("I - نطاق التهوية:",
+            VALID_VADOSE,
+            index=VALID_VADOSE.index(sd.get("vadose", "sand_gravel"))
+                  if sd.get("vadose") in VALID_VADOSE else 0)
+        porosity = st.slider("θ - المسامية:", 0.02, 0.55, 0.25, 0.01)
+
+    st.markdown("---")
+    st.subheader("معاملات إضافية")
+    c1, c2 = st.columns(2)
+    with c1:
+        gradient = st.slider(
+            "i - التدرج الهيدروليكي:", 0.0001, 0.5, 0.01, 0.0001,
+            format="%.4f",
+            help="التدرج الهيدروليكي = فرق المناسيب / المسافة. "
+                 "قيم نموذجية: 0.001 - 0.05")
+    with c2:
+        st.caption("ℹ️ التدرج الهيدروليكي يُستخدم في معادلة Darcy "
+                   "لحساب سرعة تدفق المياه الجوفية.")
 
     errors, warnings = validate_single_input(
-        depth, recharge, slope, conductivity, aquifer, soil, vadose)
+        depth, recharge, slope, conductivity, aquifer, soil, vadose, gradient)
     if errors:
         for e in errors:
             st.error("❌ " + e)
@@ -693,22 +1005,28 @@ with tabs[0]:
         C_r = get_c_rating(conductivity)
         idx = calc_index(D_r, R_r, A_r, S_r, T_r, I_r, C_r)
         risk = classify(idx)
-        travel = calc_travel(depth, porosity, conductivity)
 
+        # حساب زمن الوصول بالمعادلة المصححة
+        travel = calc_travel(depth, porosity, conductivity, gradient)
+
+        # حفظ في session_state
         st.session_state["ci"] = idx
         st.session_state["cs"] = site
         st.session_state["cc"] = sd["coords"]
         st.session_state["cr"] = {"D": D_r, "R": R_r, "A": A_r,
             "S": S_r, "T": T_r, "I": I_r, "C": C_r}
-        st.session_state["cv"] = {"depth": depth, "recharge": recharge,
+        st.session_state["cv"] = {
+            "depth": depth, "recharge": recharge,
             "aquifer": aquifer, "soil": soil, "slope": slope,
-            "vadose": vadose, "conductivity": conductivity}
-        st.session_state["ct"] = travel["years"]
+            "vadose": vadose, "conductivity": conductivity,
+            "porosity": porosity, "gradient": gradient}
+        st.session_state["ct"] = travel
 
         st.markdown("---")
         st.header("النتائج: " + site)
         x1, x2, x3, x4 = st.columns(4)
-        x1.metric("D", D_r); x2.metric("R", R_r)
+        x1.metric("D", D_r, f"{depth} م")
+        x2.metric("R", R_r, f"{recharge} مم")
         x3.metric("A", A_r); x4.metric("S", S_r)
         y1, y2, y3, y4 = st.columns(4)
         y1.metric("T", T_r); y2.metric("I", I_r)
@@ -722,15 +1040,28 @@ with tabs[0]:
         elif risk["color"] == "yellow": st.info(risk["action"])
         else: st.success(risk["action"])
         st.markdown("---")
-        st.subheader("زمن وصول الملوثات")
-        w1, w2, w3 = st.columns(3)
+        st.subheader("زمن وصول الملوثات (قانون دارسي)")
+        w1, w2, w3, w4 = st.columns(4)
         w1.metric("سنوات", travel["years"])
         w2.metric("أيام", travel["days"])
-        w3.metric("السرعة", travel["velocity"])
+        w3.metric("السرعة (م/يوم)", travel["velocity"])
+        w4.metric("i", travel["gradient"])
+        with st.expander("ℹ️ كيف تم الحساب؟"):
+            st.markdown(f"""
+            **معادلة دارسي:**
+            $$v = \\frac{{K \\cdot i}}{{n}}$$
+            
+            - **K** (التوصيلية الهيدروليكية) = {conductivity} م/يوم
+            - **i** (التدرج الهيدروليكي) = {gradient}
+            - **n** (المسامية الفعالة) = {porosity}
+            - **v** (السرعة) = {travel['velocity']} م/يوم
+            - **زمن الوصول** = العمق / السرعة = {depth} / {travel['velocity']}
+              = {travel['days']} يوم = {travel['years']} سنة
+            """)
         st.markdown("---")
         if st.button("💾 حفظ في التاريخ", key="save_hist"):
             save_to_history(site, sd["coords"], idx, risk["level"],
-                            st.session_state["cv"], travel["years"],
+                            st.session_state["cv"], travel,
                             st.session_state.get("sat_data"),
                             st.session_state.get("tox_result"))
             st.success("✅ تم الحفظ")
@@ -738,21 +1069,23 @@ with tabs[0]:
         st.error("خطأ: " + str(e))
 
 
-# ============ TAB 2 ============
+# ============ TAB 2: التقييم الجماعي ============
 with tabs[1]:
     st.header("📊 التقييم الجماعي")
-    sample = pd.DataFrame({"name": ["A", "B"], "lat": [19.53, 18.12],
-        "lon": [33.32, 33.99], "depth_m": [15.0, 10.0],
-        "recharge_mm": [80.0, 120.0], "slope_pct": [4.0, 8.0],
-        "conductivity": [5.0, 10.0],
+    sample = pd.DataFrame({
+        "name": ["A", "B"],
+        "lat": [19.53, 18.12], "lon": [33.32, 33.99],
+        "depth_m": [15.0, 10.0], "recharge_mm": [80.0, 120.0],
+        "slope_pct": [4.0, 8.0], "conductivity": [5.0, 10.0],
         "aquifer": ["massive_sandstone", "sand_and_gravel"],
-        "soil": ["sand", "sandy_loam"], "vadose": ["sand_gravel", "sandstone"]})
+        "soil": ["sand", "sandy_loam"],
+        "vadose": ["sand_gravel", "sandstone"]})
     st.download_button("📥 تحميل نموذج CSV",
         data=sample.to_csv(index=False).encode("utf-8-sig"),
         file_name="template.csv", mime="text/csv")
 
     f = st.file_uploader("📤 ارفع ملف CSV أو Excel:",
-                          type=["csv", "xlsx"], key="bulk_v35")
+                          type=["csv", "xlsx"], key="bulk_v36")
     if f:
         try:
             df = pd.read_csv(f) if f.name.endswith(".csv") else pd.read_excel(f)
@@ -850,12 +1183,12 @@ with tabs[1]:
             elif qualities["متوسط"] > 0:
                 st.warning("⚠️ " + str(qualities["متوسط"]) + " صف متوسط")
             else:
-                st.success("✅ كل الصفوف ممتازة (دقة 98%)")
+                st.success("✅ كل الصفوف ممتازة")
         except Exception as e:
             st.error("خطأ: " + str(e))
 
 
-# ============ TAB 3 ============
+# ============ TAB 3: الحلول ============
 with tabs[2]:
     st.header("محاكي الحلول")
     if "ci" in st.session_state:
@@ -880,7 +1213,7 @@ with tabs[2]:
         st.warning("افتح تبويب المدخلات أولا")
 
 
-# ============ TAB 4 ============
+# ============ TAB 4: التقرير ============
 with tabs[3]:
     st.header("توليد التقرير")
     if "ci" in st.session_state:
@@ -916,42 +1249,33 @@ with tabs[3]:
         st.warning("افتح تبويب المدخلات أولا")
 
 
-# ============ TAB 5 — الخريطة الاحترافية ============
+# ============ TAB 5: الخريطة ============
 with tabs[4]:
     st.header("🗺️ الخريطة التفاعلية — وفق معايير US EPA و ESRI")
 
     if DS_OK:
-        # ===== لوحة التحكم =====
         st.markdown("### ⚙️ لوحة التحكم")
         col1, col2, col3, col4 = st.columns(4)
 
         with col1:
             show_wells = st.checkbox("🔵 آبار NARIS", value=True)
             show_darfur = st.checkbox("🟢 آبار دارفور", value=True)
-
         with col2:
             show_mining = st.checkbox("🔴 مواقع التعدين", value=True)
             show_khartoum = st.checkbox("🟣 محليات الخرطوم", value=True)
-
         with col3:
             show_buffers = st.checkbox("⭕ نطاقات التأثير", value=True)
             buffer_size = st.selectbox(
                 "حجم النطاق:",
-                ["500 م", "1000 م", "2000 م", "الكل"],
-                index=3,
-            )
-
+                ["500 م", "1000 م", "2000 م", "الكل"], index=3)
         with col4:
             base_map = st.selectbox(
                 "الخلفية:",
-                ["خريطة عادية", "أقمار صناعية", "تضاريس"],
-                index=0,
-            )
+                ["خريطة عادية", "أقمار صناعية", "تضاريس"], index=0)
             map_height = st.slider("ارتفاع الخريطة:", 400, 900, 700, 50)
 
         st.markdown("---")
 
-        # ===== الخريطة =====
         tiles_map = {
             "خريطة عادية": "OpenStreetMap",
             "أقمار صناعية": "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
@@ -963,15 +1287,11 @@ with tabs[4]:
             "تضاريس": "Esri Topo",
         }
 
-        m = folium.Map(
-            location=[15.5, 32.5],
-            zoom_start=6,
-            tiles=tiles_map[base_map],
-            attr=attr_map[base_map],
-            control_scale=True,
-        )
+        m = folium.Map(location=[15.5, 32.5], zoom_start=6,
+                       tiles=tiles_map[base_map], attr=attr_map[base_map],
+                       control_scale=True)
 
-        # ===== إضافة الطبقات =====
+        # طبقة NARIS
         if show_wells:
             for n, d in NARIS_WELLS.items():
                 folium.Marker(
@@ -979,67 +1299,91 @@ with tabs[4]:
                     popup=folium.Popup(
                         "<b>" + n + "</b><br>NARIS Well<br>"
                         "العمق: " + str(d.get("depth", "N/A")) + " م",
-                        max_width=250
-                    ),
+                        max_width=250),
                     tooltip=n,
                     icon=folium.Icon(color="blue", icon="tint", prefix="fa"),
                 ).add_to(m)
 
+        # طبقة دارفور
         if show_darfur:
             for n, d in DARFUR_WELLS.items():
                 folium.Marker(
                     [d["coords"][1], d["coords"][0]],
                     popup=folium.Popup(
                         "<b>" + n + "</b><br>Darfur Well (UNEP)",
-                        max_width=250
-                    ),
+                        max_width=250),
                     tooltip=n,
                     icon=folium.Icon(color="green", icon="tint", prefix="fa"),
                 ).add_to(m)
 
+        # ============================================================
+        # تصحيح 5: مواقع التعدين بألوان DRASTIC
+        # ============================================================
         if show_mining:
+            # حساب DRASTIC لكل موقع تعدين
+            mining_sites_with_drastic = []
             for n, d in KNOWN_MINING_SITES.items():
                 lat, lon = d["coords"][1], d["coords"][0]
-
+                
+                # استخراج القيم الفيزيائية (مع قيم افتراضية)
+                D_phys = float(d.get("depth", 15.0))
+                R_phys = float(d.get("recharge", 100.0))
+                A_phys = str(d.get("aquifer", "massive_sandstone"))
+                S_phys = str(d.get("soil", "sand"))
+                T_phys = float(d.get("slope", 4.0))
+                I_phys = str(d.get("vadose", "sand_gravel"))
+                C_phys = float(d.get("conductivity", 5.0))
+                
+                ix = calc_index(
+                    get_d_rating(D_phys), get_r_rating(R_phys),
+                    get_a_rating(A_phys), get_s_rating(S_phys),
+                    get_t_rating(T_phys), get_i_rating(I_phys),
+                    get_c_rating(C_phys))
+                rk = classify(ix)
+                
+                mining_sites_with_drastic.append({
+                    "name": n, "lat": lat, "lon": lon,
+                    "index": ix, "level": rk["level"], "color": rk["color"],
+                    "cyanide": d.get("cyanide_use", False),
+                    "mercury": d.get("mercury_use", False),
+                    "activity": d.get("activity", "N/A")})
+                
+                # نطاقات التأثير
                 if show_buffers:
                     if buffer_size in ["500 م", "الكل"]:
-                        folium.Circle(
-                            [lat, lon], radius=500,
+                        folium.Circle([lat, lon], radius=500,
                             color="red", weight=2, fill=True,
                             fill_opacity=0.20,
-                            popup="نطاق 500م — " + n,
-                        ).add_to(m)
-
+                            popup="نطاق 500م — " + n).add_to(m)
                     if buffer_size in ["1000 م", "الكل"]:
-                        folium.Circle(
-                            [lat, lon], radius=1000,
+                        folium.Circle([lat, lon], radius=1000,
                             color="orange", weight=1.5, fill=True,
                             fill_opacity=0.12,
-                            popup="نطاق 1000م — " + n,
-                        ).add_to(m)
-
+                            popup="نطاق 1000م — " + n).add_to(m)
                     if buffer_size in ["2000 م", "الكل"]:
-                        folium.Circle(
-                            [lat, lon], radius=2000,
+                        folium.Circle([lat, lon], radius=2000,
                             color="yellow", weight=1, fill=True,
                             fill_opacity=0.08,
-                            popup="نطاق 2000م — " + n,
-                        ).add_to(m)
-
-                col = "red" if d.get("cyanide_use") else "orange"
+                            popup="نطاق 2000م — " + n).add_to(m)
+                
+                # ===== لون العلامة حسب DRASTIC =====
+                # red > orange > yellow > green
                 folium.Marker(
                     [lat, lon],
                     popup=folium.Popup(
-                        "<b>" + n + "</b><br>"
-                        "النشاط: " + str(d.get("activity", "N/A")) + "<br>"
-                        "سيانيد: " + ("✅" if d.get("cyanide_use") else "❌") + "<br>"
-                        "زئبق: " + ("✅" if d.get("mercury_use") else "❌"),
-                        max_width=250
-                    ),
-                    tooltip=n,
-                    icon=folium.Icon(color=col, icon="exclamation-triangle", prefix="fa"),
+                        f"<b>{n}</b><br>"
+                        f"النشاط: {d.get('activity', 'N/A')}<br>"
+                        f"<span style='color:red;'>DRASTIC: {ix} - {rk['level']}</span><br>"
+                        f"سيانيد: {'✅' if d.get('cyanide_use') else '❌'}<br>"
+                        f"زئبق: {'✅' if d.get('mercury_use') else '❌'}",
+                        max_width=250),
+                    tooltip=f"{n} (DRASTIC: {ix})",
+                    icon=folium.Icon(
+                        color=rk["color"] if rk["color"] != "yellow" else "beige",
+                        icon="exclamation-triangle", prefix="fa"),
                 ).add_to(m)
 
+        # طبقة الخرطوم
         if show_khartoum:
             for n, d in KHARTOUM_LOCALITIES.items():
                 folium.CircleMarker(
@@ -1048,53 +1392,43 @@ with tabs[4]:
                     fill=True, fill_opacity=0.5,
                     popup="<b>" + n + "</b><br>عدد الآبار: " +
                           str(d.get("wells_sampled", "N/A")),
-                    tooltip=n,
-                ).add_to(m)
+                    tooltip=n).add_to(m)
 
-        # ===== Mouse Position فقط =====
+        # Mouse Position
         folium.plugins.MousePosition(
-            position="bottomright",
-            separator=" | ",
+            position="bottomright", separator=" | ",
             prefix="الإحداثيات:",
             lat_formatter="function(num) {return L.Util.formatNum(num, 4) + '°N';}",
             lng_formatter="function(num) {return L.Util.formatNum(num, 4) + '°E';}",
         ).add_to(m)
 
-        # ===== عرض الخريطة =====
-        st_folium(m, width=None, height=map_height, key="main_map_v35")
+        st_folium(m, width=None, height=map_height, key="main_map_v36")
 
-        # ===== Legend خارج الخريطة =====
         st.markdown("---")
         st.markdown("### 🗺️ دليل الخريطة")
-
         leg1, leg2, leg3, leg4 = st.columns(4)
-
         with leg1:
             st.markdown("""
             **العلامات:**
             - 🔵 آبار NARIS
             - 🟢 آبار دارفور
-            - 🔴 مواقع تعدين (سيانيد)
-            - 🟠 مواقع تعدين (زئبق)
             - 🟣 محليات الخرطوم
             """)
-
         with leg2:
+            st.markdown("""
+            **ألوان DRASTIC للتعدين:**
+            - 🟢 منخفض (< 100)
+            - 🟡 متوسط (100-139)
+            - 🟠 مرتفع (140-179)
+            - 🔴 مرتفع جدا (≥ 180)
+            """)
+        with leg3:
             st.markdown("""
             **نطاقات التأثير:**
             - 🔴 500 م — خطر مباشر
             - 🟠 1000 م — انتشار
             - 🟡 2000 م — تأثير عام
             """)
-
-        with leg3:
-            st.markdown("""
-            **الخلفية:**
-            - خريطة عادية
-            - أقمار صناعية
-            - تضاريس
-            """)
-
         with leg4:
             st.markdown("""
             **إرشادات:**
@@ -1103,21 +1437,18 @@ with tabs[4]:
             - الإحداثيات أسفل يمين
             """)
 
-        # ===== إحصائيات =====
         st.markdown("---")
         st.markdown("### 📊 إحصائيات الخريطة")
-
         s1, s2, s3, s4 = st.columns(4)
         s1.metric("آبار NARIS", len(NARIS_WELLS))
         s2.metric("آبار دارفور", len(DARFUR_WELLS))
         s3.metric("مواقع تعدين", len(KNOWN_MINING_SITES))
         s4.metric("محليات", len(KHARTOUM_LOCALITIES))
-
     else:
-        st.warning("⚠️ ملف data_sources.py غير متوفر — لا يمكن عرض الخريطة.")
+        st.warning("⚠️ ملف data_sources.py غير متوفر.")
 
 
-# ============ TAB 6 ============
+# ============ TAB 6: الدقة ============
 with tabs[5]:
     st.header("الدقة الإحصائية")
     sample = pd.DataFrame({"name": ["A", "B", "C", "D"],
@@ -1166,26 +1497,33 @@ with tabs[5]:
             st.error("خطأ: " + str(e))
 
 
-# ============ TAB 7 ============
+# ============ TAB 7: الحساسية ============
 with tabs[6]:
     st.header("تحليل الحساسية")
     if "ci" in st.session_state:
-        r = st.session_state["cr"]
         st.info("الموقع: " + st.session_state["cs"] +
                 " | المؤشر: " + str(st.session_state["ci"]))
         variation = st.slider("نسبة التغيير (%):", 5, 30, 10, 5) / 100.0
-        result = sensitivity_analysis(r["D"], r["R"], r["A"], r["S"],
-                                       r["T"], r["I"], r["C"], variation)
+
+        # استخدام القيم الفيزيائية
+        result = sensitivity_analysis(st.session_state["cv"], variation)
+
+        st.success("الأكثر تأثيراً: " + str(result["most_sensitive"]))
+        st.metric("المؤشر الأساسي", result["base_index"])
+
         for p in result["parameters"]:
             pdd = result["parameters"][p]
             wt = {"D": 5, "R": 4, "A": 3, "S": 2, "T": 1, "I": 5, "C": 3}[p]
             with st.expander(p + " — وزن " + str(wt) +
                              " (تأثير: " + str(pdd["sensitivity"]) + "%)"):
-                c1, c2, c3 = st.columns(3)
-                c1.metric("الأصلي", pdd["original"])
-                c2.metric("المعدل", pdd["modified"])
-                c3.metric("التغير", pdd["change"])
-        st.success("الأكثر تأثيراً: " + str(result["most_sensitive"]))
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("القيمة الأصلية", pdd["original_phys"])
+                c2.metric("القيمة المعدلة", pdd["modified_phys"])
+                c3.metric("التصنيف الأصلي", pdd["original_rating"])
+                c4.metric("التصنيف الجديد", pdd["new_rating"])
+                st.metric("المؤشر الجديد", pdd["new_index"],
+                          delta=str(pdd["change"]))
+
         chart = pd.DataFrame({
             "المعامل": list(result["parameters"].keys()),
             "الحساسية": [result["parameters"][p]["sensitivity"]
@@ -1195,7 +1533,7 @@ with tabs[6]:
         st.warning("افتح تبويب المدخلات أولا")
 
 
-# ============ TAB 8 ============
+# ============ TAB 8: المقارنة ============
 with tabs[7]:
     st.header("مقارنة موقعين")
     if DS_OK:
@@ -1204,28 +1542,35 @@ with tabs[7]:
             st.subheader("الأول")
             sa = st.selectbox("اختر:", list(preset.keys()), key="sa")
             sda = preset[sa]
-            da = st.slider("D:", 0.5, 100.0, float(sda["depth"]), 0.5, key="da")
-            ra = st.slider("R:", 0.0, 400.0, 150.0, 10.0, key="ra")
-            ta = st.slider("T:", 0.0, 30.0, 4.0, 0.5, key="ta")
-            ca = st.slider("C:", 0.01, 100.0, float(sda["conductivity"]), 0.1, key="ca")
+            da = st.slider("D:", 0.5, 100.0, float(sda.get("depth", 15.0)), 0.5, key="da")
+            ra = st.slider("R:", 0.0, 400.0, float(sda.get("recharge", 150.0)), 10.0, key="ra")
+            ta = st.slider("T:", 0.0, 30.0, float(sda.get("slope", 4.0)), 0.5, key="ta")
+            ca = st.slider("C:", 0.01, 100.0, float(sda.get("conductivity", 5.0)), 0.1, key="ca")
         with c2:
             st.subheader("الثاني")
             sb = st.selectbox("اختر:", list(preset.keys()), key="sb")
             sdb = preset[sb]
-            db_ = st.slider("D:", 0.5, 100.0, float(sdb["depth"]), 0.5, key="db")
-            rb = st.slider("R:", 0.0, 400.0, 150.0, 10.0, key="rb")
-            tb = st.slider("T:", 0.0, 30.0, 4.0, 0.5, key="tb")
-            cb = st.slider("C:", 0.01, 100.0, float(sdb["conductivity"]), 0.1, key="cb")
+            db_ = st.slider("D:", 0.5, 100.0, float(sdb.get("depth", 15.0)), 0.5, key="db")
+            rb = st.slider("R:", 0.0, 400.0, float(sdb.get("recharge", 150.0)), 10.0, key="rb")
+            tb = st.slider("T:", 0.0, 30.0, float(sdb.get("slope", 4.0)), 0.5, key="tb")
+            cb = st.slider("C:", 0.01, 100.0, float(sdb.get("conductivity", 5.0)), 0.1, key="cb")
+
+        A_name_a = sda.get("aquifer", "massive_sandstone")
+        S_name_a = sda.get("soil", "sand")
+        I_name_a = sda.get("vadose", "sand_gravel")
+        A_name_b = sdb.get("aquifer", "massive_sandstone")
+        S_name_b = sdb.get("soil", "sand")
+        I_name_b = sdb.get("vadose", "sand_gravel")
 
         Dra = get_d_rating(da); Rra = get_r_rating(ra)
-        Ara = get_a_rating("massive_sandstone"); Sra = get_s_rating("sand")
-        Tra = get_t_rating(ta); Ira = get_i_rating("sand_gravel")
+        Ara = get_a_rating(A_name_a); Sra = get_s_rating(S_name_a)
+        Tra = get_t_rating(ta); Ira = get_i_rating(I_name_a)
         Cra = get_c_rating(ca)
         idxa = calc_index(Dra, Rra, Ara, Sra, Tra, Ira, Cra)
 
         Drb = get_d_rating(db_); Rrb = get_r_rating(rb)
-        Arb = get_a_rating("massive_sandstone"); Srb = get_s_rating("sand")
-        Trb = get_t_rating(tb); Irb = get_i_rating("sand_gravel")
+        Arb = get_a_rating(A_name_b); Srb = get_s_rating(S_name_b)
+        Trb = get_t_rating(tb); Irb = get_i_rating(I_name_b)
         Crb = get_c_rating(cb)
         idxb = calc_index(Drb, Rrb, Arb, Srb, Trb, Irb, Crb)
 
@@ -1243,7 +1588,7 @@ with tabs[7]:
         st.warning("data_sources غير متوفر")
 
 
-# ============ TAB 9 ============
+# ============ TAB 9: السمية ============
 with tabs[8]:
     st.header("تحليل الزئبق والسيانيد")
     if "ci" in st.session_state:
@@ -1328,7 +1673,7 @@ with tabs[8]:
         st.warning("افتح تبويب المدخلات أولا")
 
 
-# ============ TAB 10 ============
+# ============ TAB 10: التاريخ ============
 with tabs[9]:
     st.header("📚 تاريخ التقييمات")
     df = get_history_df()
@@ -1354,13 +1699,13 @@ with tabs[9]:
             st.rerun()
 
 
-# ============ TAB 11 ============
+# ============ TAB 11: GIS ============
 with tabs[10]:
     st.header("🌍 تصدير GIS")
     source = st.radio("المصدر:",
                       ["المواقع المدمجة (تقييم محسوب)",
                        "سجل التقييمات"],
-                      key="gis_src_v35")
+                      key="gis_src_v36")
     sites = []
     if source == "المواقع المدمجة (تقييم محسوب)" and DS_OK:
         sites = get_preset_sites_with_drastic(preset)
@@ -1407,28 +1752,31 @@ with tabs[10]:
                 use_container_width=True)
 
 
-# ============ TAB 12 ============
+# ============ TAB 12: Monte Carlo ============
 with tabs[11]:
     st.header("🎲 محاكاة Monte Carlo")
     if "ci" in st.session_state:
-        r = st.session_state["cr"]
-        cs = st.session_state["cs"]
-        st.info("الموقع: " + cs + " | المؤشر الأساسي: " +
-                str(st.session_state["ci"]))
+        st.info("الموقع: " + st.session_state["cs"] +
+                " | المؤشر الأساسي: " + str(st.session_state["ci"]))
 
         st.markdown("---")
+        st.markdown("""
+        **ملاحظة فنية:** تستخدم المحاكاة توزيعات احتمالية واقعية:
+        - **Log-Normal**: للتوصيلية الهيدروليكية (K) والتغذية (R)
+        - **Normal**: للعمق (D) والميل (T)
+        - **Discrete**: للتصنيفات القيمية (A, S, I)
+        """)
+
         c1, c2 = st.columns(2)
         with c1:
             n_iter = st.slider("عدد المحاكاات:", 100, 5000, 1000, 100)
         with c2:
-            var_pct = st.slider("نسبة التغيير (%):", 5, 30, 15, 5)
+            var_pct = st.slider("معامل الاختلاف (%):", 5, 30, 15, 5)
 
         if st.button("تشغيل المحاكاة", type="primary", key="run_mc"):
             with st.spinner("جاري المحاكاة..."):
                 st.session_state["mc_result"] = monte_carlo_analysis(
-                    r["D"], r["R"], r["A"], r["S"],
-                    r["T"], r["I"], r["C"],
-                    n_iter, var_pct / 100.0)
+                    st.session_state["cv"], n_iter, var_pct / 100.0)
 
         if "mc_result" in st.session_state:
             mc = st.session_state["mc_result"]
@@ -1436,7 +1784,7 @@ with tabs[11]:
             st.subheader("النتائج")
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("المتوسط", mc["mean"])
-            c2.metric("الانحراف", mc["std"])
+            c2.metric("الانحراف المعياري", mc["std"])
             c3.metric("الأدنى", mc["min"])
             c4.metric("الأعلى", mc["max"])
 
@@ -1454,11 +1802,9 @@ with tabs[11]:
             st.subheader("احتمالات التجاوز")
             c1, c2 = st.columns(2)
             with c1:
-                st.metric("احتمال > 140",
-                          str(mc["prob_over_140"]) + " %")
+                st.metric("احتمال > 140", str(mc["prob_over_140"]) + " %")
             with c2:
-                st.metric("احتمال > 180",
-                          str(mc["prob_over_180"]) + " %")
+                st.metric("احتمال > 180", str(mc["prob_over_180"]) + " %")
 
             st.markdown("---")
             st.subheader("المئينات")
@@ -1468,6 +1814,20 @@ with tabs[11]:
                           mc["p75"], mc["p95"]]}).set_index("المئين")
             st.dataframe(pct_df)
             st.bar_chart(pct_df)
+
+            # رسم بياني للتوزيع
+            st.markdown("---")
+            st.subheader("التوزيع الاحتمالي")
+            try:
+                hist, edges = np.histogram(mc["samples"], bins=30)
+                hist_df = pd.DataFrame({
+                    "المؤشر": [int((edges[i] + edges[i+1]) / 2)
+                              for i in range(len(hist))],
+                    "التكرار": hist
+                }).set_index("المؤشر")
+                st.bar_chart(hist_df)
+            except Exception:
+                pass
 
             st.markdown("---")
             if mc["prob_over_140"] > 50:
@@ -1484,4 +1844,6 @@ with tabs[11]:
 
 
 st.markdown("---")
-st.caption("2026 جامعة الخرطوم - نظام التعدين السوداني v35.0")
+st.caption("2026 جامعة الخرطوم - نظام التعدين السوداني v36.0 - "
+           "مع تصحيحات فنية (Darcy velocity, numpy Monte Carlo, "
+           "physical sensitivity analysis)")
