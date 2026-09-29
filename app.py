@@ -1,4 +1,4 @@
-"""نظام التعدين السوداني v39.0 - الحل النهائي لمشكلة MODFLOW"""
+"""نظام التعدين السوداني v40.0 - النسخة النهائية المحسّنة"""
 import streamlit as st
 import subprocess
 import os
@@ -27,46 +27,126 @@ st.set_page_config(page_title="نظام التعدين السوداني",
                    page_icon="⛏️", layout="wide",
                    initial_sidebar_state="expanded")
 
+# ============================================================
+# ============ CSS المحسّن ============
+# ============================================================
 st.markdown("""
 <style>
     html, body, [class*="css"] {
         font-family: 'Segoe UI', 'Tahoma', 'Arial', sans-serif;
+        font-size: 15px;
     }
-    .stButton > button { border-radius: 8px; font-weight: bold; }
-    .stTabs [data-baseweb="tab-list"] { gap: 4px; }
+    .stButton > button {
+        border-radius: 8px;
+        font-weight: bold;
+        background: linear-gradient(135deg, #c19a6b 0%, #5c2c16 100%);
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        transition: all 0.3s ease;
+    }
+    .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(193, 154, 107, 0.4);
+    }
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 6px;
+        flex-wrap: wrap;
+    }
     .stTabs [data-baseweb="tab"] {
         border-radius: 8px 8px 0 0;
-        padding: 8px 12px;
-        font-size: 0.9em;
+        padding: 10px 16px;
+        font-size: 0.95em;
+        font-weight: 600;
+        background-color: #f5eedc;
+        border: 1px solid #e0d4b8;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #c19a6b !important;
+        color: white !important;
     }
     div[data-testid="stMetric"] {
-        background-color: #ffffff;
-        border: 1px solid #d4af37;
-        border-radius: 10px;
-        padding: 12px;
+        background: linear-gradient(135deg, #ffffff 0%, #f9f5ec 100%);
+        border: 2px solid #d4af37;
+        border-radius: 12px;
+        padding: 16px;
+        box-shadow: 0 3px 8px rgba(212, 175, 55, 0.15);
+        transition: all 0.3s ease;
+    }
+    div[data-testid="stMetric"]:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 6px 16px rgba(212, 175, 55, 0.3);
     }
     [data-testid="stSidebar"] {
         background-color: #f5eedc;
-        border-right: 2px solid #c19a6b;
+        border-right: 3px solid #c19a6b;
     }
     .header-container {
         background: linear-gradient(135deg, #5c2c16 0%, #c19a6b 100%);
-        padding: 20px;
-        border-radius: 12px;
-        margin-bottom: 20px;
+        padding: 24px;
+        border-radius: 16px;
+        margin-bottom: 24px;
         color: white;
         text-align: center;
+        box-shadow: 0 6px 20px rgba(92, 44, 22, 0.3);
     }
-    .header-title { font-size: 1.8em; font-weight: bold; margin: 0; }
-    .header-subtitle { font-size: 1.0em; opacity: 0.9; margin: 5px 0 0 0; }
+    .header-title {
+        font-size: 2.0em;
+        font-weight: bold;
+        margin: 0;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+    }
+    .header-subtitle {
+        font-size: 1.05em;
+        opacity: 0.95;
+        margin: 8px 0 0 0;
+    }
+    .stAlert {
+        border-radius: 10px;
+        border-left: 5px solid;
+    }
+    .stExpander {
+        border: 1px solid #e0d4b8;
+        border-radius: 10px;
+        background-color: #faf8f3;
+    }
+    .stProgress > div > div {
+        background: linear-gradient(90deg, #c19a6b 0%, #5c2c16 100%);
+    }
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
+
+    @media (max-width: 768px) {
+        .header-title { font-size: 1.4em !important; }
+        .header-subtitle { font-size: 0.85em !important; }
+        .header-container { padding: 16px !important; }
+        [data-testid="stHorizontalBlock"] {
+            flex-direction: column !important;
+        }
+        [data-testid="stHorizontalBlock"] > div {
+            width: 100% !important;
+            margin-bottom: 10px;
+        }
+        .stTabs [data-baseweb="tab"] {
+            padding: 6px 10px;
+            font-size: 0.8em;
+        }
+        div[data-testid="stMetric"] {
+            padding: 10px;
+        }
+        div[data-testid="stMetric"] label {
+            font-size: 0.8em !important;
+        }
+        div[data-testid="stMetric"] [data-testid="stMetricValue"] {
+            font-size: 1.2em !important;
+        }
+    }
 </style>
 """, unsafe_allow_html=True)
 
 
 # ============================================================
-# ============ الحل النهائي: تحميل MODFLOW 6 مباشرة ============
+# ============ تثبيت MODFLOW 6 تلقائياً ============
 # ============================================================
 MODFLOW_URL = "https://github.com/MODFLOW-ORG/modflow6/releases/download/6.4.4/mf6.4.4_linux.zip"
 MODFLOW_DIR = "/tmp/modflow6"
@@ -74,59 +154,34 @@ MODFLOW_DIR = "/tmp/modflow6"
 
 @st.cache_resource(show_spinner=False)
 def setup_modflow():
-    """
-    تحميل MODFLOW 6 مباشرة من GitHub إلى مجلد مؤقت
-    الحل النهائي الذي يعمل على Streamlit Cloud
-    """
     try:
         Path(MODFLOW_DIR).mkdir(parents=True, exist_ok=True)
         mf6_path = os.path.join(MODFLOW_DIR, "mf6")
-        
-        # إذا كان موجوداً مسبقاً
         if os.path.exists(mf6_path) and os.access(mf6_path, os.X_OK):
             os.environ["PATH"] = MODFLOW_DIR + os.pathsep + os.environ.get("PATH", "")
             return "already_installed"
-        
-        # تحميل الملف من GitHub
         with st.spinner("⏳ جاري تحميل MODFLOW 6..."):
             response = requests.get(MODFLOW_URL, timeout=180, stream=True)
             if response.status_code != 200:
                 return f"download_failed_{response.status_code}"
-            
-            # حفظ ZIP في الذاكرة
             zip_data = io.BytesIO(response.content)
-            
-            # فك الضغط
             with zipfile.ZipFile(zip_data, 'r') as zf:
-                # البحث عن ملف mf6 داخل ZIP
                 mf6_file = None
                 for name in zf.namelist():
                     if name.endswith("mf6") and not name.endswith("/"):
                         mf6_file = name
                         break
-                
                 if not mf6_file:
                     return "mf6_not_in_zip"
-                
-                # استخراج الملف
                 zf.extract(mf6_file, MODFLOW_DIR)
                 extracted_path = os.path.join(MODFLOW_DIR, mf6_file)
-                
-                # نقل الملف إلى المجلد الرئيسي
                 if extracted_path != mf6_path:
                     shutil.move(extracted_path, mf6_path)
-        
-        # إعطاء صلاحيات التنفيذ
         os.chmod(mf6_path, os.stat(mf6_path).st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
-        
-        # إضافة المجلد إلى PATH
         os.environ["PATH"] = MODFLOW_DIR + os.pathsep + os.environ.get("PATH", "")
-        
-        # التحقق
         if shutil.which("mf6"):
             return "installed"
         return "installed_but_not_in_path"
-        
     except requests.exceptions.Timeout:
         return "timeout"
     except requests.exceptions.ConnectionError:
@@ -135,10 +190,7 @@ def setup_modflow():
         return f"error: {str(e)[:100]}"
 
 
-# تشغيل الإعداد
 _modflow_status = setup_modflow()
-
-# إضافة مسار MODFLOW إلى PATH دائماً
 if os.path.exists(MODFLOW_DIR):
     os.environ["PATH"] = MODFLOW_DIR + os.pathsep + os.environ.get("PATH", "")
 
@@ -183,6 +235,56 @@ try:
     ADV_OK = True
 except ImportError:
     ADV_OK = False
+
+
+# ============================================================
+# ============ قواميس الترجمة العربية ============
+# ============================================================
+AQUIFER_AR = {
+    "massive_shale": "صخر طيني ضخم",
+    "metamorphic_igneous": "صخور متحولة/نارية",
+    "weathered_metamorphic_igneous": "صخور متحولة/نارية متآكلة",
+    "thin_bedded_sequences": "تتابعات رقيقة الطبقات",
+    "massive_sandstone": "حجر رملي ضخم",
+    "massive_limestone": "حجر جيري ضخم",
+    "sand_and_gravel": "رمل وحصى",
+    "basalt": "بازلت",
+    "karst_limestone": "حجر جيري كارستي"
+}
+
+SOIL_AR = {
+    "thin_or_absent": "رقيقة أو معدومة",
+    "gravel": "حصى",
+    "sand": "رمل",
+    "peat": "خث",
+    "shrinking_aggregated_clay": "طين متقلص متكتل",
+    "sandy_loam": "طين رملي",
+    "loam": "طين طميي",
+    "silty_loam": "طمي غريني",
+    "clay_loam": "طين غريني",
+    "muck": "طين عضوي",
+    "nonshrinking_clay": "طين غير متقلص"
+}
+
+VADOSE_AR = {
+    "confining_layer": "طبقة كتيمة",
+    "silt_clay": "غرين وطين",
+    "shale": "صخر طيني",
+    "metamorphic_igneous": "صخور متحولة/نارية",
+    "limestone": "حجر جيري",
+    "sandstone": "حجر رملي",
+    "sand_gravel_silt_clay": "رمل وحصى وغرين وطين",
+    "sand_gravel": "رمل وحصى",
+    "basalt": "بازلت",
+    "karst_limestone": "حجر جيري كارستي"
+}
+
+LEVEL_AR = {
+    "منخفض": "🟢 منخفض",
+    "متوسط": "🟡 متوسط",
+    "مرتفع": "🟠 مرتفع",
+    "مرتفع جدا": "🔴 مرتفع جداً"
+}
 
 
 # ============================================================
@@ -508,10 +610,10 @@ def gen_report(site, coords, idx, values, travel=None, sat=None, tox=None):
          f"مؤشر DRASTIC: {idx} / 230", f"المستوى: {tpl['level']}", "",
          f"D: {values.get('depth', 'N/A')}",
          f"R: {values.get('recharge', 'N/A')}",
-         f"A: {values.get('aquifer', 'N/A')}",
-         f"S: {values.get('soil', 'N/A')}",
+         f"A: {AQUIFER_AR.get(values.get('aquifer', ''), values.get('aquifer', 'N/A'))}",
+         f"S: {SOIL_AR.get(values.get('soil', ''), values.get('soil', 'N/A'))}",
          f"T: {values.get('slope', 'N/A')}",
-         f"I: {values.get('vadose', 'N/A')}",
+         f"I: {VADOSE_AR.get(values.get('vadose', ''), values.get('vadose', 'N/A'))}",
          f"C: {values.get('conductivity', 'N/A')}", ""]
     if travel and isinstance(travel, dict):
         L.append(f"زمن الوصول: {travel.get('years', 0)} سنة")
@@ -587,9 +689,18 @@ def create_safe_map(base_map, lat=15.5, lon=32.5, zoom=6):
 # ============================================================
 # ============ UI HEADER ============
 # ============================================================
+_col1, _col2, _col3 = st.columns([1, 3, 1])
+with _col2:
+    try:
+        st.image("logo.png", width=180)
+    except Exception:
+        st.markdown("""
+        <div style='text-align:center; font-size:4em;'>⛏️</div>
+        """, unsafe_allow_html=True)
+
 st.markdown("""
 <div class="header-container">
-    <div class="header-title">⛏️ نظام التعدين السوداني v39.0</div>
+    <div class="header-title">⛏️ نظام التعدين السوداني v40.0</div>
     <div class="header-subtitle">جامعة الخرطوم - كلية الهندسة</div>
     <div class="header-subtitle">DRASTIC + MODFLOW + DRASTIC-P + Dynamic + Validation</div>
 </div>
@@ -621,37 +732,60 @@ if MODFLOW_OK:
 mode = st.sidebar.radio("اختر الوضع:", mode_options, key="app_mode")
 st.sidebar.markdown("---")
 
-# عرض حالة MODFLOW
+# حالة MODFLOW
 st.sidebar.markdown("### 🔧 حالة النظام")
 if _modflow_status == "already_installed":
     st.sidebar.success("✅ MODFLOW مثبت مسبقاً")
 elif _modflow_status == "installed":
-    st.sidebar.success("✅ تم تثبيت MODFLOW الآن")
+    st.sidebar.success("✅ تم تثبيت MODFLOW")
 elif _modflow_status == "installed_but_not_in_path":
     st.sidebar.warning("⚠️ مثبت لكن ليس في PATH")
-elif _modflow_status == "timeout":
-    st.sidebar.error("❌ انتهت مهلة التحميل")
-elif _modflow_status == "connection_error":
-    st.sidebar.error("❌ خطأ في الاتصال")
-elif _modflow_status.startswith("download_failed"):
-    st.sidebar.error(f"❌ فشل التحميل: {_modflow_status}")
 else:
     st.sidebar.warning(f"⚠️ {_modflow_status}")
 
-# تشخيص الملفات
 with st.sidebar.expander("🔍 تشخيص الملفات"):
     st.write(f"data_sources: {'✅' if DS_OK else '❌'}")
     st.write(f"modflow_engine: {'✅' if MODFLOW_OK else '❌'}")
     st.write(f"hydro_data: {'✅' if HYDRO_OK else '❌'}")
     st.write(f"advanced_modules: {'✅' if ADV_OK else '❌'}")
-    # مسار MODFLOW
-    mf6_path = shutil.which("mf6") if shutil else None
-    st.write(f"mf6 path: {mf6_path or 'غير موجود'}")
+    mf6_path = shutil.which("mf6")
+    st.write(f"mf6: {mf6_path or 'غير موجود'}")
 
 if "ci" in st.session_state:
     st.sidebar.success(f"✅ مؤشر حالي: {st.session_state['ci']}")
 else:
-    st.sidebar.warning("⚠️ لم يتم حساب مؤشر بعد")
+    st.sidebar.warning("⚠️ لم يتم حساب مؤشر")
+
+# ===== حفظ/تحميل المشروع =====
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 💾 إدارة المشروع")
+
+if "cv" in st.session_state:
+    project_data = {
+        "site": st.session_state.get("cs", ""),
+        "coords": list(st.session_state.get("cc", (0, 0))),
+        "index": st.session_state.get("ci", 0),
+        "values": st.session_state.get("cv", {}),
+        "date": datetime.datetime.now().isoformat()
+    }
+    st.sidebar.download_button(
+        "💾 حفظ المشروع (JSON)",
+        data=json.dumps(project_data, ensure_ascii=False, indent=2),
+        file_name=f"project_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.json",
+        mime="application/json",
+        width="stretch")
+
+uploaded = st.sidebar.file_uploader("📂 تحميل مشروع", type=["json"])
+if uploaded:
+    try:
+        loaded = json.load(uploaded)
+        st.session_state["cs"] = loaded.get("site", "")
+        st.session_state["cc"] = tuple(loaded.get("coords", (0, 0)))
+        st.session_state["ci"] = loaded.get("index", 0)
+        st.session_state["cv"] = loaded.get("values", {})
+        st.sidebar.success("✅ تم التحميل")
+    except Exception as e:
+        st.sidebar.error(f"❌ {e}")
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 📚 المراجع")
@@ -668,13 +802,14 @@ if mode == "🏠 النظام الأساسي":
                     "🗺️ الخريطة", "📈 الحساسية", "☠️ السمية",
                     "📚 التاريخ", "🌍 GIS", "🎲 Monte Carlo"])
 
+    # ===== TAB 0: المدخلات =====
     with tabs[0]:
         st.header("اختيار الموقع والمدخلات")
         site = st.selectbox("الموقع:", list(preset.keys()))
         sd = preset[site]
 
         st.markdown("---")
-        st.subheader("بيانات الأقمار الصناعية")
+        st.subheader("🛰️ بيانات الأقمار الصناعية")
         if st.button("جلب البيانات", key="fetch_sat"):
             with st.spinner("جاري الجلب..."):
                 st.session_state["sat_data"] = fetch_satellite(
@@ -683,30 +818,50 @@ if mode == "🏠 النظام الأساسي":
             s = st.session_state["sat_data"]
             if s.get("rainfall_mm"):
                 c1, c2, c3, c4 = st.columns(4)
-                c1.metric("الأمطار", s["rainfall_mm"])
-                c2.metric("الحرارة", s["temperature_c"])
+                c1.metric("الأمطار (مم)", s["rainfall_mm"])
+                c2.metric("الحرارة (°C)", s["temperature_c"])
                 c3.metric("NDVI", s["ndvi_estimated"])
                 c4.metric("المناخ", s["aridity"])
 
         st.markdown("---")
+        st.subheader("📥 المدخلات الفيزيائية")
         c1, c2 = st.columns(2)
         with c1:
             depth = st.slider("D - عمق المياه (م):", 0.5, 100.0,
                               float(sd.get("depth", 15.0)), 0.5)
-            recharge = st.slider("R - التغذية (مم):", 0.0, 400.0,
+            recharge = st.slider("R - التغذية (مم/سنة):", 0.0, 400.0,
                                  float(sd.get("recharge", 150.0)), 10.0)
             slope = st.slider("T - الميل (%):", 0.0, 30.0,
                               float(sd.get("slope", 4.0)), 0.5)
             conductivity = st.slider("C - التوصيلية (م/يوم):", 0.01, 100.0,
                                       float(sd.get("conductivity", 5.0)), 0.1)
         with c2:
-            aquifer = st.selectbox("A:", VALID_AQUIFERS)
-            soil = st.selectbox("S:", VALID_SOILS)
-            vadose = st.selectbox("I:", VALID_VADOSE)
-            porosity = st.slider("θ:", 0.02, 0.55, 0.25, 0.01)
+            # استخدام الترجمة العربية
+            a_keys = list(AQUIFER_AR.keys())
+            a_labels = [f"{AQUIFER_AR[k]} ({k})" for k in a_keys]
+            default_a = a_keys.index(sd.get("aquifer", "massive_sandstone")) \
+                if sd.get("aquifer") in a_keys else 0
+            a_sel = st.selectbox("A - الوسط المائي:", a_labels, index=default_a)
+            aquifer = a_keys[a_labels.index(a_sel)]
 
-        gradient = st.slider("i - التدرج:", 0.0001, 0.5, 0.01, 0.0001,
-                              format="%.4f")
+            s_keys = list(SOIL_AR.keys())
+            s_labels = [f"{SOIL_AR[k]} ({k})" for k in s_keys]
+            default_s = s_keys.index(sd.get("soil", "sand")) \
+                if sd.get("soil") in s_keys else 0
+            s_sel = st.selectbox("S - التربة:", s_labels, index=default_s)
+            soil = s_keys[s_labels.index(s_sel)]
+
+            i_keys = list(VADOSE_AR.keys())
+            i_labels = [f"{VADOSE_AR[k]} ({k})" for k in i_keys]
+            default_i = i_keys.index(sd.get("vadose", "sand_gravel")) \
+                if sd.get("vadose") in i_keys else 0
+            i_sel = st.selectbox("I - نطاق التهوية:", i_labels, index=default_i)
+            vadose = i_keys[i_labels.index(i_sel)]
+
+            porosity = st.slider("θ - المسامية:", 0.02, 0.55, 0.25, 0.01)
+
+        gradient = st.slider("i - التدرج الهيدروليكي:", 0.0001, 0.5, 0.01,
+                              0.0001, format="%.4f")
 
         try:
             D_r = get_d_rating(depth); R_r = get_r_rating(recharge)
@@ -728,33 +883,89 @@ if mode == "🏠 النظام الأساسي":
             st.session_state["ct"] = travel
 
             st.markdown("---")
-            st.header("النتائج: " + site)
+            st.header(f"📊 النتائج: {site}")
             x1, x2, x3, x4 = st.columns(4)
-            x1.metric("D", D_r, f"{depth} م")
-            x2.metric("R", R_r, f"{recharge} مم")
-            x3.metric("A", A_r); x4.metric("S", S_r)
+            x1.metric("D (عمق)", D_r, f"{depth} م")
+            x2.metric("R (تغذية)", R_r, f"{recharge} مم")
+            x3.metric("A (وسط)", A_r)
+            x4.metric("S (تربة)", S_r)
             y1, y2, y3, y4 = st.columns(4)
-            y1.metric("T", T_r); y2.metric("I", I_r)
-            y3.metric("C", C_r); y4.metric("θ", round(porosity, 2))
-            st.markdown("---")
-            z1, z2 = st.columns(2)
-            z1.metric("DRASTIC", f"{idx} / 230")
-            z2.metric("المستوى", risk["level"])
-            if risk["color"] == "red": st.error(risk["action"])
-            elif risk["color"] == "orange": st.warning(risk["action"])
-            elif risk["color"] == "yellow": st.info(risk["action"])
-            else: st.success(risk["action"])
+            y1.metric("T (ميل)", T_r)
+            y2.metric("I (منطقة)", I_r)
+            y3.metric("C (توصيلية)", C_r)
+            y4.metric("θ (مسامية)", round(porosity, 2))
 
             st.markdown("---")
-            st.subheader("زمن وصول الملوثات")
+            z1, z2, z3 = st.columns(3)
+            z1.metric("مؤشر DRASTIC", f"{idx} / 230")
+            z2.metric("المستوى", LEVEL_AR.get(risk["level"], risk["level"]))
+            z3.metric("نسبة الخطورة", f"{round(idx/230*100, 1)}%")
+
+            if risk["color"] == "red": st.error(f"🔴 {risk['action']}")
+            elif risk["color"] == "orange": st.warning(f"🟠 {risk['action']}")
+            elif risk["color"] == "yellow": st.info(f"🟡 {risk['action']}")
+            else: st.success(f"🟢 {risk['action']}")
+
+            st.markdown("---")
+            st.subheader("⏱️ زمن وصول الملوثات (Darcy)")
             w1, w2, w3, w4 = st.columns(4)
             w1.metric("سنوات", travel["years"])
             w2.metric("أيام", travel["days"])
-            w3.metric("السرعة", travel["velocity"])
-            w4.metric("i", travel["gradient"])
+            w3.metric("السرعة (م/يوم)", travel["velocity"])
+            w4.metric("التدرج i", travel["gradient"])
+
+            # ===== مخطط أوزان DRASTIC =====
+            st.markdown("---")
+            st.subheader("📊 أوزان معامل DRASTIC")
+            c_pie, c_txt = st.columns([2, 1])
+            with c_pie:
+                try:
+                    import plotly.graph_objects as go
+                    weights_data = {
+                        "D - العمق": 5, "R - التغذية": 4,
+                        "A - الوسط المائي": 3, "S - التربة": 2,
+                        "T - الميل": 1, "I - نطاق التهوية": 5,
+                        "C - التوصيلية": 3}
+                    colors = ["#5c2c16", "#8b5a2b", "#c19a6b", "#d4af37",
+                              "#e6c77e", "#a0522d", "#cd853f"]
+                    fig = go.Figure(data=[go.Pie(
+                        labels=list(weights_data.keys()),
+                        values=list(weights_data.values()),
+                        hole=0.4, marker=dict(colors=colors),
+                        textinfo='label+percent',
+                        textposition='outside')])
+                    fig.update_layout(height=400, showlegend=False,
+                        font=dict(family="Tahoma", size=12))
+                    st.plotly_chart(fig, width="stretch")
+                except ImportError:
+                    st.info("ثبّت plotly لعرض المخطط")
+            with c_txt:
+                st.markdown("""
+                **الأوزان:**
+                - **D** = 5 (الأعلى)
+                - **I** = 5
+                - **R** = 4
+                - **A** = 3
+                - **C** = 3
+                - **S** = 2
+                - **T** = 1
+
+                **المجموع:** 23
+                **الحد الأقصى:** 230
+                """)
+
+            if st.button("💾 حفظ في التاريخ", key="save_hist"):
+                if "history" not in st.session_state:
+                    st.session_state["history"] = []
+                st.session_state["history"].append({
+                    "التاريخ": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "الموقع": site, "المؤشر": idx,
+                    "المستوى": risk["level"]})
+                st.success("✅ تم الحفظ")
         except ValueError as e:
             st.error("خطأ: " + str(e))
 
+    # ===== TAB 1: الجماعي =====
     with tabs[1]:
         st.header("📊 التقييم الجماعي")
         sample = pd.DataFrame({
@@ -801,8 +1012,9 @@ if mode == "🏠 النظام الأساسي":
             except Exception as e:
                 st.error("خطأ: " + str(e))
 
+    # ===== TAB 2: الحلول =====
     with tabs[2]:
-        st.header("محاكي الحلول")
+        st.header("🛡️ محاكي الحلول")
         if "ci" in st.session_state:
             ci = st.session_state["ci"]
             c1, c2 = st.columns(2)
@@ -820,10 +1032,11 @@ if mode == "🏠 النظام الأساسي":
         else:
             st.warning("افتح تبويب المدخلات")
 
+    # ===== TAB 3: التقرير =====
     with tabs[3]:
-        st.header("توليد التقرير")
+        st.header("📄 توليد التقرير")
         if "ci" in st.session_state:
-            if st.button("توليد", type="primary"):
+            if st.button("توليد التقرير", type="primary"):
                 rep = gen_report(st.session_state["cs"],
                                 st.session_state["cc"],
                                 st.session_state["ci"],
@@ -833,18 +1046,19 @@ if mode == "🏠 النظام الأساسي":
                 st.session_state["rep"] = rep
             if "rep" in st.session_state:
                 st.text_area("التقرير:", st.session_state["rep"], height=400)
-                st.download_button("TXT",
+                st.download_button("📥 TXT",
                     data=st.session_state["rep"].encode("utf-8"),
                     file_name="report.txt", mime="text/plain")
-                st.download_button("HTML",
+                st.download_button("📥 HTML",
                     data=gen_html(st.session_state["rep"],
                                   st.session_state["cs"]).encode("utf-8"),
                     file_name="report.html", mime="text/html")
         else:
             st.warning("افتح تبويب المدخلات")
 
+    # ===== TAB 4: الخريطة =====
     with tabs[4]:
-        st.header("🗺️ الخريطة")
+        st.header("🗺️ الخريطة التفاعلية")
         if DS_OK:
             c1, c2 = st.columns(2)
             with c1:
@@ -888,18 +1102,22 @@ if mode == "🏠 النظام الأساسي":
         else:
             st.warning("data_sources.py غير متوفر")
 
+    # ===== TAB 5: الحساسية =====
     with tabs[5]:
-        st.header("تحليل الحساسية")
+        st.header("📈 تحليل الحساسية")
         if "ci" in st.session_state:
-            var = st.slider("التغيير (%):", 5, 30, 10, 5) / 100.0
+            var = st.slider("نسبة التغيير (%):", 5, 30, 10, 5) / 100.0
             r = sensitivity_analysis(st.session_state["cv"], var)
-            st.success("الأكثر تأثيراً: " + str(r["most_sensitive"]))
+            st.success(f"🎯 الأكثر تأثيراً: {r['most_sensitive']}")
+            st.metric("المؤشر الأساسي", r["base_index"])
             for p in r["parameters"]:
                 pdd = r["parameters"][p]
-                with st.expander(f"{p} — تأثير: {pdd['sensitivity']}%"):
-                    st.metric("القيمة الأصلية", pdd["original_phys"])
-                    st.metric("القيمة المعدلة", pdd["modified_phys"])
-                    st.metric("المؤشر الجديد", pdd["new_index"])
+                wt = {"D": 5, "R": 4, "A": 3, "S": 2, "T": 1, "I": 5, "C": 3}[p]
+                with st.expander(f"{p} — وزن {wt} — تأثير {pdd['sensitivity']}%"):
+                    c1, c2, c3 = st.columns(3)
+                    c1.metric("القيمة الأصلية", pdd["original_phys"])
+                    c2.metric("القيمة المعدلة", pdd["modified_phys"])
+                    c3.metric("المؤشر الجديد", pdd["new_index"])
             chart = pd.DataFrame({
                 "المعامل": list(r["parameters"].keys()),
                 "الحساسية": [r["parameters"][p]["sensitivity"]
@@ -908,20 +1126,23 @@ if mode == "🏠 النظام الأساسي":
         else:
             st.warning("افتح تبويب المدخلات")
 
+    # ===== TAB 6: السمية =====
     with tabs[6]:
-        st.header("تحليل السمية")
+        st.header("☠️ تحليل السمية")
         if "ci" in st.session_state:
             c1, c2 = st.columns(2)
             with c1:
+                st.markdown("**الزئبق (Hg)**")
                 hgw = st.number_input("Hg مياه (mg/L):", 0.0, 10.0, 0.05,
                                        0.001, format="%.4f")
                 hgs = st.number_input("Hg تربة (mg/kg):", 0.0, 100.0, 0.5, 0.1)
             with c2:
+                st.markdown("**السيانيد (CN)**")
                 cnw = st.number_input("CN مياه (mg/L):", 0.0, 10.0, 0.10,
                                        0.01, format="%.4f")
                 cns = st.number_input("CN تربة (mg/kg):", 0.0, 100.0, 5.0, 0.5)
 
-            if st.button("تحليل", type="primary"):
+            if st.button("تحليل السمية", type="primary"):
                 st.session_state["tox_result"] = weighted_toxicity(hgw, hgs, cnw, cns)
             if "tox_result" in st.session_state:
                 tox = st.session_state["tox_result"]
@@ -932,8 +1153,9 @@ if mode == "🏠 النظام الأساسي":
         else:
             st.warning("افتح تبويب المدخلات")
 
+    # ===== TAB 7: التاريخ =====
     with tabs[7]:
-        st.header("📚 التاريخ")
+        st.header("📚 تاريخ التقييمات")
         if "history" in st.session_state and st.session_state["history"]:
             df = pd.DataFrame(st.session_state["history"])
             st.dataframe(df, width="stretch")
@@ -943,6 +1165,7 @@ if mode == "🏠 النظام الأساسي":
         else:
             st.info("لا توجد تقييمات محفوظة")
 
+    # ===== TAB 8: GIS =====
     with tabs[8]:
         st.header("🌍 تصدير GIS")
         if DS_OK:
@@ -971,28 +1194,36 @@ if mode == "🏠 النظام الأساسي":
                 st.dataframe(df_s, width="stretch")
                 c1, c2, c3 = st.columns(3)
                 with c1:
-                    st.download_button("GeoJSON",
+                    st.download_button("📄 GeoJSON",
                         data=sites_to_geojson(sites).encode("utf-8"),
                         file_name="sites.geojson",
                         mime="application/geo+json")
                 with c2:
-                    st.download_button("KML",
+                    st.download_button("🌍 KML",
                         data=sites_to_kml(sites).encode("utf-8"),
                         file_name="sites.kml",
                         mime="application/vnd.google-earth.kml+xml")
                 with c3:
-                    st.download_button("CSV",
+                    st.download_button("📊 CSV",
                         data=df_s.to_csv(index=False).encode("utf-8-sig"),
                         file_name="sites.csv", mime="text/csv")
 
+    # ===== TAB 9: Monte Carlo =====
     with tabs[9]:
-        st.header("🎲 Monte Carlo")
+        st.header("🎲 محاكاة Monte Carlo")
         if "ci" in st.session_state:
-            n_iter = st.slider("المحاكاات:", 100, 5000, 1000, 100)
-            var_pct = st.slider("الاختلاف (%):", 5, 30, 15, 5)
-            if st.button("تشغيل", type="primary"):
-                st.session_state["mc_result"] = monte_carlo_analysis(
-                    st.session_state["cv"], n_iter, var_pct / 100.0)
+            st.info("التوزيعات: Log-Normal للتوصيلية، Normal للعمق، Discrete للتصنيفات")
+            c1, c2 = st.columns(2)
+            with c1:
+                n_iter = st.slider("عدد المحاكاات:", 100, 5000, 1000, 100)
+            with c2:
+                var_pct = st.slider("معامل الاختلاف (%):", 5, 30, 15, 5)
+
+            if st.button("تشغيل المحاكاة", type="primary"):
+                with st.spinner("جاري المحاكاة..."):
+                    st.session_state["mc_result"] = monte_carlo_analysis(
+                        st.session_state["cv"], n_iter, var_pct / 100.0)
+
             if "mc_result" in st.session_state:
                 mc = st.session_state["mc_result"]
                 c1, c2, c3, c4 = st.columns(4)
@@ -1007,9 +1238,16 @@ if mode == "🏠 النظام الأساسي":
                     st.metric("CI 50%", f"{mc['ci_50'][0]} - {mc['ci_50'][1]}")
                 c1, c2 = st.columns(2)
                 with c1:
-                    st.metric("P>140", f"{mc['prob_over_140']}%")
+                    st.metric("احتمال > 140", f"{mc['prob_over_140']}%")
                 with c2:
-                    st.metric("P>180", f"{mc['prob_over_180']}%")
+                    st.metric("احتمال > 180", f"{mc['prob_over_180']}%")
+
+                pct_df = pd.DataFrame({
+                    "المئين": ["P5", "P25", "P50", "P75", "P95"],
+                    "المؤشر": [mc["p5"], mc["p25"], mc["p50"],
+                              mc["p75"], mc["p95"]]}).set_index("المئين")
+                st.dataframe(pct_df, width="stretch")
+                st.bar_chart(pct_df)
         else:
             st.warning("افتح تبويب المدخلات")
 
@@ -1018,12 +1256,14 @@ if mode == "🏠 النظام الأساسي":
 # ============ MODE 2: Validation ============
 # ============================================================
 elif mode == "✅ التحقق الفعلي" and ADV_OK:
-    st.header("✅ التحقق الفعلي")
+    st.header("✅ التحقق الفعلي من النموذج")
+    st.markdown("**الهدف:** مقارنة توقعات النظام مع بيانات ميدانية حقيقية.")
+
     sample_val = pd.DataFrame({
         "site_name": ["S1", "S2", "S3", "S4"],
         "drastic_index": [150, 80, 130, 165],
         "actual_contaminated": [1, 0, 0, 1]})
-    st.download_button("📥 قالب",
+    st.download_button("📥 قالب التحقق",
         data=sample_val.to_csv(index=False).encode("utf-8-sig"),
         file_name="validation.csv", mime="text/csv")
 
@@ -1032,7 +1272,7 @@ elif mode == "✅ التحقق الفعلي" and ADV_OK:
         try:
             df = pd.read_csv(f) if f.name.endswith(".csv") else pd.read_excel(f)
             if "drastic_index" in df.columns and "actual_contaminated" in df.columns:
-                threshold = st.slider("العتبة:", 100, 200, 140, 5)
+                threshold = st.slider("عتبة التصنيف:", 100, 200, 140, 5)
                 metrics = calculate_confusion_matrix(
                     df["drastic_index"].values,
                     df["actual_contaminated"].values, threshold)
@@ -1045,15 +1285,23 @@ elif mode == "✅ التحقق الفعلي" and ADV_OK:
                 c1.metric("Kappa", metrics["kappa"])
                 c2.metric("MCC", metrics["mcc"])
                 c3.metric("Specificity", f"{metrics['specificity']}%")
+
+                k = metrics["kappa"]
+                if k >= 0.8: st.success(f"✅ Kappa = {k} — توافق ممتاز")
+                elif k >= 0.6: st.info(f"ℹ️ Kappa = {k} — توافق جيد")
+                elif k >= 0.4: st.warning(f"⚠️ Kappa = {k} — توافق متوسط")
+                else: st.error(f"❌ Kappa = {k} — توافق ضعيف")
+
                 cm = metrics["confusion_matrix"]
                 cm_df = pd.DataFrame({
-                    "ملوث": [cm["TP"], cm["FN"]],
-                    "نظيف": [cm["FP"], cm["TN"]]},
+                    "ملوث فعلاً": [cm["TP"], cm["FN"]],
+                    "نظيف فعلاً": [cm["FP"], cm["TN"]]},
                     index=["توقع ملوث", "توقع نظيف"])
                 st.dataframe(cm_df, width="stretch")
-                st.text(generate_validation_report(metrics))
+                with st.expander("📄 التقرير الكامل"):
+                    st.text(generate_validation_report(metrics))
             else:
-                st.error("أعمدة مفقودة")
+                st.error("أعمدة مفقودة: drastic_index, actual_contaminated")
         except Exception as e:
             st.error(str(e))
 
@@ -1062,42 +1310,76 @@ elif mode == "✅ التحقق الفعلي" and ADV_OK:
 # ============ MODE 3: DRASTIC-P ============
 # ============================================================
 elif mode == "🧪 DRASTIC-P" and ADV_OK:
-    st.header("🧪 DRASTIC-P")
+    st.header("🧪 DRASTIC-P — المؤشر المعدل للتعدين")
+    st.markdown("""
+    **DRASTIC-P = DRASTIC × (1 + α×CRI + β×MRI + γ×AMD)**
+    - CRI: مؤشر مخاطر السيانيد
+    - MRI: مؤشر مخاطر الزئبق
+    - AMD: الصرف الحمضي للمناجم
+    """)
+
     if "ci" not in st.session_state:
         st.warning("افتح النظام الأساسي أولاً")
     else:
-        st.info(f"DRASTIC: {st.session_state['ci']}")
+        st.info(f"الموقع: {st.session_state['cs']} | DRASTIC: {st.session_state['ci']}")
         c1, c2 = st.columns(2)
         with c1:
-            cn_w = st.number_input("CN مياه:", 0.0, 10.0, 0.05, 0.001,
+            st.markdown("**السيانيد (CN)**")
+            cn_w = st.number_input("CN مياه (mg/L):", 0.0, 10.0, 0.05, 0.001,
                                     format="%.4f")
-            cn_s = st.number_input("CN تربة:", 0.0, 100.0, 5.0, 0.5)
-            cn_dist = st.number_input("المسافة:", 10.0, 5000.0, 500.0, 50.0)
-            cn_seep = st.slider("التسرب:", 0.0, 1.0, 0.3, 0.05)
+            cn_s = st.number_input("CN تربة (mg/kg):", 0.0, 100.0, 5.0, 0.5)
+            cn_dist = st.number_input("المسافة لمصدر مياه (m):", 10.0,
+                                       5000.0, 500.0, 50.0)
+            cn_seep = st.slider("معدل التسرب:", 0.0, 1.0, 0.3, 0.05)
         with c2:
-            hg_w = st.number_input("Hg مياه:", 0.0, 10.0, 0.005, 0.001,
+            st.markdown("**الزئبق (Hg)**")
+            hg_w = st.number_input("Hg مياه (mg/L):", 0.0, 10.0, 0.005, 0.001,
                                     format="%.4f")
-            hg_s = st.number_input("Hg تربة:", 0.0, 100.0, 0.5, 0.1)
-            bio = st.slider("التراكم:", 1.0, 3.0, 1.5, 0.1)
-            use = st.selectbox("الاستخدام:",
+            hg_s = st.number_input("Hg تربة (mg/kg):", 0.0, 100.0, 0.5, 0.1)
+            bio = st.slider("معامل التراكم الحيوي:", 1.0, 3.0, 1.5, 0.1)
+            use = st.selectbox("استخدام المياه:",
                 ["drinking", "irrigation", "industrial"])
-        amd = st.slider("AMD:", 0.0, 1.0, 0.2, 0.05)
+        amd = st.slider("مخاطر الصرف الحمضي (AMD):", 0.0, 1.0, 0.2, 0.05)
 
-        if st.button("🧪 حساب", type="primary"):
+        if st.button("🧪 حساب DRASTIC-P", type="primary"):
             cri = calculate_cyanide_risk_index(cn_w, cn_s, cn_dist, cn_seep)
             mri = calculate_mercury_risk_index(hg_w, hg_s, bio, use)
             mod = calculate_modified_drastic(st.session_state["ci"],
                                               cri["cri"], mri["mri"], amd)
+            st.session_state["mod_result"] = mod
+            st.session_state["cri_result"] = cri
+            st.session_state["mri_result"] = mri
+
+        if "mod_result" in st.session_state:
+            mod = st.session_state["mod_result"]
+            cri = st.session_state["cri_result"]
+            mri = st.session_state["mri_result"]
+
             c1, c2, c3 = st.columns(3)
-            c1.metric("DRASTIC", mod["base_drastic"])
+            c1.metric("DRASTIC الأساسي", mod["base_drastic"])
             c2.metric("DRASTIC-P", mod["modified_drastic"],
                       delta=f"+{mod['increase_pct']}%")
-            c3.metric("المستوى", mod["level"])
+            c3.metric("المستوى", LEVEL_AR.get(mod["level"], mod["level"]))
+
+            if mod["color"] == "red": st.error("🔴 خطر داهم — تدخل فوري")
+            elif mod["color"] == "orange": st.warning("🟠 خطر مرتفع — تدخل عاجل")
+            elif mod["color"] == "yellow": st.info("🟡 خطر متوسط — مراقبة")
+            else: st.success("🟢 خطر منخفض")
+
+            st.markdown("---")
             c1, c2 = st.columns(2)
             with c1:
-                st.metric("CRI", cri["cri"], cri["level"])
+                st.markdown("**مؤشر السيانيد (CRI)**")
+                st.metric("CRI", cri["cri"])
+                st.metric("نسبة المياه", f"{cri['water_ratio']}x")
+                st.metric("نسبة التربة", f"{cri['soil_ratio']}x")
+                st.metric("المستوى", LEVEL_AR.get(cri["level"], cri["level"]))
             with c2:
-                st.metric("MRI", mri["mri"], mri["level"])
+                st.markdown("**مؤشر الزئبق (MRI)**")
+                st.metric("MRI", mri["mri"])
+                st.metric("نسبة المياه", f"{mri['water_ratio']}x")
+                st.metric("نسبة التربة", f"{mri['soil_ratio']}x")
+                st.metric("المستوى", LEVEL_AR.get(mri["level"], mri["level"]))
 
 
 # ============================================================
@@ -1105,54 +1387,71 @@ elif mode == "🧪 DRASTIC-P" and ADV_OK:
 # ============================================================
 elif mode == "⏳ الديناميكي" and ADV_OK:
     st.header("⏳ التقييم الديناميكي")
+    st.markdown("**الهدف:** توقع تطور المؤشر مع الزمن.")
+
     if "ci" not in st.session_state:
         st.warning("افتح النظام الأساسي أولاً")
     else:
+        st.info(f"الموقع: {st.session_state['cs']} | DRASTIC: {st.session_state['ci']}")
+
         c1, c2 = st.columns(2)
         with c1:
-            years = st.slider("السنوات:", 1, 50, 10, 1)
-            mining = st.slider("توسع التعدين:", 0.0, 0.20, 0.05, 0.01)
+            years = st.slider("فترة التوقع (سنوات):", 1, 50, 10, 1)
+            mining = st.slider("معدل توسع التعدين:", 0.0, 0.20, 0.05, 0.01)
         with c2:
-            climate = st.slider("المناخ:", -0.10, 0.05, -0.02, 0.005)
-            pop = st.slider("السكان:", 0.0, 0.10, 0.03, 0.01)
-        cri0 = st.slider("CRI الآن:", 0.0, 10.0, 1.0, 0.1)
-        mri0 = st.slider("MRI الآن:", 0.0, 10.0, 0.5, 0.1)
+            climate = st.slider("تأثير المناخ:", -0.10, 0.05, -0.02, 0.005,
+                                 help="قيمة سالبة = جفاف")
+            pop = st.slider("النمو السكاني:", 0.0, 0.10, 0.03, 0.01)
+        cri0 = st.slider("CRI الحالي:", 0.0, 10.0, 1.0, 0.1)
+        mri0 = st.slider("MRI الحالي:", 0.0, 10.0, 0.5, 0.1)
 
-        if st.button("⏳ تشغيل", type="primary"):
-            res = calculate_dynamic_risk(st.session_state["ci"], years,
-                                          mining, climate, pop, cri0, mri0)
-            st.session_state["dyn"] = res
+        if st.button("⏳ تشغيل التقييم", type="primary"):
+            with st.spinner("جاري الحساب..."):
+                res = calculate_dynamic_risk(st.session_state["ci"], years,
+                                              mining, climate, pop, cri0, mri0)
+                st.session_state["dyn"] = res
 
         if "dyn" in st.session_state:
             res = st.session_state["dyn"]
             df = res["combined"]
-            c1, c2, c3 = st.columns(3)
-            c1.metric("DRASTIC", st.session_state["ci"])
-            c2.metric(f"DRASTIC-P س{years}", res["final_modified"])
-            c3.metric("المستوى", res["final_level"])
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("DRASTIC الأساسي", st.session_state["ci"])
+            c2.metric(f"DRASTIC-P سنة {years}", res["final_modified"])
+            c3.metric("المستوى النهائي", LEVEL_AR.get(res["final_level"],
+                                                        res["final_level"]))
+            inc = res["final_modified"] - st.session_state["ci"]
+            c4.metric("الزيادة", f"+{inc:.1f}",
+                      delta=f"{inc/st.session_state['ci']*100:.1f}%")
+
+            st.markdown("---")
+            st.subheader("📈 تطور المؤشر")
             st.line_chart(df.set_index("السنة")[
                 ["DRASTIC", "DRASTIC-Modified", "CRI", "MRI"]])
+
+            st.markdown("---")
+            st.subheader("📋 الجدول التفصيلي")
             st.dataframe(df, width="stretch")
+
+            st.markdown("---")
+            st.subheader("🛡️ سيناريو التخفيف")
+            mit_year = st.slider("سنة بدء التخفيف:", 1, years,
+                                  max(1, years//3))
+            mit_df = estimate_mitigation_impact(st.session_state["ci"],
+                                                  years, mit_year)
+            st.dataframe(mit_df, width="stretch")
+            st.line_chart(mit_df.set_index("السنة")[["بدون تخفيف", "مع تخفيف"]])
 
 
 # ============================================================
 # ============ MODE 5: MODFLOW ============
 # ============================================================
 elif mode == "🌊 MODFLOW" and MODFLOW_OK:
-    st.header("🌊 محاكاة MODFLOW")
+    st.header("🌊 محاكاة MODFLOW 6")
 
     mf_ok, mf_msg = is_modflow_available()
     if not mf_ok:
         st.error(f"❌ {mf_msg}")
-        st.info(f"""
-        **حالة MODFLOW:**
-        - _modflow_status: `{_modflow_status}`
-        - مسار mf6: `{shutil.which('mf6') or 'غير موجود'}`
-        - مجلد MODFLOW: `{MODFLOW_DIR}`
-        
-        **إذا استمر الخطأ:**
-        تحقق من Logs في Streamlit Cloud.
-        """)
+        st.info(f"**حالة MODFLOW:** {_modflow_status}")
     else:
         st.success(f"✅ {mf_msg}")
 
@@ -1209,8 +1508,14 @@ elif mode == "🌊 MODFLOW" and MODFLOW_OK:
             wr.append(float(rate))
 
         if st.button("🚀 تشغيل MODFLOW", type="primary"):
-            with st.spinner("جاري التشغيل..."):
+            progress = st.progress(0, text="⏳ بدء العملية...")
+            try:
+                progress.progress(10, text="📁 تجهيز مجلد العمل...")
                 ws = f"/tmp/mf_ws_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+                progress.progress(30, text="🏗️ بناء شبكة النموذج...")
+                progress.progress(50, text="⚙️ تشغيل MODFLOW 6...")
+
                 res = build_and_run_model(
                     workspace=ws, nlay=int(nlay), nrow=int(nrow),
                     ncol=int(ncol), delr=float(delr), delc=float(delc),
@@ -1218,18 +1523,30 @@ elif mode == "🌊 MODFLOW" and MODFLOW_OK:
                     recharge_mm=float(rech),
                     well_locations=wl if wl else None,
                     well_rates=wr if wr else None)
+
+                progress.progress(85, text="📊 قراءة النتائج...")
                 st.session_state["mf_res"] = res
+                progress.progress(100, text="✅ اكتمل التشغيل!")
+                import time
+                time.sleep(0.5)
+                progress.empty()
+            except Exception as e:
+                progress.empty()
+                st.error(f"❌ خطأ: {e}")
 
         if "mf_res" in st.session_state:
             res = st.session_state["mf_res"]
             if not res.get("success"):
                 st.error(f"❌ {res.get('error')}")
+                if res.get("buff"):
+                    with st.expander("تفاصيل الخطأ"):
+                        st.code(res["buff"])
             else:
-                st.success("✅ نجح!")
+                st.success("✅ نجح التشغيل!")
                 c1, c2, c3, c4 = st.columns(4)
-                c1.metric("أدنى", f"{res['head_min']:.2f} m")
-                c2.metric("أعلى", f"{res['head_max']:.2f} m")
-                c3.metric("متوسط", f"{res['head_mean']:.2f} m")
+                c1.metric("أدنى منسوب", f"{res['head_min']:.2f} m")
+                c2.metric("أعلى منسوب", f"{res['head_max']:.2f} m")
+                c3.metric("متوسط المنسوب", f"{res['head_mean']:.2f} m")
                 c4.metric("الحجم", f"{res['nrow']}×{res['ncol']}")
 
                 try:
@@ -1249,6 +1566,8 @@ elif mode == "🌊 MODFLOW" and MODFLOW_OK:
                 tr = estimate_travel_time_modflow(
                     res["heads"], float(k_val), por, float(delr))
                 if tr:
+                    st.markdown("---")
+                    st.subheader("⏱️ زمن الوصول (من MODFLOW)")
                     c1, c2, c3 = st.columns(3)
                     c1.metric("التدرج", f"{tr['mean_gradient']:.6f}")
                     c2.metric("السرعة (m/d)", f"{tr['velocity_m_day']:.4f}")
@@ -1257,4 +1576,5 @@ elif mode == "🌊 MODFLOW" and MODFLOW_OK:
 
 # ============ FOOTER ============
 st.markdown("---")
-st.caption("2026 جامعة الخرطوم - نظام التعدين السوداني v39.0")
+st.caption("2026 جامعة الخرطوم - نظام التعدين السوداني v40.0 - "
+           "DRASTIC + MODFLOW + DRASTIC-P + Dynamic + Validation")
