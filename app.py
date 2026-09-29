@@ -1,5 +1,9 @@
-"""نظام التعدين السوداني v38.0 - النسخة الكاملة النهائية"""
+"""نظام التعدين السوداني v38.1 - النسخة النهائية الكاملة"""
 import streamlit as st
+import subprocess
+import os
+import sys
+import shutil
 import folium
 from streamlit_folium import st_folium
 import pandas as pd
@@ -58,7 +62,30 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
+# ============================================================
+# ============ تثبيت MODFLOW 6 تلقائياً ============
+# ============================================================
+@st.cache_resource(show_spinner=False)
+def setup_modflow():
+    try:
+        if shutil.which("mf6"):
+            return "already_installed"
+        result = subprocess.run(["get-modflow", ":python"],
+                                 capture_output=True, text=True, timeout=120)
+        if result.returncode == 0:
+            return "installed"
+        return f"failed"
+    except FileNotFoundError:
+        return "get-modflow_not_found"
+    except Exception:
+        return "error"
+
+_modflow_status = setup_modflow()
+
+
+# ============================================================
 # ============ الاستيرادات الاختيارية ============
+# ============================================================
 try:
     from data_sources import (
         get_preset_locations_for_app, get_data_summary,
@@ -185,14 +212,14 @@ def mitigate(idx, hdpe=False, treat=False, mon=False):
 # ============================================================
 # ============ Sensitivity & Monte Carlo ============
 # ============================================================
-def sensitivity_analysis(physical_values, variation=0.10):
-    D = float(physical_values.get("depth", 15.0))
-    R = float(physical_values.get("recharge", 100.0))
-    A = str(physical_values.get("aquifer", "massive_sandstone"))
-    S = str(physical_values.get("soil", "sand"))
-    T = float(physical_values.get("slope", 4.0))
-    I = str(physical_values.get("vadose", "sand_gravel"))
-    C = float(physical_values.get("conductivity", 5.0))
+def sensitivity_analysis(pv, variation=0.10):
+    D = float(pv.get("depth", 15.0))
+    R = float(pv.get("recharge", 100.0))
+    A = str(pv.get("aquifer", "massive_sandstone"))
+    S = str(pv.get("soil", "sand"))
+    T = float(pv.get("slope", 4.0))
+    I = str(pv.get("vadose", "sand_gravel"))
+    C = float(pv.get("conductivity", 5.0))
 
     def ci(d, r, a, s, t, i, c):
         return calc_index(get_d_rating(d), get_r_rating(r), get_a_rating(a),
@@ -228,14 +255,16 @@ def sensitivity_analysis(physical_values, variation=0.10):
     res["C"] = {"original_phys": C, "modified_phys": round(C_m, 2),
                 "new_index": ni, "change": ni - base,
                 "sensitivity": round(abs(ni - base) / base * 100, 3)}
-    sr = dict(sorted(res.items(), key=lambda x: x[1]["sensitivity"], reverse=True))
+    sr = dict(sorted(res.items(),
+                     key=lambda x: x[1]["sensitivity"], reverse=True))
     return {"base_index": base, "parameters": sr,
             "most_sensitive": list(sr.keys())[0] if sr else None}
 
 
 def monte_carlo_analysis(pv, n_iter=1000, variation=0.15):
     np.random.seed(42)
-    D = float(pv.get("depth", 15.0)); R = float(pv.get("recharge", 100.0))
+    D = float(pv.get("depth", 15.0))
+    R = float(pv.get("recharge", 100.0))
     A_b = get_a_rating(str(pv.get("aquifer", "massive_sandstone")))
     S_b = get_s_rating(str(pv.get("soil", "sand")))
     T = float(pv.get("slope", 4.0))
@@ -360,7 +389,7 @@ def fetch_satellite(lat, lon, years=3):
 
 
 # ============================================================
-# ============ Validation ============
+# ============ Lists ============
 # ============================================================
 VALID_AQUIFERS = ["massive_shale", "metamorphic_igneous",
     "weathered_metamorphic_igneous", "thin_bedded_sequences",
@@ -402,17 +431,13 @@ def validate_bulk_row(row, idx):
 # ============ Report ============
 # ============================================================
 TEMPLATES = {
-    "low": {"level": "منخفض", "range": "23-99",
-        "assessment": "خطورة منخفضة.",
+    "low": {"level": "منخفض", "range": "23-99", "assessment": "خطورة منخفضة.",
         "recs": ["مراقبة سنوية.", "فحص سنوي.", "توثيق."]},
-    "moderate": {"level": "متوسط", "range": "100-139",
-        "assessment": "خطورة متوسطة.",
+    "moderate": {"level": "متوسط", "range": "100-139", "assessment": "خطورة متوسطة.",
         "recs": ["مراقبة ربع سنوية.", "2-3 آبار.", "خطة طوارئ."]},
-    "high": {"level": "مرتفع", "range": "140-179",
-        "assessment": "خطورة مرتفعة. تدخل عاجل.",
+    "high": {"level": "مرتفع", "range": "140-179", "assessment": "خطورة مرتفعة.",
         "recs": ["HDPE Liner.", "معالجة السيانيد.", "4-6 آبار.", "EIA."]},
-    "very_high": {"level": "مرتفع جدا", "range": "180-230",
-        "assessment": "خطر داهم.",
+    "very_high": {"level": "مرتفع جدا", "range": "180-230", "assessment": "خطر داهم.",
         "recs": ["إيقاف النشاط.", "HDPE + معالجة.", "8-10 آبار.", "إخلاء."]},
 }
 
@@ -424,8 +449,7 @@ def gen_report(site, coords, idx, values, travel=None, sat=None, tox=None):
          "نظام التعدين السوداني - جامعة الخرطوم", "=" * 60, "",
          f"التاريخ: {datetime.date.today().strftime('%Y-%m-%d')}",
          f"الموقع: {site}", f"الإحداثيات: {coords[0]}, {coords[1]}", "",
-         f"مؤشر DRASTIC: {idx} / 230",
-         f"المستوى: {tpl['level']}", "",
+         f"مؤشر DRASTIC: {idx} / 230", f"المستوى: {tpl['level']}", "",
          f"D: {values.get('depth', 'N/A')}",
          f"R: {values.get('recharge', 'N/A')}",
          f"A: {values.get('aquifer', 'N/A')}",
@@ -492,11 +516,34 @@ def sites_to_kml(sites):
 
 
 # ============================================================
-# ============ UI ============
+# ============ خريطة آمنة (مع Attribution صحيح) ============
+# ============================================================
+def create_safe_map(base_map, lat=15.5, lon=32.5, zoom=6, height=600):
+    """إنشاء خريطة Folium بشكل آمن بدون أخطاء Attribution"""
+    tiles_options = {
+        "عادية": {
+            "tiles": "OpenStreetMap",
+            "attr": "© OpenStreetMap contributors"},
+        "أقمار صناعية": {
+            "tiles": "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+            "attr": "Tiles © Esri — Source: Esri, i-cubed, USDA, USGS"},
+        "تضاريس": {
+            "tiles": "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
+            "attr": "Tiles © Esri — Esri, DeLorme, NAVTEQ"}}
+
+    opt = tiles_options.get(base_map, tiles_options["عادية"])
+    m = folium.Map(location=[lat, lon], zoom_start=zoom,
+                   tiles=opt["tiles"], attr=opt["attr"],
+                   control_scale=True)
+    return m
+
+
+# ============================================================
+# ============ UI HEADER ============
 # ============================================================
 st.markdown("""
 <div class="header-container">
-    <div class="header-title">⛏️ نظام التعدين السوداني v38.0</div>
+    <div class="header-title">⛏️ نظام التعدين السوداني v38.1</div>
     <div class="header-subtitle">جامعة الخرطوم - كلية الهندسة</div>
     <div class="header-subtitle">DRASTIC + MODFLOW + DRASTIC-P + Dynamic + Validation</div>
 </div>
@@ -512,7 +559,10 @@ else:
               "slope": 4.0, "vadose": "sand_gravel", "source": "افتراضي"}}
     summary = {}
 
+
+# ============================================================
 # ============ SIDEBAR ============
+# ============================================================
 st.sidebar.markdown("## 🎛️ وضع التشغيل")
 st.sidebar.markdown("---")
 
@@ -524,6 +574,24 @@ if MODFLOW_OK:
 
 mode = st.sidebar.radio("اختر الوضع:", mode_options, key="app_mode")
 st.sidebar.markdown("---")
+
+# عرض حالة MODFLOW
+st.sidebar.markdown("### 🔧 حالة النظام")
+if _modflow_status == "already_installed":
+    st.sidebar.success("✅ MODFLOW مثبت")
+elif _modflow_status == "installed":
+    st.sidebar.success("✅ تم تثبيت MODFLOW")
+elif _modflow_status == "get-modflow_not_found":
+    st.sidebar.warning("⚠️ MODFLOW غير متاح")
+else:
+    st.sidebar.warning("⚠️ MODFLOW: " + _modflow_status)
+
+# تشخيص الملفات
+with st.sidebar.expander("🔍 تشخيص الملفات"):
+    st.write(f"data_sources: {'✅' if DS_OK else '❌'}")
+    st.write(f"modflow_engine: {'✅' if MODFLOW_OK else '❌'}")
+    st.write(f"hydro_data: {'✅' if HYDRO_OK else '❌'}")
+    st.write(f"advanced_modules: {'✅' if ADV_OK else '❌'}")
 
 if "ci" in st.session_state:
     st.sidebar.success(f"✅ مؤشر حالي: {st.session_state['ci']}")
@@ -545,6 +613,7 @@ if mode == "🏠 النظام الأساسي":
                     "🗺️ الخريطة", "📈 الحساسية", "☠️ السمية",
                     "📚 التاريخ", "🌍 GIS", "🎲 Monte Carlo"])
 
+    # ===== TAB 0: المدخلات =====
     with tabs[0]:
         st.header("اختيار الموقع والمدخلات")
         site = st.selectbox("الموقع:", list(preset.keys()))
@@ -635,9 +704,20 @@ if mode == "🏠 النظام الأساسي":
             w2.metric("أيام", travel["days"])
             w3.metric("السرعة", travel["velocity"])
             w4.metric("i", travel["gradient"])
+
+            if st.button("💾 حفظ في التاريخ", key="save_hist"):
+                if "history" not in st.session_state:
+                    st.session_state["history"] = []
+                st.session_state["history"].append({
+                    "التاريخ": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "الموقع": site,
+                    "المؤشر": idx,
+                    "المستوى": risk["level"]})
+                st.success("✅ تم الحفظ")
         except ValueError as e:
             st.error("خطأ: " + str(e))
 
+    # ===== TAB 1: الجماعي =====
     with tabs[1]:
         st.header("📊 التقييم الجماعي")
         sample = pd.DataFrame({
@@ -672,7 +752,7 @@ if mode == "🏠 النظام الأساسي":
                         results.append({"الموقع": row.get("name", f"S{i}"),
                             "المؤشر": ix, "المستوى": rk["level"],
                             "الجودة": q})
-                    except Exception as e:
+                    except Exception:
                         results.append({"الموقع": row.get("name", f"S{i}"),
                             "المؤشر": 0, "المستوى": "فشل",
                             "الجودة": "ضعيف"})
@@ -684,6 +764,7 @@ if mode == "🏠 النظام الأساسي":
             except Exception as e:
                 st.error("خطأ: " + str(e))
 
+    # ===== TAB 2: الحلول =====
     with tabs[2]:
         st.header("محاكي الحلول")
         if "ci" in st.session_state:
@@ -703,6 +784,7 @@ if mode == "🏠 النظام الأساسي":
         else:
             st.warning("افتح تبويب المدخلات")
 
+    # ===== TAB 3: التقرير =====
     with tabs[3]:
         st.header("توليد التقرير")
         if "ci" in st.session_state:
@@ -726,21 +808,20 @@ if mode == "🏠 النظام الأساسي":
         else:
             st.warning("افتح تبويب المدخلات")
 
+    # ===== TAB 4: الخريطة =====
     with tabs[4]:
         st.header("🗺️ الخريطة")
         if DS_OK:
-            show_mining = st.checkbox("مواقع التعدين", value=True)
-            show_wells = st.checkbox("الآبار", value=True)
-            show_buffers = st.checkbox("نطاقات التأثير", value=True)
-            base_map = st.selectbox("الخلفية:",
-                ["عادية", "أقمار صناعية", "تضاريس"])
+            c1, c2 = st.columns(2)
+            with c1:
+                show_mining = st.checkbox("مواقع التعدين", value=True)
+                show_wells = st.checkbox("الآبار", value=True)
+            with c2:
+                show_buffers = st.checkbox("نطاقات التأثير", value=True)
+                base_map = st.selectbox("الخلفية:",
+                    ["عادية", "أقمار صناعية", "تضاريس"])
 
-            tiles = {"عادية": "OpenStreetMap",
-                "أقمار صناعية": "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-                "تضاريس": "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}"}
-
-            m = folium.Map(location=[15.5, 32.5], zoom_start=6,
-                           tiles=tiles[base_map], control_scale=True)
+            m = create_safe_map(base_map, height=600)
 
             if show_wells:
                 for n, d in NARIS_WELLS.items():
@@ -773,6 +854,7 @@ if mode == "🏠 النظام الأساسي":
         else:
             st.warning("data_sources.py غير متوفر")
 
+    # ===== TAB 5: الحساسية =====
     with tabs[5]:
         st.header("تحليل الحساسية")
         if "ci" in st.session_state:
@@ -793,6 +875,7 @@ if mode == "🏠 النظام الأساسي":
         else:
             st.warning("افتح تبويب المدخلات")
 
+    # ===== TAB 6: السمية =====
     with tabs[6]:
         st.header("تحليل السمية")
         if "ci" in st.session_state:
@@ -817,6 +900,7 @@ if mode == "🏠 النظام الأساسي":
         else:
             st.warning("افتح تبويب المدخلات")
 
+    # ===== TAB 7: التاريخ =====
     with tabs[7]:
         st.header("📚 التاريخ")
         if "history" in st.session_state and st.session_state["history"]:
@@ -828,6 +912,7 @@ if mode == "🏠 النظام الأساسي":
         else:
             st.info("لا توجد تقييمات محفوظة")
 
+    # ===== TAB 8: GIS =====
     with tabs[8]:
         st.header("🌍 تصدير GIS")
         if DS_OK:
@@ -870,6 +955,7 @@ if mode == "🏠 النظام الأساسي":
                         data=df_s.to_csv(index=False).encode("utf-8-sig"),
                         file_name="sites.csv", mime="text/csv")
 
+    # ===== TAB 9: Monte Carlo =====
     with tabs[9]:
         st.header("🎲 Monte Carlo")
         if "ci" in st.session_state:
@@ -965,7 +1051,8 @@ elif mode == "🧪 DRASTIC-P" and ADV_OK:
                                     format="%.4f")
             hg_s = st.number_input("Hg تربة:", 0.0, 100.0, 0.5, 0.1)
             bio = st.slider("التراكم:", 1.0, 3.0, 1.5, 0.1)
-            use = st.selectbox("الاستخدام:", ["drinking", "irrigation", "industrial"])
+            use = st.selectbox("الاستخدام:",
+                ["drinking", "irrigation", "industrial"])
         amd = st.slider("AMD:", 0.0, 1.0, 0.2, 0.05)
 
         if st.button("🧪 حساب", type="primary"):
@@ -1032,7 +1119,7 @@ elif mode == "🌊 MODFLOW" and MODFLOW_OK:
         st.info("""
         **التثبيت:**
         1. `pip install flopy`
-        2. حمّل MODFLOW 6: https://water.usgs.gov/ogw/modflow/
+        2. حمّل MODFLOW 6 من USGS
         3. أضف `mf6` إلى PATH
         """)
     else:
@@ -1041,7 +1128,6 @@ elif mode == "🌊 MODFLOW" and MODFLOW_OK:
         if HYDRO_OK:
             location = st.selectbox("الموقع المرجعي:",
                 ["Omdurman_2023", "North_Khartoum_2024", "Gash_Kassala_2025"])
-
             with st.expander(f"ℹ️ بيانات {location}"):
                 info = HYDRAULIC_CONDUCTIVITY.get(location, {})
                 if location == "Gash_Kassala_2025":
@@ -1140,4 +1226,4 @@ elif mode == "🌊 MODFLOW" and MODFLOW_OK:
 
 # ============ FOOTER ============
 st.markdown("---")
-st.caption("2026 جامعة الخرطوم - نظام التعدين السوداني v38.0")
+st.caption("2026 جامعة الخرطوم - نظام التعدين السوداني v38.1")
