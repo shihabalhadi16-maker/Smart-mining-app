@@ -1,0 +1,16 @@
+{
+    "name": "نظام التعدين السوداني",
+    "short_name": "التعدين السوداني",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#ffffff",
+    "theme_color": "#5c2c16",
+    "icons": [
+        {
+            "src": "icon.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ]
+}
