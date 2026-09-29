@@ -1,9 +1,12 @@
-"""نظام التعدين السوداني v38.1 - النسخة النهائية الكاملة"""
+"""نظام التعدين السوداني v39.0 - الحل النهائي لمشكلة MODFLOW"""
 import streamlit as st
 import subprocess
 import os
 import sys
 import shutil
+import stat
+import zipfile
+import io
 import folium
 from streamlit_folium import st_folium
 import pandas as pd
@@ -12,6 +15,7 @@ import datetime
 import requests
 import json
 from datetime import timedelta
+from pathlib import Path
 
 try:
     from PIL import Image
@@ -40,7 +44,6 @@ st.markdown("""
         border: 1px solid #d4af37;
         border-radius: 10px;
         padding: 12px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
     [data-testid="stSidebar"] {
         background-color: #f5eedc;
@@ -63,24 +66,81 @@ st.markdown("""
 
 
 # ============================================================
-# ============ تثبيت MODFLOW 6 تلقائياً ============
+# ============ الحل النهائي: تحميل MODFLOW 6 مباشرة ============
 # ============================================================
+MODFLOW_URL = "https://github.com/MODFLOW-ORG/modflow6/releases/download/6.4.4/mf6.4.4_linux.zip"
+MODFLOW_DIR = "/tmp/modflow6"
+
+
 @st.cache_resource(show_spinner=False)
 def setup_modflow():
+    """
+    تحميل MODFLOW 6 مباشرة من GitHub إلى مجلد مؤقت
+    الحل النهائي الذي يعمل على Streamlit Cloud
+    """
     try:
-        if shutil.which("mf6"):
+        Path(MODFLOW_DIR).mkdir(parents=True, exist_ok=True)
+        mf6_path = os.path.join(MODFLOW_DIR, "mf6")
+        
+        # إذا كان موجوداً مسبقاً
+        if os.path.exists(mf6_path) and os.access(mf6_path, os.X_OK):
+            os.environ["PATH"] = MODFLOW_DIR + os.pathsep + os.environ.get("PATH", "")
             return "already_installed"
-        result = subprocess.run(["get-modflow", ":python"],
-                                 capture_output=True, text=True, timeout=120)
-        if result.returncode == 0:
+        
+        # تحميل الملف من GitHub
+        with st.spinner("⏳ جاري تحميل MODFLOW 6..."):
+            response = requests.get(MODFLOW_URL, timeout=180, stream=True)
+            if response.status_code != 200:
+                return f"download_failed_{response.status_code}"
+            
+            # حفظ ZIP في الذاكرة
+            zip_data = io.BytesIO(response.content)
+            
+            # فك الضغط
+            with zipfile.ZipFile(zip_data, 'r') as zf:
+                # البحث عن ملف mf6 داخل ZIP
+                mf6_file = None
+                for name in zf.namelist():
+                    if name.endswith("mf6") and not name.endswith("/"):
+                        mf6_file = name
+                        break
+                
+                if not mf6_file:
+                    return "mf6_not_in_zip"
+                
+                # استخراج الملف
+                zf.extract(mf6_file, MODFLOW_DIR)
+                extracted_path = os.path.join(MODFLOW_DIR, mf6_file)
+                
+                # نقل الملف إلى المجلد الرئيسي
+                if extracted_path != mf6_path:
+                    shutil.move(extracted_path, mf6_path)
+        
+        # إعطاء صلاحيات التنفيذ
+        os.chmod(mf6_path, os.stat(mf6_path).st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+        
+        # إضافة المجلد إلى PATH
+        os.environ["PATH"] = MODFLOW_DIR + os.pathsep + os.environ.get("PATH", "")
+        
+        # التحقق
+        if shutil.which("mf6"):
             return "installed"
-        return f"failed"
-    except FileNotFoundError:
-        return "get-modflow_not_found"
-    except Exception:
-        return "error"
+        return "installed_but_not_in_path"
+        
+    except requests.exceptions.Timeout:
+        return "timeout"
+    except requests.exceptions.ConnectionError:
+        return "connection_error"
+    except Exception as e:
+        return f"error: {str(e)[:100]}"
 
+
+# تشغيل الإعداد
 _modflow_status = setup_modflow()
+
+# إضافة مسار MODFLOW إلى PATH دائماً
+if os.path.exists(MODFLOW_DIR):
+    os.environ["PATH"] = MODFLOW_DIR + os.pathsep + os.environ.get("PATH", "")
 
 
 # ============================================================
@@ -194,7 +254,6 @@ def calc_travel(d, p, k, i=0.01):
     if d <= 0: raise ValueError("D>0")
     if not (0.01 < p < 0.60): raise ValueError("Porosity")
     if k <= 0: raise ValueError("K>0")
-    if not (0.0001 <= i <= 0.5): raise ValueError("Gradient")
     v = (k * i) / p
     days = d / v
     return {"days": round(days, 2), "years": round(days / 365.25, 3),
@@ -401,8 +460,6 @@ VALID_SOILS = ["thin_or_absent", "gravel", "sand", "peat",
 VALID_VADOSE = ["confining_layer", "silt_clay", "shale",
     "metamorphic_igneous", "limestone", "sandstone",
     "sand_gravel_silt_clay", "sand_gravel", "basalt", "karst_limestone"]
-REQUIRED_COLS = ["depth_m", "recharge_mm", "slope_pct",
-                 "conductivity", "aquifer", "soil", "vadose"]
 
 
 def validate_bulk_row(row, idx):
@@ -431,13 +488,13 @@ def validate_bulk_row(row, idx):
 # ============ Report ============
 # ============================================================
 TEMPLATES = {
-    "low": {"level": "منخفض", "range": "23-99", "assessment": "خطورة منخفضة.",
+    "low": {"level": "منخفض", "assessment": "خطورة منخفضة.",
         "recs": ["مراقبة سنوية.", "فحص سنوي.", "توثيق."]},
-    "moderate": {"level": "متوسط", "range": "100-139", "assessment": "خطورة متوسطة.",
+    "moderate": {"level": "متوسط", "assessment": "خطورة متوسطة.",
         "recs": ["مراقبة ربع سنوية.", "2-3 آبار.", "خطة طوارئ."]},
-    "high": {"level": "مرتفع", "range": "140-179", "assessment": "خطورة مرتفعة.",
+    "high": {"level": "مرتفع", "assessment": "خطورة مرتفعة.",
         "recs": ["HDPE Liner.", "معالجة السيانيد.", "4-6 آبار.", "EIA."]},
-    "very_high": {"level": "مرتفع جدا", "range": "180-230", "assessment": "خطر داهم.",
+    "very_high": {"level": "مرتفع جدا", "assessment": "خطر داهم.",
         "recs": ["إيقاف النشاط.", "HDPE + معالجة.", "8-10 آبار.", "إخلاء."]},
 }
 
@@ -445,8 +502,7 @@ def gen_report(site, coords, idx, values, travel=None, sat=None, tox=None):
     key = "very_high" if idx >= 180 else "high" if idx >= 140 else \
           "moderate" if idx >= 100 else "low"
     tpl = TEMPLATES[key]
-    L = ["=" * 60, "تقرير تقييم هشاشة المياه الجوفية",
-         "نظام التعدين السوداني - جامعة الخرطوم", "=" * 60, "",
+    L = ["=" * 60, "تقرير تقييم هشاشة المياه الجوفية", "=" * 60, "",
          f"التاريخ: {datetime.date.today().strftime('%Y-%m-%d')}",
          f"الموقع: {site}", f"الإحداثيات: {coords[0]}, {coords[1]}", "",
          f"مؤشر DRASTIC: {idx} / 230", f"المستوى: {tpl['level']}", "",
@@ -457,14 +513,8 @@ def gen_report(site, coords, idx, values, travel=None, sat=None, tox=None):
          f"T: {values.get('slope', 'N/A')}",
          f"I: {values.get('vadose', 'N/A')}",
          f"C: {values.get('conductivity', 'N/A')}", ""]
-    if travel:
-        if isinstance(travel, dict):
-            L.append(f"زمن الوصول: {travel.get('years', 0)} سنة")
-        else:
-            L.append(f"زمن الوصول: {travel} سنة")
-    if sat and sat.get("rainfall_mm"):
-        L.append(f"الأمطار: {sat.get('rainfall_mm')} مم")
-        L.append(f"الحرارة: {sat.get('temperature_c')}")
+    if travel and isinstance(travel, dict):
+        L.append(f"زمن الوصول: {travel.get('years', 0)} سنة")
     L.append("")
     L.append("التوصيات:")
     for i, rec in enumerate(tpl["recs"], 1):
@@ -516,26 +566,22 @@ def sites_to_kml(sites):
 
 
 # ============================================================
-# ============ خريطة آمنة (مع Attribution صحيح) ============
+# ============ Safe Map ============
 # ============================================================
-def create_safe_map(base_map, lat=15.5, lon=32.5, zoom=6, height=600):
-    """إنشاء خريطة Folium بشكل آمن بدون أخطاء Attribution"""
+def create_safe_map(base_map, lat=15.5, lon=32.5, zoom=6):
     tiles_options = {
-        "عادية": {
-            "tiles": "OpenStreetMap",
-            "attr": "© OpenStreetMap contributors"},
+        "عادية": {"tiles": "OpenStreetMap",
+                   "attr": "© OpenStreetMap contributors"},
         "أقمار صناعية": {
             "tiles": "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-            "attr": "Tiles © Esri — Source: Esri, i-cubed, USDA, USGS"},
+            "attr": "Tiles © Esri"},
         "تضاريس": {
             "tiles": "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
-            "attr": "Tiles © Esri — Esri, DeLorme, NAVTEQ"}}
-
+            "attr": "Tiles © Esri"}}
     opt = tiles_options.get(base_map, tiles_options["عادية"])
-    m = folium.Map(location=[lat, lon], zoom_start=zoom,
-                   tiles=opt["tiles"], attr=opt["attr"],
-                   control_scale=True)
-    return m
+    return folium.Map(location=[lat, lon], zoom_start=zoom,
+                       tiles=opt["tiles"], attr=opt["attr"],
+                       control_scale=True)
 
 
 # ============================================================
@@ -543,7 +589,7 @@ def create_safe_map(base_map, lat=15.5, lon=32.5, zoom=6, height=600):
 # ============================================================
 st.markdown("""
 <div class="header-container">
-    <div class="header-title">⛏️ نظام التعدين السوداني v38.1</div>
+    <div class="header-title">⛏️ نظام التعدين السوداني v39.0</div>
     <div class="header-subtitle">جامعة الخرطوم - كلية الهندسة</div>
     <div class="header-subtitle">DRASTIC + MODFLOW + DRASTIC-P + Dynamic + Validation</div>
 </div>
@@ -578,13 +624,19 @@ st.sidebar.markdown("---")
 # عرض حالة MODFLOW
 st.sidebar.markdown("### 🔧 حالة النظام")
 if _modflow_status == "already_installed":
-    st.sidebar.success("✅ MODFLOW مثبت")
+    st.sidebar.success("✅ MODFLOW مثبت مسبقاً")
 elif _modflow_status == "installed":
-    st.sidebar.success("✅ تم تثبيت MODFLOW")
-elif _modflow_status == "get-modflow_not_found":
-    st.sidebar.warning("⚠️ MODFLOW غير متاح")
+    st.sidebar.success("✅ تم تثبيت MODFLOW الآن")
+elif _modflow_status == "installed_but_not_in_path":
+    st.sidebar.warning("⚠️ مثبت لكن ليس في PATH")
+elif _modflow_status == "timeout":
+    st.sidebar.error("❌ انتهت مهلة التحميل")
+elif _modflow_status == "connection_error":
+    st.sidebar.error("❌ خطأ في الاتصال")
+elif _modflow_status.startswith("download_failed"):
+    st.sidebar.error(f"❌ فشل التحميل: {_modflow_status}")
 else:
-    st.sidebar.warning("⚠️ MODFLOW: " + _modflow_status)
+    st.sidebar.warning(f"⚠️ {_modflow_status}")
 
 # تشخيص الملفات
 with st.sidebar.expander("🔍 تشخيص الملفات"):
@@ -592,6 +644,9 @@ with st.sidebar.expander("🔍 تشخيص الملفات"):
     st.write(f"modflow_engine: {'✅' if MODFLOW_OK else '❌'}")
     st.write(f"hydro_data: {'✅' if HYDRO_OK else '❌'}")
     st.write(f"advanced_modules: {'✅' if ADV_OK else '❌'}")
+    # مسار MODFLOW
+    mf6_path = shutil.which("mf6") if shutil else None
+    st.write(f"mf6 path: {mf6_path or 'غير موجود'}")
 
 if "ci" in st.session_state:
     st.sidebar.success(f"✅ مؤشر حالي: {st.session_state['ci']}")
@@ -613,7 +668,6 @@ if mode == "🏠 النظام الأساسي":
                     "🗺️ الخريطة", "📈 الحساسية", "☠️ السمية",
                     "📚 التاريخ", "🌍 GIS", "🎲 Monte Carlo"])
 
-    # ===== TAB 0: المدخلات =====
     with tabs[0]:
         st.header("اختيار الموقع والمدخلات")
         site = st.selectbox("الموقع:", list(preset.keys()))
@@ -646,15 +700,9 @@ if mode == "🏠 النظام الأساسي":
             conductivity = st.slider("C - التوصيلية (م/يوم):", 0.01, 100.0,
                                       float(sd.get("conductivity", 5.0)), 0.1)
         with c2:
-            aquifer = st.selectbox("A:", VALID_AQUIFERS,
-                index=VALID_AQUIFERS.index(sd.get("aquifer", "massive_sandstone"))
-                      if sd.get("aquifer") in VALID_AQUIFERS else 0)
-            soil = st.selectbox("S:", VALID_SOILS,
-                index=VALID_SOILS.index(sd.get("soil", "sand"))
-                      if sd.get("soil") in VALID_SOILS else 0)
-            vadose = st.selectbox("I:", VALID_VADOSE,
-                index=VALID_VADOSE.index(sd.get("vadose", "sand_gravel"))
-                      if sd.get("vadose") in VALID_VADOSE else 0)
+            aquifer = st.selectbox("A:", VALID_AQUIFERS)
+            soil = st.selectbox("S:", VALID_SOILS)
+            vadose = st.selectbox("I:", VALID_VADOSE)
             porosity = st.slider("θ:", 0.02, 0.55, 0.25, 0.01)
 
         gradient = st.slider("i - التدرج:", 0.0001, 0.5, 0.01, 0.0001,
@@ -704,20 +752,9 @@ if mode == "🏠 النظام الأساسي":
             w2.metric("أيام", travel["days"])
             w3.metric("السرعة", travel["velocity"])
             w4.metric("i", travel["gradient"])
-
-            if st.button("💾 حفظ في التاريخ", key="save_hist"):
-                if "history" not in st.session_state:
-                    st.session_state["history"] = []
-                st.session_state["history"].append({
-                    "التاريخ": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
-                    "الموقع": site,
-                    "المؤشر": idx,
-                    "المستوى": risk["level"]})
-                st.success("✅ تم الحفظ")
         except ValueError as e:
             st.error("خطأ: " + str(e))
 
-    # ===== TAB 1: الجماعي =====
     with tabs[1]:
         st.header("📊 التقييم الجماعي")
         sample = pd.DataFrame({
@@ -757,14 +794,13 @@ if mode == "🏠 النظام الأساسي":
                             "المؤشر": 0, "المستوى": "فشل",
                             "الجودة": "ضعيف"})
                 dfr = pd.DataFrame(results)
-                st.dataframe(dfr, use_container_width=True)
+                st.dataframe(dfr, width="stretch")
                 st.download_button("📥 نتائج CSV",
                     data=dfr.to_csv(index=False).encode("utf-8-sig"),
                     file_name="results.csv", mime="text/csv")
             except Exception as e:
                 st.error("خطأ: " + str(e))
 
-    # ===== TAB 2: الحلول =====
     with tabs[2]:
         st.header("محاكي الحلول")
         if "ci" in st.session_state:
@@ -784,7 +820,6 @@ if mode == "🏠 النظام الأساسي":
         else:
             st.warning("افتح تبويب المدخلات")
 
-    # ===== TAB 3: التقرير =====
     with tabs[3]:
         st.header("توليد التقرير")
         if "ci" in st.session_state:
@@ -808,7 +843,6 @@ if mode == "🏠 النظام الأساسي":
         else:
             st.warning("افتح تبويب المدخلات")
 
-    # ===== TAB 4: الخريطة =====
     with tabs[4]:
         st.header("🗺️ الخريطة")
         if DS_OK:
@@ -821,7 +855,7 @@ if mode == "🏠 النظام الأساسي":
                 base_map = st.selectbox("الخلفية:",
                     ["عادية", "أقمار صناعية", "تضاريس"])
 
-            m = create_safe_map(base_map, height=600)
+            m = create_safe_map(base_map)
 
             if show_wells:
                 for n, d in NARIS_WELLS.items():
@@ -850,11 +884,10 @@ if mode == "🏠 النظام الأساسي":
                             icon="exclamation-triangle",
                             prefix="fa")).add_to(m)
 
-            st_folium(m, width=None, height=600, key="map_main")
+            st_folium(m, height=600, key="map_main")
         else:
             st.warning("data_sources.py غير متوفر")
 
-    # ===== TAB 5: الحساسية =====
     with tabs[5]:
         st.header("تحليل الحساسية")
         if "ci" in st.session_state:
@@ -875,7 +908,6 @@ if mode == "🏠 النظام الأساسي":
         else:
             st.warning("افتح تبويب المدخلات")
 
-    # ===== TAB 6: السمية =====
     with tabs[6]:
         st.header("تحليل السمية")
         if "ci" in st.session_state:
@@ -900,19 +932,17 @@ if mode == "🏠 النظام الأساسي":
         else:
             st.warning("افتح تبويب المدخلات")
 
-    # ===== TAB 7: التاريخ =====
     with tabs[7]:
         st.header("📚 التاريخ")
         if "history" in st.session_state and st.session_state["history"]:
             df = pd.DataFrame(st.session_state["history"])
-            st.dataframe(df, use_container_width=True)
+            st.dataframe(df, width="stretch")
             st.download_button("📥 CSV",
                 data=df.to_csv(index=False).encode("utf-8-sig"),
                 file_name="history.csv", mime="text/csv")
         else:
             st.info("لا توجد تقييمات محفوظة")
 
-    # ===== TAB 8: GIS =====
     with tabs[8]:
         st.header("🌍 تصدير GIS")
         if DS_OK:
@@ -938,7 +968,7 @@ if mode == "🏠 النظام الأساسي":
                     continue
             if sites:
                 df_s = pd.DataFrame(sites)
-                st.dataframe(df_s, use_container_width=True)
+                st.dataframe(df_s, width="stretch")
                 c1, c2, c3 = st.columns(3)
                 with c1:
                     st.download_button("GeoJSON",
@@ -955,7 +985,6 @@ if mode == "🏠 النظام الأساسي":
                         data=df_s.to_csv(index=False).encode("utf-8-sig"),
                         file_name="sites.csv", mime="text/csv")
 
-    # ===== TAB 9: Monte Carlo =====
     with tabs[9]:
         st.header("🎲 Monte Carlo")
         if "ci" in st.session_state:
@@ -1016,13 +1045,12 @@ elif mode == "✅ التحقق الفعلي" and ADV_OK:
                 c1.metric("Kappa", metrics["kappa"])
                 c2.metric("MCC", metrics["mcc"])
                 c3.metric("Specificity", f"{metrics['specificity']}%")
-
                 cm = metrics["confusion_matrix"]
                 cm_df = pd.DataFrame({
                     "ملوث": [cm["TP"], cm["FN"]],
                     "نظيف": [cm["FP"], cm["TN"]]},
                     index=["توقع ملوث", "توقع نظيف"])
-                st.dataframe(cm_df, use_container_width=True)
+                st.dataframe(cm_df, width="stretch")
                 st.text(generate_validation_report(metrics))
             else:
                 st.error("أعمدة مفقودة")
@@ -1104,7 +1132,7 @@ elif mode == "⏳ الديناميكي" and ADV_OK:
             c3.metric("المستوى", res["final_level"])
             st.line_chart(df.set_index("السنة")[
                 ["DRASTIC", "DRASTIC-Modified", "CRI", "MRI"]])
-            st.dataframe(df, use_container_width=True)
+            st.dataframe(df, width="stretch")
 
 
 # ============================================================
@@ -1116,11 +1144,14 @@ elif mode == "🌊 MODFLOW" and MODFLOW_OK:
     mf_ok, mf_msg = is_modflow_available()
     if not mf_ok:
         st.error(f"❌ {mf_msg}")
-        st.info("""
-        **التثبيت:**
-        1. `pip install flopy`
-        2. حمّل MODFLOW 6 من USGS
-        3. أضف `mf6` إلى PATH
+        st.info(f"""
+        **حالة MODFLOW:**
+        - _modflow_status: `{_modflow_status}`
+        - مسار mf6: `{shutil.which('mf6') or 'غير موجود'}`
+        - مجلد MODFLOW: `{MODFLOW_DIR}`
+        
+        **إذا استمر الخطأ:**
+        تحقق من Logs في Streamlit Cloud.
         """)
     else:
         st.success(f"✅ {mf_msg}")
@@ -1144,8 +1175,8 @@ elif mode == "🌊 MODFLOW" and MODFLOW_OK:
         c1, c2 = st.columns(2)
         with c1:
             nlay = st.number_input("طبقات:", 1, 5, 1)
-            nrow = st.number_input("صفوف:", 5, 100, 20)
-            ncol = st.number_input("أعمدة:", 5, 100, 20)
+            nrow = st.number_input("صفوف:", 5, 50, 20)
+            ncol = st.number_input("أعمدة:", 5, 50, 20)
             delr = st.number_input("عرض الخلية (m):", 50.0, 5000.0, 500.0, 50.0)
         with c2:
             delc = st.number_input("ارتفاع الخلية (m):", 50.0, 5000.0, 500.0, 50.0)
@@ -1179,7 +1210,7 @@ elif mode == "🌊 MODFLOW" and MODFLOW_OK:
 
         if st.button("🚀 تشغيل MODFLOW", type="primary"):
             with st.spinner("جاري التشغيل..."):
-                ws = f"./modflow_ws/{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                ws = f"/tmp/mf_ws_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
                 res = build_and_run_model(
                     workspace=ws, nlay=int(nlay), nrow=int(nrow),
                     ncol=int(ncol), delr=float(delr), delc=float(delc),
@@ -1207,9 +1238,9 @@ elif mode == "🌊 MODFLOW" and MODFLOW_OK:
                         labels={"x": "عمود", "y": "صف", "color": "منسوب (m)"},
                         color_continuous_scale="Viridis",
                         title="منسوب المياه الجوفية")
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width="stretch")
                 except ImportError:
-                    st.dataframe(pd.DataFrame(res["heads"]))
+                    st.dataframe(pd.DataFrame(res["heads"]), width="stretch")
 
                 if HYDRO_OK:
                     por = get_default_porosity()
@@ -1226,4 +1257,4 @@ elif mode == "🌊 MODFLOW" and MODFLOW_OK:
 
 # ============ FOOTER ============
 st.markdown("---")
-st.caption("2026 جامعة الخرطوم - نظام التعدين السوداني v38.1")
+st.caption("2026 جامعة الخرطوم - نظام التعدين السوداني v39.0")
