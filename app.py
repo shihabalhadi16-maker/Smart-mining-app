@@ -1,4 +1,4 @@
-"""نظام التعدين السوداني v40.0 - النسخة النهائية المحسّنة"""
+"""نظام التعدين السوداني v41.0 - النسخة الكاملة مع تشخيص MODFLOW"""
 import streamlit as st
 import subprocess
 import os
@@ -49,10 +49,7 @@ st.markdown("""
         transform: translateY(-2px);
         box-shadow: 0 4px 12px rgba(193, 154, 107, 0.4);
     }
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 6px;
-        flex-wrap: wrap;
-    }
+    .stTabs [data-baseweb="tab-list"] { gap: 6px; flex-wrap: wrap; }
     .stTabs [data-baseweb="tab"] {
         border-radius: 8px 8px 0 0;
         padding: 10px 16px;
@@ -96,50 +93,19 @@ st.markdown("""
         margin: 0;
         text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
     }
-    .header-subtitle {
-        font-size: 1.05em;
-        opacity: 0.95;
-        margin: 8px 0 0 0;
-    }
-    .stAlert {
-        border-radius: 10px;
-        border-left: 5px solid;
-    }
-    .stExpander {
-        border: 1px solid #e0d4b8;
-        border-radius: 10px;
-        background-color: #faf8f3;
-    }
-    .stProgress > div > div {
-        background: linear-gradient(90deg, #c19a6b 0%, #5c2c16 100%);
-    }
+    .header-subtitle { font-size: 1.05em; opacity: 0.95; margin: 8px 0 0 0; }
+    .stAlert { border-radius: 10px; border-left: 5px solid; }
+    .stExpander { border: 1px solid #e0d4b8; border-radius: 10px; background-color: #faf8f3; }
+    .stProgress > div > div { background: linear-gradient(90deg, #c19a6b 0%, #5c2c16 100%); }
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
-
     @media (max-width: 768px) {
         .header-title { font-size: 1.4em !important; }
         .header-subtitle { font-size: 0.85em !important; }
         .header-container { padding: 16px !important; }
-        [data-testid="stHorizontalBlock"] {
-            flex-direction: column !important;
-        }
-        [data-testid="stHorizontalBlock"] > div {
-            width: 100% !important;
-            margin-bottom: 10px;
-        }
-        .stTabs [data-baseweb="tab"] {
-            padding: 6px 10px;
-            font-size: 0.8em;
-        }
-        div[data-testid="stMetric"] {
-            padding: 10px;
-        }
-        div[data-testid="stMetric"] label {
-            font-size: 0.8em !important;
-        }
-        div[data-testid="stMetric"] [data-testid="stMetricValue"] {
-            font-size: 1.2em !important;
-        }
+        [data-testid="stHorizontalBlock"] { flex-direction: column !important; }
+        [data-testid="stHorizontalBlock"] > div { width: 100% !important; margin-bottom: 10px; }
+        .stTabs [data-baseweb="tab"] { padding: 6px 10px; font-size: 0.8em; }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -700,7 +666,7 @@ with _col2:
 
 st.markdown("""
 <div class="header-container">
-    <div class="header-title">⛏️ نظام التعدين السوداني v40.0</div>
+    <div class="header-title">⛏️ نظام التعدين السوداني v41.0</div>
     <div class="header-subtitle">جامعة الخرطوم - كلية الهندسة</div>
     <div class="header-subtitle">DRASTIC + MODFLOW + DRASTIC-P + Dynamic + Validation</div>
 </div>
@@ -732,7 +698,6 @@ if MODFLOW_OK:
 mode = st.sidebar.radio("اختر الوضع:", mode_options, key="app_mode")
 st.sidebar.markdown("---")
 
-# حالة MODFLOW
 st.sidebar.markdown("### 🔧 حالة النظام")
 if _modflow_status == "already_installed":
     st.sidebar.success("✅ MODFLOW مثبت مسبقاً")
@@ -756,24 +721,20 @@ if "ci" in st.session_state:
 else:
     st.sidebar.warning("⚠️ لم يتم حساب مؤشر")
 
-# ===== حفظ/تحميل المشروع =====
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 💾 إدارة المشروع")
-
 if "cv" in st.session_state:
     project_data = {
         "site": st.session_state.get("cs", ""),
         "coords": list(st.session_state.get("cc", (0, 0))),
         "index": st.session_state.get("ci", 0),
         "values": st.session_state.get("cv", {}),
-        "date": datetime.datetime.now().isoformat()
-    }
+        "date": datetime.datetime.now().isoformat()}
     st.sidebar.download_button(
-        "💾 حفظ المشروع (JSON)",
+        "💾 حفظ المشروع",
         data=json.dumps(project_data, ensure_ascii=False, indent=2),
         file_name=f"project_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.json",
-        mime="application/json",
-        width="stretch")
+        mime="application/json", width="stretch")
 
 uploaded = st.sidebar.file_uploader("📂 تحميل مشروع", type=["json"])
 if uploaded:
@@ -802,7 +763,6 @@ if mode == "🏠 النظام الأساسي":
                     "🗺️ الخريطة", "📈 الحساسية", "☠️ السمية",
                     "📚 التاريخ", "🌍 GIS", "🎲 Monte Carlo"])
 
-    # ===== TAB 0: المدخلات =====
     with tabs[0]:
         st.header("اختيار الموقع والمدخلات")
         site = st.selectbox("الموقع:", list(preset.keys()))
@@ -836,7 +796,6 @@ if mode == "🏠 النظام الأساسي":
             conductivity = st.slider("C - التوصيلية (م/يوم):", 0.01, 100.0,
                                       float(sd.get("conductivity", 5.0)), 0.1)
         with c2:
-            # استخدام الترجمة العربية
             a_keys = list(AQUIFER_AR.keys())
             a_labels = [f"{AQUIFER_AR[k]} ({k})" for k in a_keys]
             default_a = a_keys.index(sd.get("aquifer", "massive_sandstone")) \
@@ -914,46 +873,6 @@ if mode == "🏠 النظام الأساسي":
             w3.metric("السرعة (م/يوم)", travel["velocity"])
             w4.metric("التدرج i", travel["gradient"])
 
-            # ===== مخطط أوزان DRASTIC =====
-            st.markdown("---")
-            st.subheader("📊 أوزان معامل DRASTIC")
-            c_pie, c_txt = st.columns([2, 1])
-            with c_pie:
-                try:
-                    import plotly.graph_objects as go
-                    weights_data = {
-                        "D - العمق": 5, "R - التغذية": 4,
-                        "A - الوسط المائي": 3, "S - التربة": 2,
-                        "T - الميل": 1, "I - نطاق التهوية": 5,
-                        "C - التوصيلية": 3}
-                    colors = ["#5c2c16", "#8b5a2b", "#c19a6b", "#d4af37",
-                              "#e6c77e", "#a0522d", "#cd853f"]
-                    fig = go.Figure(data=[go.Pie(
-                        labels=list(weights_data.keys()),
-                        values=list(weights_data.values()),
-                        hole=0.4, marker=dict(colors=colors),
-                        textinfo='label+percent',
-                        textposition='outside')])
-                    fig.update_layout(height=400, showlegend=False,
-                        font=dict(family="Tahoma", size=12))
-                    st.plotly_chart(fig, width="stretch")
-                except ImportError:
-                    st.info("ثبّت plotly لعرض المخطط")
-            with c_txt:
-                st.markdown("""
-                **الأوزان:**
-                - **D** = 5 (الأعلى)
-                - **I** = 5
-                - **R** = 4
-                - **A** = 3
-                - **C** = 3
-                - **S** = 2
-                - **T** = 1
-
-                **المجموع:** 23
-                **الحد الأقصى:** 230
-                """)
-
             if st.button("💾 حفظ في التاريخ", key="save_hist"):
                 if "history" not in st.session_state:
                     st.session_state["history"] = []
@@ -965,7 +884,6 @@ if mode == "🏠 النظام الأساسي":
         except ValueError as e:
             st.error("خطأ: " + str(e))
 
-    # ===== TAB 1: الجماعي =====
     with tabs[1]:
         st.header("📊 التقييم الجماعي")
         sample = pd.DataFrame({
@@ -1012,7 +930,6 @@ if mode == "🏠 النظام الأساسي":
             except Exception as e:
                 st.error("خطأ: " + str(e))
 
-    # ===== TAB 2: الحلول =====
     with tabs[2]:
         st.header("🛡️ محاكي الحلول")
         if "ci" in st.session_state:
@@ -1032,7 +949,6 @@ if mode == "🏠 النظام الأساسي":
         else:
             st.warning("افتح تبويب المدخلات")
 
-    # ===== TAB 3: التقرير =====
     with tabs[3]:
         st.header("📄 توليد التقرير")
         if "ci" in st.session_state:
@@ -1056,7 +972,6 @@ if mode == "🏠 النظام الأساسي":
         else:
             st.warning("افتح تبويب المدخلات")
 
-    # ===== TAB 4: الخريطة =====
     with tabs[4]:
         st.header("🗺️ الخريطة التفاعلية")
         if DS_OK:
@@ -1102,7 +1017,6 @@ if mode == "🏠 النظام الأساسي":
         else:
             st.warning("data_sources.py غير متوفر")
 
-    # ===== TAB 5: الحساسية =====
     with tabs[5]:
         st.header("📈 تحليل الحساسية")
         if "ci" in st.session_state:
@@ -1126,7 +1040,6 @@ if mode == "🏠 النظام الأساسي":
         else:
             st.warning("افتح تبويب المدخلات")
 
-    # ===== TAB 6: السمية =====
     with tabs[6]:
         st.header("☠️ تحليل السمية")
         if "ci" in st.session_state:
@@ -1153,7 +1066,6 @@ if mode == "🏠 النظام الأساسي":
         else:
             st.warning("افتح تبويب المدخلات")
 
-    # ===== TAB 7: التاريخ =====
     with tabs[7]:
         st.header("📚 تاريخ التقييمات")
         if "history" in st.session_state and st.session_state["history"]:
@@ -1165,7 +1077,6 @@ if mode == "🏠 النظام الأساسي":
         else:
             st.info("لا توجد تقييمات محفوظة")
 
-    # ===== TAB 8: GIS =====
     with tabs[8]:
         st.header("🌍 تصدير GIS")
         if DS_OK:
@@ -1208,7 +1119,6 @@ if mode == "🏠 النظام الأساسي":
                         data=df_s.to_csv(index=False).encode("utf-8-sig"),
                         file_name="sites.csv", mime="text/csv")
 
-    # ===== TAB 9: Monte Carlo =====
     with tabs[9]:
         st.header("🎲 محاكاة Monte Carlo")
         if "ci" in st.session_state:
@@ -1311,12 +1221,6 @@ elif mode == "✅ التحقق الفعلي" and ADV_OK:
 # ============================================================
 elif mode == "🧪 DRASTIC-P" and ADV_OK:
     st.header("🧪 DRASTIC-P — المؤشر المعدل للتعدين")
-    st.markdown("""
-    **DRASTIC-P = DRASTIC × (1 + α×CRI + β×MRI + γ×AMD)**
-    - CRI: مؤشر مخاطر السيانيد
-    - MRI: مؤشر مخاطر الزئبق
-    - AMD: الصرف الحمضي للمناجم
-    """)
 
     if "ci" not in st.session_state:
         st.warning("افتح النظام الأساسي أولاً")
@@ -1387,7 +1291,6 @@ elif mode == "🧪 DRASTIC-P" and ADV_OK:
 # ============================================================
 elif mode == "⏳ الديناميكي" and ADV_OK:
     st.header("⏳ التقييم الديناميكي")
-    st.markdown("**الهدف:** توقع تطور المؤشر مع الزمن.")
 
     if "ci" not in st.session_state:
         st.warning("افتح النظام الأساسي أولاً")
@@ -1399,8 +1302,7 @@ elif mode == "⏳ الديناميكي" and ADV_OK:
             years = st.slider("فترة التوقع (سنوات):", 1, 50, 10, 1)
             mining = st.slider("معدل توسع التعدين:", 0.0, 0.20, 0.05, 0.01)
         with c2:
-            climate = st.slider("تأثير المناخ:", -0.10, 0.05, -0.02, 0.005,
-                                 help="قيمة سالبة = جفاف")
+            climate = st.slider("تأثير المناخ:", -0.10, 0.05, -0.02, 0.005)
             pop = st.slider("النمو السكاني:", 0.0, 0.10, 0.03, 0.01)
         cri0 = st.slider("CRI الحالي:", 0.0, 10.0, 1.0, 0.1)
         mri0 = st.slider("MRI الحالي:", 0.0, 10.0, 0.5, 0.1)
@@ -1417,41 +1319,51 @@ elif mode == "⏳ الديناميكي" and ADV_OK:
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("DRASTIC الأساسي", st.session_state["ci"])
             c2.metric(f"DRASTIC-P سنة {years}", res["final_modified"])
-            c3.metric("المستوى النهائي", LEVEL_AR.get(res["final_level"],
-                                                        res["final_level"]))
+            c3.metric("المستوى النهائي",
+                      LEVEL_AR.get(res["final_level"], res["final_level"]))
             inc = res["final_modified"] - st.session_state["ci"]
             c4.metric("الزيادة", f"+{inc:.1f}",
                       delta=f"{inc/st.session_state['ci']*100:.1f}%")
 
             st.markdown("---")
-            st.subheader("📈 تطور المؤشر")
             st.line_chart(df.set_index("السنة")[
                 ["DRASTIC", "DRASTIC-Modified", "CRI", "MRI"]])
-
-            st.markdown("---")
-            st.subheader("📋 الجدول التفصيلي")
             st.dataframe(df, width="stretch")
-
-            st.markdown("---")
-            st.subheader("🛡️ سيناريو التخفيف")
-            mit_year = st.slider("سنة بدء التخفيف:", 1, years,
-                                  max(1, years//3))
-            mit_df = estimate_mitigation_impact(st.session_state["ci"],
-                                                  years, mit_year)
-            st.dataframe(mit_df, width="stretch")
-            st.line_chart(mit_df.set_index("السنة")[["بدون تخفيف", "مع تخفيف"]])
 
 
 # ============================================================
-# ============ MODE 5: MODFLOW ============
+# ============ MODE 5: MODFLOW (مع تشخيص) ============
 # ============================================================
 elif mode == "🌊 MODFLOW" and MODFLOW_OK:
     st.header("🌊 محاكاة MODFLOW 6")
 
+    # ===== تشخيص مفصل =====
+    with st.expander("🔍 تشخيص MODFLOW", expanded=True):
+        mf6_path = shutil.which("mf6")
+        st.write(f"**مسار mf6**: `{mf6_path or 'غير موجود'}`")
+        st.write(f"**حالة MODFLOW**: `{_modflow_status}`")
+
+        if st.button("🧪 اختبار تشغيل mf6", key="test_mf6"):
+            if mf6_path:
+                try:
+                    result = subprocess.run(
+                        [mf6_path, "--version"],
+                        capture_output=True, text=True, timeout=30)
+                    st.write(f"**Return code**: `{result.returncode}`")
+                    if result.stdout:
+                        st.code(result.stdout[:500], language="text")
+                    if result.stderr:
+                        st.error(f"**stderr**:\n```\n{result.stderr[:500]}\n```")
+                except subprocess.TimeoutExpired:
+                    st.error("انتهت المهلة (30 ثانية) — mf6 لا يستجيب")
+                except Exception as e:
+                    st.error(f"فشل التشغيل: {e}")
+            else:
+                st.error("❌ mf6 غير موجود في PATH")
+
     mf_ok, mf_msg = is_modflow_available()
     if not mf_ok:
         st.error(f"❌ {mf_msg}")
-        st.info(f"**حالة MODFLOW:** {_modflow_status}")
     else:
         st.success(f"✅ {mf_msg}")
 
@@ -1479,14 +1391,14 @@ elif mode == "🌊 MODFLOW" and MODFLOW_OK:
             delr = st.number_input("عرض الخلية (m):", 50.0, 5000.0, 500.0, 50.0)
         with c2:
             delc = st.number_input("ارتفاع الخلية (m):", 50.0, 5000.0, 500.0, 50.0)
-            top = st.number_input("منسوب السطح (m):", 10.0, 2000.0, 350.0, 10.0)
-            botm = st.number_input("القاعدة (m):", 0.0, 1000.0, 50.0, 10.0)
+            top = st.number_input("منسوب السطح (m):", 100.0, 2000.0, 350.0, 10.0)
+            botm = st.number_input("القاعدة (m):", 0.0, 1000.0, 250.0, 10.0)
             if HYDRO_OK:
                 dk = get_default_k(location)
                 dr = get_default_recharge("Omdurman" if "Omdurman" in location
                                             else "Gash_Kassala")
             else:
-                dk, dr = 3.5, 15.0
+                dk, dr = 3.3, 15.0
             k_val = st.number_input("K (m/day):", 0.01, 500.0, float(dk), 0.1)
             rech = st.number_input("التغذية (mm/year):", 0.0, 500.0,
                                     float(dr) if dr < 500 else 15.0, 1.0)
@@ -1541,6 +1453,9 @@ elif mode == "🌊 MODFLOW" and MODFLOW_OK:
                 if res.get("buff"):
                     with st.expander("تفاصيل الخطأ"):
                         st.code(res["buff"])
+                if res.get("traceback"):
+                    with st.expander("Traceback"):
+                        st.code(res["traceback"])
             else:
                 st.success("✅ نجح التشغيل!")
                 c1, c2, c3, c4 = st.columns(4)
@@ -1576,5 +1491,5 @@ elif mode == "🌊 MODFLOW" and MODFLOW_OK:
 
 # ============ FOOTER ============
 st.markdown("---")
-st.caption("2026 جامعة الخرطوم - نظام التعدين السوداني v40.0 - "
+st.caption("2026 جامعة الخرطوم - نظام التعدين السوداني v41.0 - "
            "DRASTIC + MODFLOW + DRASTIC-P + Dynamic + Validation")
