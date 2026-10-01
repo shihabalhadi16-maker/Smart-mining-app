@@ -1,7 +1,8 @@
-"""محرك MODFLOW 6 - النسخة التشخيصية الكاملة"""
+"""محرك MODFLOW 6 - النسخة التشخيصية المتقدمة"""
 import numpy as np
 import shutil
 import os
+import subprocess
 from pathlib import Path
 
 try:
@@ -31,7 +32,7 @@ def build_and_run_model(workspace, nlay=1, nrow=20, ncol=20,
                         well_locations=None, well_rates=None,
                         model_name="mining_model"):
     """
-    بناء وتشغيل نموذج MODFLOW 6 مع تشخيص كامل
+    بناء وتشغيل نموذج MODFLOW 6 مع تشخيص كامل للمشاكل
     """
     if not FLOPY_OK:
         return {"success": False, "error": "FloPy غير مثبتة"}
@@ -50,11 +51,32 @@ def build_and_run_model(workspace, nlay=1, nrow=20, ncol=20,
         if recharge_mm < 0:
             return {"success": False, "error": "التغذية لا يمكن أن تكون سالبة"}
 
+        # ===== 0. نسخ mf6 إلى مجلد العمل =====
+        mf6_source = shutil.which("mf6")
+        mf6_target = os.path.join(workspace, "mf6")
+        copy_status = "لم يتم النسخ"
+
+        if mf6_source:
+            try:
+                if not os.path.exists(mf6_target):
+                    shutil.copy2(mf6_source, mf6_target)
+                    os.chmod(mf6_target, 0o755)
+                    copy_status = f"تم النسخ من {mf6_source} إلى {mf6_target}"
+                else:
+                    copy_status = "موجود مسبقاً"
+            except Exception as e:
+                copy_status = f"فشل النسخ: {e}"
+        else:
+            copy_status = "mf6 غير موجود في PATH"
+
+        # تحديد المسار التنفيذي
+        mf6_exe = mf6_target if os.path.exists(mf6_target) else "mf6"
+
         # ===== 1. المحاكاة =====
         sim = flopy.mf6.MFSimulation(
             sim_name="sim",
             version='mf6',
-            exe_name="mf6",
+            exe_name=mf6_exe,
             sim_ws=workspace)
 
         # ===== 2. الزمن =====
@@ -65,19 +87,17 @@ def build_and_run_model(workspace, nlay=1, nrow=20, ncol=20,
         ims = flopy.mf6.ModflowIms(
             sim,
             print_option='SUMMARY',
-            complexity='MODERATE',
-            outer_dvclose=1e-5,
-            outer_maximum=200,
-            inner_maximum=300,
-            linear_acceleration='BICGSTAB',
-            relaxation_factor=0.97)
+            complexity='SIMPLE',
+            outer_dvclose=1e-4,
+            outer_maximum=100,
+            inner_maximum=200,
+            linear_acceleration='BICGSTAB')
 
         # ===== 4. النموذج =====
         gwf = flopy.mf6.ModflowGwf(
             sim,
             modelname=model_name,
-            save_flows=True,
-            newtonoptions="NEWTON UNDER_RELAXATION")
+            save_flows=True)
 
         # ===== 5. الشبكة =====
         dis = flopy.mf6.ModflowGwfdis(
@@ -145,13 +165,14 @@ def build_and_run_model(workspace, nlay=1, nrow=20, ncol=20,
             return {
                 "success": False,
                 "error": f"فشل كتابة الملفات: {str(e)}",
-                "traceback": str(e)
+                "traceback": str(e),
+                "copy_status": copy_status
             }
 
         # ===== 14. قائمة الملفات المكتوبة =====
         workspace_files = []
         try:
-            workspace_files = os.listdir(workspace)
+            workspace_files = sorted(os.listdir(workspace))
         except Exception:
             pass
 
@@ -165,31 +186,77 @@ def build_and_run_model(workspace, nlay=1, nrow=20, ncol=20,
             except Exception as e:
                 mfsim_content = f"خطأ في القراءة: {e}"
 
-        # ===== 16. التشغيل =====
+        # ===== 16. محاولة تشغيل mf6 يدوياً =====
+        manual_stdout = ""
+        manual_stderr = ""
+        manual_code = ""
+        manual_status = "لم يتم التشغيل"
+
+        if mf6_source or os.path.exists(mf6_target):
+            exe_path = mf6_target if os.path.exists(mf6_target) else mf6_source
+            try:
+                manual_result = subprocess.run(
+                    [exe_path],
+                    cwd=workspace,
+                    capture_output=True,
+                    text=True,
+                    timeout=120)
+                manual_stdout = (manual_result.stdout or "")[:2000]
+                manual_stderr = (manual_result.stderr or "")[:2000]
+                manual_code = str(manual_result.returncode)
+                manual_status = "تم التشغيل"
+            except subprocess.TimeoutExpired:
+                manual_status = "انتهت المهلة (120 ثانية)"
+            except Exception as e:
+                manual_status = f"استثناء: {e}"
+
+        # ===== 17. التشغيل عبر FloPy =====
         try:
             success, buff = sim.run_simulation(silent=True)
         except Exception as e:
+            import traceback
             return {
                 "success": False,
-                "error": f"استثناء أثناء التشغيل: {str(e)}",
-                "traceback": str(e),
+                "error": f"استثناء أثناء run_simulation: {str(e)}",
+                "traceback": traceback.format_exc()[-2000:],
                 "workspace_files": workspace_files,
-                "mfsim_content": mfsim_content
+                "mfsim_content": mfsim_content,
+                "copy_status": copy_status,
+                "manual_status": manual_status,
+                "manual_code": manual_code,
+                "manual_stdout": manual_stdout,
+                "manual_stderr": manual_stderr
             }
 
-        # ===== 17. التحقق من النجاح =====
+        # ===== 18. التحقق من النجاح =====
         if not success:
+            # قراءة ملف mfsim.lst
+            lst_content = ""
+            lst_path = os.path.join(workspace, "mfsim.lst")
+            if os.path.exists(lst_path):
+                try:
+                    with open(lst_path, 'r', errors='ignore') as f:
+                        lst_content = f.read()[-4000:]
+                except Exception:
+                    pass
+
             return {
                 "success": False,
                 "error": "فشل تشغيل MODFLOW (Return False)",
-                "buff": str(buff)[:3000] if buff is not None else "buff فارغ",
+                "buff": str(buff)[:2000] if buff else "buff فارغ",
                 "workspace_files": workspace_files,
                 "mfsim_content": mfsim_content,
+                "lst_content": lst_content,
+                "copy_status": copy_status,
+                "manual_status": manual_status,
+                "manual_code": manual_code,
+                "manual_stdout": manual_stdout,
+                "manual_stderr": manual_stderr,
                 "workspace": workspace,
-                "hint": "راجع mfsim.nam والملفات المكتوبة"
+                "hint": "راجع manual_stderr و lst_content و mfsim_content"
             }
 
-        # ===== 18. قراءة النتائج =====
+        # ===== 19. قراءة النتائج =====
         try:
             head = gwf.output.head().get_data()
             head_2d = head[0, :, :]
@@ -200,17 +267,18 @@ def build_and_run_model(workspace, nlay=1, nrow=20, ncol=20,
                 "workspace_files": workspace_files
             }
 
-        # ===== 19. التحقق من التقارب =====
+        # ===== 20. التحقق من التقارب =====
         if np.any(head_2d < -1e20):
             n_dry = int(np.sum(head_2d < -1e20))
             return {
                 "success": False,
                 "error": f"النموذج لم يتقارب ({n_dry} خلية جافة)",
                 "workspace_files": workspace_files,
-                "hint": "جرّب تقليل K أو زيادة Botm أو زيادة التغذية"
+                "copy_status": copy_status,
+                "hint": "جرّب تقليل K أو زيادة Botm"
             }
 
-        # ===== 20. النجاح =====
+        # ===== 21. النجاح =====
         return {
             "success": True,
             "heads": head_2d,
@@ -219,6 +287,7 @@ def build_and_run_model(workspace, nlay=1, nrow=20, ncol=20,
             "head_mean": float(np.mean(head_2d)),
             "workspace": workspace,
             "workspace_files": workspace_files,
+            "copy_status": copy_status,
             "nlay": nlay, "nrow": nrow, "ncol": ncol,
             "fixed_head": fixed_head,
             "strt_value": strt_value}
