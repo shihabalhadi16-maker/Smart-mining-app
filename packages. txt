@@ -1,3 +1,5 @@
 libgfortran5
 libgomp1
-libquadmath0 
+libquadmath0
+libblas3
+liblapack3
