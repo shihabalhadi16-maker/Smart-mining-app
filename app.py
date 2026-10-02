@@ -1,4 +1,4 @@
-"""نظام التعدين السوداني v43.0 - النسخة النهائية الكاملة"""
+"""نظام التعدين السوداني v44.0 - النسخة الكاملة مع DRASTIC-P متعدد المواقع"""
 import streamlit as st
 import subprocess
 import os
@@ -28,7 +28,7 @@ st.set_page_config(page_title="نظام التعدين السوداني",
                    initial_sidebar_state="expanded")
 
 # ============================================================
-# ============ CSS المحسّن ============
+# ============ CSS ============
 # ============================================================
 st.markdown("""
 <style>
@@ -204,7 +204,7 @@ except ImportError:
 
 
 # ============================================================
-# ============ قواميس الترجمة العربية ============
+# ============ قواميس الترجمة ============
 # ============================================================
 AQUIFER_AR = {
     "massive_shale": "صخر طيني ضخم",
@@ -666,7 +666,7 @@ with _col2:
 
 st.markdown("""
 <div class="header-container">
-    <div class="header-title">⛏️ نظام التعدين السوداني v43.0</div>
+    <div class="header-title">⛏️ نظام التعدين السوداني v44.0</div>
     <div class="header-subtitle">جامعة الخرطوم - كلية الهندسة</div>
     <div class="header-subtitle">DRASTIC + MODFLOW + DRASTIC-P + Dynamic + Validation</div>
 </div>
@@ -1163,29 +1163,30 @@ if mode == "🏠 النظام الأساسي":
 
 
 # ============================================================
-# ============ MODE 2: Validation (محسّن) ============
+# ============ MODE 2: Validation مع DRASTIC-P ============
 # ============================================================
 elif mode == "✅ التحقق الفعلي" and ADV_OK:
     st.header("✅ التحقق الفعلي من النموذج")
     st.markdown("""
-    **الهدف:** مقارنة توقعات DRASTIC مع بيانات ميدانية حقيقية.
-    البرنامج سيحسب DRASTIC تلقائياً من المدخلات الفيزيائية.
+    **الهدف:** مقارنة توقعات DRASTIC و DRASTIC-P مع بيانات ميدانية حقيقية.
+    البرنامج سيحسب المؤشرين تلقائياً من المدخلات الفيزيائية.
     """)
 
-    # قالب CSV
     sample_val = pd.DataFrame({
         "site_name": ["سنار-1", "سنار-2", "سنار-3"],
         "depth_m": [12.0, 10.0, 25.0],
-        "recharge_mm": [80.0, 75.0, 60.0],
+        "recharge_mm": [20.0, 18.0, 10.0],
         "slope_pct": [3.0, 4.0, 6.0],
         "conductivity": [2.5, 3.0, 1.5],
         "aquifer": ["massive_sandstone", "sand_and_gravel", "massive_shale"],
         "soil": ["sand", "sandy_loam", "clay_loam"],
         "vadose": ["sand_gravel", "sandstone", "silt_clay"],
+        "cn_water_mg_l": [0.10, 0.09, 0.01],
+        "hg_water_mg_l": [0.008, 0.007, 0.001],
         "actual_contaminated": [1, 1, 0]})
-    st.download_button("📥 قالب بيانات التحقق",
+    st.download_button("📥 قالب بيانات التحقق (مع DRASTIC-P)",
         data=sample_val.to_csv(index=False).encode("utf-8-sig"),
-        file_name="validation_sennar.csv", mime="text/csv")
+        file_name="validation_full.csv", mime="text/csv")
 
     f = st.file_uploader("ارفع ملف CSV أو Excel:", 
                           type=["csv", "xlsx"], key="val_f")
@@ -1201,24 +1202,22 @@ elif mode == "✅ التحقق الفعلي" and ADV_OK:
             st.subheader("🔍 معاينة البيانات")
             st.dataframe(df.head(10), width="stretch")
 
-            required = ["depth_m", "recharge_mm", "slope_pct",
-                        "conductivity", "aquifer", "soil", "vadose",
-                        "actual_contaminated"]
-            missing = [c for c in required if c not in df.columns]
+            required_base = ["depth_m", "recharge_mm", "slope_pct",
+                             "conductivity", "aquifer", "soil", "vadose",
+                             "actual_contaminated"]
+            missing_base = [c for c in required_base if c not in df.columns]
 
-            if missing:
-                st.error(f"❌ أعمدة مفقودة: {missing}")
-                st.info("""
-                **الأعمدة المطلوبة:**
-                - depth_m, recharge_mm, slope_pct, conductivity
-                - aquifer, soil, vadose
-                - actual_contaminated (0 = نظيف، 1 = ملوث)
-                """)
+            has_toxicity = ("cn_water_mg_l" in df.columns and 
+                            "hg_water_mg_l" in df.columns)
+
+            if missing_base:
+                st.error(f"❌ أعمدة مفقودة: {missing_base}")
             else:
                 drastic_list = []
-                pred_class_list = []
+                drastic_p_list = []
+                cri_list = []
+                mri_list = []
                 actual_list = []
-                errors_list = []
 
                 for i, row in df.iterrows():
                     try:
@@ -1231,90 +1230,110 @@ elif mode == "✅ التحقق الفعلي" and ADV_OK:
                         C_r = get_c_rating(float(row["conductivity"]))
                         ix = calc_index(D_r, R_r, A_r, S_r, T_r, I_r, C_r)
                         drastic_list.append(ix)
-                        pred_class_list.append(1 if ix >= 140 else 0)
+
+                        if has_toxicity:
+                            cn_w = float(row.get("cn_water_mg_l", 0.0))
+                            hg_w = float(row.get("hg_water_mg_l", 0.0))
+                            CN_W = 0.07
+                            cn_ratio = cn_w / CN_W
+                            cri = cn_ratio * 0.5
+                            HG_W = 0.006
+                            hg_ratio = hg_w / HG_W
+                            mri = hg_ratio * 0.6
+                            modifier = 1.0 + (0.15 * cri) + (0.20 * mri)
+                            ix_p = min(230, ix * modifier)
+                        else:
+                            cri = 0
+                            mri = 0
+                            ix_p = ix
+
+                        drastic_p_list.append(round(ix_p, 1))
+                        cri_list.append(round(cri, 3))
+                        mri_list.append(round(mri, 3))
                         actual_list.append(int(row["actual_contaminated"]))
-                        errors_list.append("")
-                    except Exception as e:
+                    except Exception:
                         drastic_list.append(0)
-                        pred_class_list.append(0)
+                        drastic_p_list.append(0)
+                        cri_list.append(0)
+                        mri_list.append(0)
                         actual_list.append(int(row.get("actual_contaminated", 0)))
-                        errors_list.append(str(e)[:50])
 
                 df["drastic_index"] = drastic_list
-                df["predicted"] = pred_class_list
-                df["actual"] = actual_list
-                df["error"] = errors_list
+                df["drastic_p_index"] = drastic_p_list
+                df["cri"] = cri_list
+                df["mri"] = mri_list
 
                 st.markdown("---")
-                st.subheader("📊 نتائج DRASTIC لكل موقع")
-                result_df = df[["site_name", "drastic_index",
-                                "predicted", "actual", "error"]].copy()
-                result_df.columns = ["الموقع", "DRASTIC",
-                                      "المتوقع (1=ملوث)",
-                                      "الفعلي (1=ملوث)", "ملاحظات"]
+                st.subheader("📊 نتائج DRASTIC و DRASTIC-P لكل موقع")
+                result_df = df[["site_name", "drastic_index", 
+                                "drastic_p_index", "cri", "mri",
+                                "actual_contaminated"]].copy()
+                result_df.columns = ["الموقع", "DRASTIC", "DRASTIC-P",
+                                      "CRI", "MRI", "الفعلي (1=ملوث)"]
                 st.dataframe(result_df, width="stretch")
 
-                metrics = calculate_confusion_matrix(
-                    drastic_list, actual_list, threshold=140)
+                st.markdown("---")
+                st.subheader("📈 مقارنة DRASTIC vs DRASTIC-P")
+
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.markdown("### 🔵 DRASTIC التقليدي")
+                    metrics_d = calculate_confusion_matrix(
+                        drastic_list, actual_list, threshold=140)
+                    st.metric("Accuracy", f"{metrics_d['accuracy']}%")
+                    st.metric("Recall", f"{metrics_d['recall']}%")
+                    st.metric("Precision", f"{metrics_d['precision']}%")
+                    st.metric("Kappa", metrics_d["kappa"])
+                    st.metric("MCC", metrics_d["mcc"])
+
+                with c2:
+                    st.markdown("### 🟢 DRASTIC-P المعدل")
+                    metrics_p = calculate_confusion_matrix(
+                        drastic_p_list, actual_list, threshold=140)
+                    st.metric("Accuracy", f"{metrics_p['accuracy']}%")
+                    st.metric("Recall", f"{metrics_p['recall']}%")
+                    st.metric("Precision", f"{metrics_p['precision']}%")
+                    st.metric("Kappa", metrics_p["kappa"])
+                    st.metric("MCC", metrics_p["mcc"])
 
                 st.markdown("---")
-                st.subheader("📈 المقاييس الإحصائية")
+                st.subheader("🏆 الحكم النهائي")
 
-                c1, c2, c3, c4 = st.columns(4)
-                c1.metric("Accuracy", f"{metrics['accuracy']}%")
-                c2.metric("Precision", f"{metrics['precision']}%")
-                c3.metric("Recall", f"{metrics['recall']}%")
-                c4.metric("F1-Score", f"{metrics['f1_score']}%")
-
-                c1, c2, c3, c4 = st.columns(4)
-                c1.metric("Specificity", f"{metrics['specificity']}%")
-                c2.metric("NPV", f"{metrics['npv']}%")
-                c3.metric("Kappa", metrics["kappa"])
-                c4.metric("MCC", metrics["mcc"])
-
-                k = metrics["kappa"]
-                if k >= 0.8:
-                    st.success(f"✅ Kappa = {k} — توافق ممتاز مع البيانات الميدانية")
-                elif k >= 0.6:
-                    st.info(f"ℹ️ Kappa = {k} — توافق جيد")
-                elif k >= 0.4:
-                    st.warning(f"⚠️ Kappa = {k} — توافق متوسط")
+                if metrics_p["kappa"] > metrics_d["kappa"]:
+                    st.success(f"""
+                    ✅ **DRASTIC-P أفضل من DRASTIC التقليدي!**
+                    - Kappa: {metrics_d['kappa']} → {metrics_p['kappa']}
+                    - Recall: {metrics_d['recall']}% → {metrics_p['recall']}%
+                    
+                    **هذا يثبت أن دمج مؤشرات السيانيد والزئبق يحسّن دقة التقييم.**
+                    """)
                 else:
-                    st.error(f"❌ Kappa = {k} — توافق ضعيف")
+                    st.warning(f"""
+                    ⚠️ **DRASTIC-P لم يحسّن النتيجة بشكل ملحوظ.**
+                    - Kappa: {metrics_d['kappa']} → {metrics_p['kappa']}
+                    """)
 
                 st.markdown("---")
-                st.subheader("🔢 مصفوفة الالتباس")
-                cm = metrics["confusion_matrix"]
+                st.subheader("🔢 مصفوفة الالتباس (DRASTIC-P)")
+                cm = metrics_p["confusion_matrix"]
                 cm_df = pd.DataFrame({
                     "ملوث فعلاً": [cm["TP"], cm["FN"]],
                     "نظيف فعلاً": [cm["FP"], cm["TN"]]
                 }, index=["توقع ملوث", "توقع نظيف"])
                 st.dataframe(cm_df, width="stretch")
 
-                st.info(f"""
-                **تفسير مصفوفة الالتباس:**
-                - **TP**: {cm['TP']} موقع — توقع "ملوث" والموقع **ملوث فعلاً** ✅
-                - **TN**: {cm['TN']} موقع — توقع "نظيف" والموقع **نظيف فعلاً** ✅
-                - **FP**: {cm['FP']} موقع — توقع "ملوث" والموقع **نظيف** ❌
-                - **FN**: {cm['FN']} موقع — توقع "نظيف" والموقع **ملوث فعلاً** ❌
-                """)
-
                 st.markdown("---")
-                with st.expander("📄 التقرير الإحصائي الكامل"):
-                    st.text(generate_validation_report(metrics))
-
-                st.download_button("📥 تحميل النتائج (CSV)",
+                st.download_button("📥 تحميل النتائج الكاملة (CSV)",
                     data=result_df.to_csv(index=False).encode("utf-8-sig"),
-                    file_name="validation_results.csv",
-                    mime="text/csv",
-                    width="stretch")
+                    file_name="validation_full_results.csv",
+                    mime="text/csv", width="stretch")
 
         except Exception as e:
             st.error(f"❌ خطأ في قراءة الملف: {e}")
 
 
 # ============================================================
-# ============ MODE 3: DRASTIC-P ============
+# ============ MODE 3: DRASTIC-P (موقع واحد) ============
 # ============================================================
 elif mode == "🧪 DRASTIC-P" and ADV_OK:
     st.header("🧪 DRASTIC-P — المؤشر المعدل للتعدين")
@@ -1561,4 +1580,4 @@ elif mode == "🌊 MODFLOW" and MODFLOW_OK:
 
 # ============ FOOTER ============
 st.markdown("---")
-st.caption("2026 جامعة الخرطوم - نظام التعدين السوداني v43.0")
+st.caption("2026 جامعة الخرطوم - نظام التعدين السوداني v44.0")
