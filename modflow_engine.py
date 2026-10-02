@@ -1,4 +1,4 @@
-"""محرك MODFLOW 6 - النسخة التشخيصية المتقدمة"""
+"""محرك MODFLOW 6 - النسخة النهائية المصححة (CHD بدون تكرار)"""
 import numpy as np
 import shutil
 import os
@@ -32,7 +32,8 @@ def build_and_run_model(workspace, nlay=1, nrow=20, ncol=20,
                         well_locations=None, well_rates=None,
                         model_name="mining_model"):
     """
-    بناء وتشغيل نموذج MODFLOW 6 مع تشخيص كامل للمشاكل
+    بناء وتشغيل نموذج MODFLOW 6
+    التصحيح: CHD بدون تكرار الخلايا (set)
     """
     if not FLOPY_OK:
         return {"success": False, "error": "FloPy غير مثبتة"}
@@ -61,7 +62,7 @@ def build_and_run_model(workspace, nlay=1, nrow=20, ncol=20,
                 if not os.path.exists(mf6_target):
                     shutil.copy2(mf6_source, mf6_target)
                     os.chmod(mf6_target, 0o755)
-                    copy_status = f"تم النسخ من {mf6_source} إلى {mf6_target}"
+                    copy_status = f"تم النسخ من {mf6_source}"
                 else:
                     copy_status = "موجود مسبقاً"
             except Exception as e:
@@ -69,7 +70,6 @@ def build_and_run_model(workspace, nlay=1, nrow=20, ncol=20,
         else:
             copy_status = "mf6 غير موجود في PATH"
 
-        # تحديد المسار التنفيذي
         mf6_exe = mf6_target if os.path.exists(mf6_target) else "mf6"
 
         # ===== 1. المحاكاة =====
@@ -130,15 +130,27 @@ def build_and_run_model(workspace, nlay=1, nrow=20, ncol=20,
         rech_value = (recharge_mm / 1000.0) / 365.25
         rch = flopy.mf6.ModflowGwfrcha(gwf, recharge=rech_value)
 
-        # ===== 10. شرط حدّي ثابت (CHD) =====
+        # ===== 10. شرط حدّي ثابت (CHD) - بدون تكرار =====
         fixed_head = botm + (top - botm) * 0.5
-        chd_cells = []
-        for col in range(ncol):
-            chd_cells.append(((0, 0, col), fixed_head))
-            chd_cells.append(((0, nrow - 1, col), fixed_head))
-        for row in range(nrow):
-            chd_cells.append(((0, row, 0), fixed_head))
-            chd_cells.append(((0, row, ncol - 1), fixed_head))
+        chd_set = set()
+
+        # الحدود الأربعة (بدون الزوايا)
+        for col in range(1, ncol - 1):
+            chd_set.add((0, 0, col))
+            chd_set.add((0, nrow - 1, col))
+        for row in range(1, nrow - 1):
+            chd_set.add((0, row, 0))
+            chd_set.add((0, row, ncol - 1))
+
+        # الزوايا الأربعة (مرة واحدة فقط)
+        chd_set.add((0, 0, 0))
+        chd_set.add((0, 0, ncol - 1))
+        chd_set.add((0, nrow - 1, 0))
+        chd_set.add((0, nrow - 1, ncol - 1))
+
+        # تحويل إلى قائمة
+        chd_cells = [((lay, row, col), fixed_head) for (lay, row, col) in chd_set]
+
         chd = flopy.mf6.ModflowGwfchd(
             gwf, stress_period_data={0: chd_cells})
 
@@ -165,52 +177,16 @@ def build_and_run_model(workspace, nlay=1, nrow=20, ncol=20,
             return {
                 "success": False,
                 "error": f"فشل كتابة الملفات: {str(e)}",
-                "traceback": str(e),
-                "copy_status": copy_status
-            }
+                "traceback": str(e)}
 
-        # ===== 14. قائمة الملفات المكتوبة =====
+        # ===== 14. قائمة الملفات =====
         workspace_files = []
         try:
             workspace_files = sorted(os.listdir(workspace))
         except Exception:
             pass
 
-        # ===== 15. قراءة محتوى mfsim.nam =====
-        mfsim_content = ""
-        mfsim_path = os.path.join(workspace, 'mfsim.nam')
-        if os.path.exists(mfsim_path):
-            try:
-                with open(mfsim_path, 'r') as f:
-                    mfsim_content = f.read()
-            except Exception as e:
-                mfsim_content = f"خطأ في القراءة: {e}"
-
-        # ===== 16. محاولة تشغيل mf6 يدوياً =====
-        manual_stdout = ""
-        manual_stderr = ""
-        manual_code = ""
-        manual_status = "لم يتم التشغيل"
-
-        if mf6_source or os.path.exists(mf6_target):
-            exe_path = mf6_target if os.path.exists(mf6_target) else mf6_source
-            try:
-                manual_result = subprocess.run(
-                    [exe_path],
-                    cwd=workspace,
-                    capture_output=True,
-                    text=True,
-                    timeout=120)
-                manual_stdout = (manual_result.stdout or "")[:2000]
-                manual_stderr = (manual_result.stderr or "")[:2000]
-                manual_code = str(manual_result.returncode)
-                manual_status = "تم التشغيل"
-            except subprocess.TimeoutExpired:
-                manual_status = "انتهت المهلة (120 ثانية)"
-            except Exception as e:
-                manual_status = f"استثناء: {e}"
-
-        # ===== 17. التشغيل عبر FloPy =====
+        # ===== 15. التشغيل =====
         try:
             success, buff = sim.run_simulation(silent=True)
         except Exception as e:
@@ -220,17 +196,11 @@ def build_and_run_model(workspace, nlay=1, nrow=20, ncol=20,
                 "error": f"استثناء أثناء run_simulation: {str(e)}",
                 "traceback": traceback.format_exc()[-2000:],
                 "workspace_files": workspace_files,
-                "mfsim_content": mfsim_content,
-                "copy_status": copy_status,
-                "manual_status": manual_status,
-                "manual_code": manual_code,
-                "manual_stdout": manual_stdout,
-                "manual_stderr": manual_stderr
-            }
+                "copy_status": copy_status}
 
-        # ===== 18. التحقق من النجاح =====
+        # ===== 16. التحقق من النجاح =====
         if not success:
-            # قراءة ملف mfsim.lst
+            # قراءة mfsim.lst
             lst_content = ""
             lst_path = os.path.join(workspace, "mfsim.lst")
             if os.path.exists(lst_path):
@@ -245,18 +215,12 @@ def build_and_run_model(workspace, nlay=1, nrow=20, ncol=20,
                 "error": "فشل تشغيل MODFLOW (Return False)",
                 "buff": str(buff)[:2000] if buff else "buff فارغ",
                 "workspace_files": workspace_files,
-                "mfsim_content": mfsim_content,
                 "lst_content": lst_content,
                 "copy_status": copy_status,
-                "manual_status": manual_status,
-                "manual_code": manual_code,
-                "manual_stdout": manual_stdout,
-                "manual_stderr": manual_stderr,
                 "workspace": workspace,
-                "hint": "راجع manual_stderr و lst_content و mfsim_content"
-            }
+                "hint": "راجع lst_content للتفاصيل"}
 
-        # ===== 19. قراءة النتائج =====
+        # ===== 17. قراءة النتائج =====
         try:
             head = gwf.output.head().get_data()
             head_2d = head[0, :, :]
@@ -264,21 +228,18 @@ def build_and_run_model(workspace, nlay=1, nrow=20, ncol=20,
             return {
                 "success": False,
                 "error": f"فشل قراءة النتائج: {str(e)}",
-                "workspace_files": workspace_files
-            }
+                "workspace_files": workspace_files}
 
-        # ===== 20. التحقق من التقارب =====
+        # ===== 18. التحقق من التقارب =====
         if np.any(head_2d < -1e20):
             n_dry = int(np.sum(head_2d < -1e20))
             return {
                 "success": False,
                 "error": f"النموذج لم يتقارب ({n_dry} خلية جافة)",
                 "workspace_files": workspace_files,
-                "copy_status": copy_status,
-                "hint": "جرّب تقليل K أو زيادة Botm"
-            }
+                "hint": "جرّب تقليل K أو زيادة Botm"}
 
-        # ===== 21. النجاح =====
+        # ===== 19. النجاح =====
         return {
             "success": True,
             "heads": head_2d,
@@ -297,8 +258,7 @@ def build_and_run_model(workspace, nlay=1, nrow=20, ncol=20,
         return {
             "success": False,
             "error": str(e),
-            "traceback": traceback.format_exc()[-2000:]
-        }
+            "traceback": traceback.format_exc()[-2000:]}
 
 
 def estimate_travel_time_modflow(heads, k_value, porosity, delr):
@@ -312,4 +272,4 @@ def estimate_travel_time_modflow(heads, k_value, porosity, delr):
     return {
         "mean_gradient": round(mean_grad, 6),
         "velocity_m_day": round(velocity, 6),
-        "velocity_m_year": round(velocity * 365.25, 3)}
+        "velocity_m_year": round(velocity * 365.25, 3)} 
