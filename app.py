@@ -1,4 +1,4 @@
-"""نظام التعدين السوداني v45.0 - مع DRASTIC-P محسّن"""
+"""نظام التعدين السوداني v46.0 - مع معايرة CRI/MRI"""
 import streamlit as st
 import subprocess
 import os
@@ -112,7 +112,7 @@ st.markdown("""
 
 
 # ============================================================
-# ============ تثبيت MODFLOW 6 تلقائياً ============
+# ============ تثبيت MODFLOW 6 ============
 # ============================================================
 MODFLOW_URL = "https://github.com/MODFLOW-ORG/modflow6/releases/download/6.4.4/mf6.4.4_linux.zip"
 MODFLOW_DIR = "/tmp/modflow6"
@@ -337,40 +337,50 @@ def mitigate(idx, hdpe=False, treat=False, mon=False):
 
 
 # ============================================================
-# ============ DRASTIC-P المحسّن ============
+# ============ DRASTIC-P المحسّن (v2) ============
 # ============================================================
-def calc_drastic_p(base_drastic, cn_water, hg_water, alpha=0.50, beta=0.50):
+def calc_drastic_p_v2(base_drastic, cn_water, hg_water,
+                       distance_m=100.0, seepage=1.0, bio_acc=1.0,
+                       alpha=0.50, beta=0.50):
     """
-    DRASTIC-P = DRASTIC × (1 + α×CRI + β×MRI)
+    DRASTIC-P المحسّن مع معايرة CRI/MRI
     
-    Parameters:
-    -----------
-    base_drastic : float - مؤشر DRASTIC الأساسي (0-230)
-    cn_water : float - تركيز السيانيد في المياه (mg/L)
-    hg_water : float - تركيز الزئبق في المياه (mg/L)
-    alpha : float - وزن CRI (افتراضي 0.50)
-    beta : float - وزن MRI (افتراضي 0.50)
+    المعادلات:
+    - CRI = (cn_ratio × 0.5 + cn_soil_ratio × 0.3) × d_factor × s_factor
+    - MRI = (hg_ratio × 0.6 + hg_soil_ratio × 0.4) × bio_acc
+    - DRASTIC-P = DRASTIC × (1 + α×CRI + β×MRI)
     
-    Returns:
-    --------
-    dict: CRI, MRI, DRASTIC-P, modifier, level
+    القيم الافتراضية المُعايرة:
+    - distance_m = 100 م (لعدم إخفاء الخطورة)
+    - seepage = 1.0 (الوضع الأسوأ)
+    - bio_acc = 1.0 (محايد)
+    - alpha = 0.50 (وزن CRI)
+    - beta = 0.50 (وزن MRI)
     """
     # حدود WHO
     CN_LIMIT = 0.07   # mg/L
     HG_LIMIT = 0.006  # mg/L
     
-    # حساب النسب
+    # ===== CRI (مؤشر السيانيد) =====
     cn_ratio = cn_water / CN_LIMIT if CN_LIMIT > 0 else 0
+    
+    # معامل المسافة (كلما زادت المسافة، قل الخطر)
+    d_factor = max(0.1, min(1.0, 100.0 / max(1, distance_m)))
+    
+    # معامل التسرب
+    s_factor = max(0.1, min(1.0, seepage))
+    
+    # CRI = (نسبة CN × 0.5) × معامل المسافة × معامل التسرب
+    cri = (cn_ratio * 0.5) * d_factor * s_factor
+    
+    # ===== MRI (مؤشر الزئبق) =====
     hg_ratio = hg_water / HG_LIMIT if HG_LIMIT > 0 else 0
     
-    # CRI و MRI
-    cri = cn_ratio * 0.5
-    mri = hg_ratio * 0.6
+    # MRI = (نسبة Hg × 0.6) × معامل التراكم الحيوي
+    mri = (hg_ratio * 0.6) * bio_acc
     
-    # Modifier
+    # ===== DRASTIC-P =====
     modifier = 1.0 + (alpha * cri) + (beta * mri)
-    
-    # DRASTIC-P
     drastic_p = min(230, base_drastic * modifier)
     
     # التصنيف
@@ -387,6 +397,11 @@ def calc_drastic_p(base_drastic, cn_water, hg_water, alpha=0.50, beta=0.50):
         "base_drastic": base_drastic,
         "cri": round(cri, 3),
         "mri": round(mri, 3),
+        "cn_ratio": round(cn_ratio, 2),
+        "hg_ratio": round(hg_ratio, 2),
+        "d_factor": round(d_factor, 3),
+        "s_factor": round(s_factor, 3),
+        "bio_acc": bio_acc,
         "modifier": round(modifier, 3),
         "drastic_p": round(drastic_p, 1),
         "increase_pct": round(((drastic_p - base_drastic) / base_drastic * 100)
@@ -644,6 +659,8 @@ def gen_report(site, coords, idx, values, travel=None, sat=None, tox=None):
     if travel and isinstance(travel, dict):
         L.append(f"زمن الوصول: {travel.get('years', 0)} سنة")
     L.append("")
+    L.append("⚠️ ملاحظة: CRI و MRI تقديريان ويحتاجان معايرة ميدانية.")
+    L.append("")
     L.append("التوصيات:")
     for i, rec in enumerate(tpl["recs"], 1):
         L.append(f"{i}. {rec}")
@@ -726,7 +743,7 @@ with _col2:
 
 st.markdown("""
 <div class="header-container">
-    <div class="header-title">⛏️ نظام التعدين السوداني v45.0</div>
+    <div class="header-title">⛏️ نظام التعدين السوداني v46.0</div>
     <div class="header-subtitle">جامعة الخرطوم - كلية الهندسة</div>
     <div class="header-subtitle">DRASTIC + MODFLOW + DRASTIC-P + Dynamic + Validation</div>
 </div>
@@ -1196,7 +1213,7 @@ if mode == "🏠 النظام الأساسي":
 
 
 # ============================================================
-# ============ MODE 2: Validation مع DRASTIC-P محسّن ============
+# ============ MODE 2: Validation (v2) ============
 # ============================================================
 elif mode == "✅ التحقق الفعلي" and ADV_OK:
     st.header("✅ التحقق الفعلي من النموذج")
@@ -1268,7 +1285,7 @@ elif mode == "✅ التحقق الفعلي" and ADV_OK:
                         if has_toxicity:
                             cn_w = float(row.get("cn_water_mg_l", 0.0))
                             hg_w = float(row.get("hg_water_mg_l", 0.0))
-                            result = calc_drastic_p(ix, cn_w, hg_w)
+                            result = calc_drastic_p_v2(ix, cn_w, hg_w)
                             drastic_p_list.append(result["drastic_p"])
                             cri_list.append(result["cri"])
                             mri_list.append(result["mri"])
@@ -1335,23 +1352,22 @@ elif mode == "✅ التحقق الفعلي" and ADV_OK:
                 if improvement > 0.1:
                     st.success(f"""
                     ✅ **DRASTIC-P أفضل بشكل ملحوظ!**
-                    - Kappa: {metrics_d['kappa']} → {metrics_p['kappa']} (تحسّن {improvement:.3f})
+                    - Kappa: {metrics_d['kappa']} → {metrics_p['kappa']}
                     - Recall: {metrics_d['recall']}% → {metrics_p['recall']}%
                     - Modifier: {df['modifier'].min():.2f} - {df['modifier'].max():.2f}
-                    
-                    **هذا يثبت أن دمج مؤشرات السيانيد والزئبق يحسّن دقة التقييم.**
                     """)
                 elif improvement > 0:
-                    st.info(f"""
-                    ℹ️ **DRASTIC-P حسّن النتيجة بشكل طفيف.**
-                    - Kappa: {metrics_d['kappa']} → {metrics_p['kappa']}
-                    """)
+                    st.info(f"ℹ️ DRASTIC-P حسّن النتيجة بشكل طفيف.")
                 else:
-                    st.warning(f"""
-                    ⚠️ **DRASTIC-P لم يحسّن النتيجة.**
-                    - Kappa: {metrics_d['kappa']} → {metrics_p['kappa']}
-                    - قد تحتاج مراجعة قيم CN و Hg أو تعديل α و β.
-                    """)
+                    st.warning(f"⚠️ DRASTIC-P لم يحسّن النتيجة.")
+
+                # ملاحظة علمية
+                st.warning("""
+                ⚠️ **ملاحظة علمية مهمة:**
+                CRI و MRI **تقديريان** ويحتاجان معايرة ميدانية باستخدام:
+                - قيم المسافة ومعدل التسرب الحقيقية.
+                - تركيزات CN و Hg المقاسة ميدانياً.
+                """)
 
                 st.markdown("---")
                 st.subheader("🔢 مصفوفة الالتباس (DRASTIC-P)")
@@ -1361,18 +1377,6 @@ elif mode == "✅ التحقق الفعلي" and ADV_OK:
                     "نظيف فعلاً": [cm["FP"], cm["TN"]]
                 }, index=["توقع ملوث", "توقع نظيف"])
                 st.dataframe(cm_df, width="stretch")
-
-                st.info(f"""
-                **تفسير مصفوفة الالتباس (DRASTIC-P):**
-                - **TP**: {cm['TP']} موقع — توقع "ملوث" والموقع **ملوث فعلاً** ✅
-                - **TN**: {cm['TN']} موقع — توقع "نظيف" والموقع **نظيف فعلاً** ✅
-                - **FP**: {cm['FP']} موقع — توقع "ملوث" والموقع **نظيف** ❌
-                - **FN**: {cm['FN']} موقع — توقع "نظيف" والموقع **ملوث فعلاً** ❌
-                """)
-
-                st.markdown("---")
-                with st.expander("📄 التقرير الإحصائي الكامل (DRASTIC-P)"):
-                    st.text(generate_validation_report(metrics_p))
 
                 st.download_button("📥 تحميل النتائج الكاملة (CSV)",
                     data=result_df.to_csv(index=False).encode("utf-8-sig"),
@@ -1384,7 +1388,7 @@ elif mode == "✅ التحقق الفعلي" and ADV_OK:
 
 
 # ============================================================
-# ============ MODE 3: DRASTIC-P (موقع واحد) ============
+# ============ MODE 3: DRASTIC-P (موقع واحد) - v2 ============
 # ============================================================
 elif mode == "🧪 DRASTIC-P" and ADV_OK:
     st.header("🧪 DRASTIC-P — المؤشر المعدل للتعدين")
@@ -1393,6 +1397,10 @@ elif mode == "🧪 DRASTIC-P" and ADV_OK:
         st.warning("افتح النظام الأساسي أولاً")
     else:
         st.info(f"الموقع: {st.session_state['cs']} | DRASTIC: {st.session_state['ci']}")
+
+        st.markdown("---")
+        st.subheader("🧪 بيانات السيانيد والزئبق")
+
         c1, c2 = st.columns(2)
         with c1:
             st.markdown("**السيانيد (CN)**")
@@ -1400,35 +1408,34 @@ elif mode == "🧪 DRASTIC-P" and ADV_OK:
                                     format="%.4f")
             cn_s = st.number_input("CN تربة (mg/kg):", 0.0, 100.0, 15.0, 0.5)
             cn_dist = st.number_input("المسافة لمصدر مياه (m):", 10.0,
-                                       5000.0, 500.0, 50.0)
-            cn_seep = st.slider("معدل التسرب:", 0.0, 1.0, 0.3, 0.05)
+                                       5000.0, **100.0**, 50.0,
+                                       help="القيمة الافتراضية 100م (الوضع الأسوأ)")
+            cn_seep = st.slider("معدل التسرب:", 0.0, 1.0, **1.0**, 0.05,
+                                 help="القيمة الافتراضية 1.0 (الوضع الأسوأ)")
         with c2:
             st.markdown("**الزئبق (Hg)**")
             hg_w = st.number_input("Hg مياه (mg/L):", 0.0, 10.0, 0.008, 0.001,
                                     format="%.4f")
             hg_s = st.number_input("Hg تربة (mg/kg):", 0.0, 100.0, 1.5, 0.1)
-            bio = st.slider("معامل التراكم الحيوي:", 1.0, 3.0, 1.5, 0.1)
+            bio = st.slider("معامل التراكم الحيوي:", 1.0, 3.0, **1.0**, 0.1,
+                             help="القيمة الافتراضية 1.0 (محايد)")
             use = st.selectbox("استخدام المياه:",
                 ["drinking", "irrigation", "industrial"])
         amd = st.slider("مخاطر الصرف الحمضي (AMD):", 0.0, 1.0, 0.2, 0.05)
 
         if st.button("🧪 حساب DRASTIC-P", type="primary"):
-            cri = calculate_cyanide_risk_index(cn_w, cn_s, cn_dist, cn_seep)
-            mri = calculate_mercury_risk_index(hg_w, hg_s, bio, use)
-            mod = calculate_modified_drastic(st.session_state["ci"],
-                                              cri["cri"], mri["mri"], amd)
-            st.session_state["mod_result"] = mod
-            st.session_state["cri_result"] = cri
-            st.session_state["mri_result"] = mri
+            result = calc_drastic_p_v2(
+                st.session_state["ci"], cn_w, hg_w,
+                distance_m=cn_dist, seepage=cn_seep, bio_acc=bio)
+            st.session_state["mod_result_v2"] = result
 
-        if "mod_result" in st.session_state:
-            mod = st.session_state["mod_result"]
-            cri = st.session_state["cri_result"]
-            mri = st.session_state["mri_result"]
+        if "mod_result_v2" in st.session_state:
+            mod = st.session_state["mod_result_v2"]
 
+            st.markdown("---")
             c1, c2, c3 = st.columns(3)
             c1.metric("DRASTIC الأساسي", mod["base_drastic"])
-            c2.metric("DRASTIC-P", mod["modified_drastic"],
+            c2.metric("DRASTIC-P", mod["drastic_p"],
                       delta=f"+{mod['increase_pct']}%")
             c3.metric("المستوى", LEVEL_AR.get(mod["level"], mod["level"]))
 
@@ -1438,19 +1445,45 @@ elif mode == "🧪 DRASTIC-P" and ADV_OK:
             else: st.success("🟢 خطر منخفض")
 
             st.markdown("---")
+            st.subheader("🔬 تفاصيل CRI و MRI")
+
             c1, c2 = st.columns(2)
             with c1:
                 st.markdown("**مؤشر السيانيد (CRI)**")
-                st.metric("CRI", cri["cri"])
-                st.metric("نسبة المياه", f"{cri['water_ratio']}x")
-                st.metric("نسبة التربة", f"{cri['soil_ratio']}x")
-                st.metric("المستوى", LEVEL_AR.get(cri["level"], cri["level"]))
+                st.metric("CRI", mod["cri"])
+                st.metric("نسبة المياه", f"{mod['cn_ratio']}x")
+                st.metric("معامل المسافة", mod["d_factor"])
+                st.metric("معامل التسرب", mod["s_factor"])
             with c2:
                 st.markdown("**مؤشر الزئبق (MRI)**")
-                st.metric("MRI", mri["mri"])
-                st.metric("نسبة المياه", f"{mri['water_ratio']}x")
-                st.metric("نسبة التربة", f"{mri['soil_ratio']}x")
-                st.metric("المستوى", LEVEL_AR.get(mri["level"], mri["level"]))
+                st.metric("MRI", mod["mri"])
+                st.metric("نسبة المياه", f"{mod['hg_ratio']}x")
+                st.metric("معامل التراكم الحيوي", mod["bio_acc"])
+
+            st.markdown("---")
+            st.subheader("🧮 معادلة DRASTIC-P")
+            st.code(f"""
+DRASTIC-P = DRASTIC × (1 + α×CRI + β×MRI)
+
+المدخلات:
+- DRASTIC = {mod['base_drastic']}
+- CRI = {mod['cri']}
+- MRI = {mod['mri']}
+- α = {mod['alpha']}, β = {mod['beta']}
+
+الحساب:
+- Modifier = 1 + ({mod['alpha']} × {mod['cri']}) + ({mod['beta']} × {mod['mri']})
+- Modifier = {mod['modifier']}
+- DRASTIC-P = {mod['base_drastic']} × {mod['modifier']} = {mod['drastic_p']}
+            """, language="text")
+
+            st.warning("""
+            ⚠️ **ملاحظة علمية:**
+            CRI و MRI **تقديريان** في هذه النسخة. للحصول على قيم معايرة:
+            1. استخدم **قيم المسافة والتسرب الحقيقية** من دراسات سنار.
+            2. استخدم **معامل التراكم الحيوي** من الأدبيات.
+            3. قارن النتائج مع **قياسات ميدانية** لتركيزات CN و Hg.
+            """)
 
 
 # ============================================================
@@ -1631,4 +1664,5 @@ elif mode == "🌊 MODFLOW" and MODFLOW_OK:
 
 # ============ FOOTER ============
 st.markdown("---")
-st.caption("2026 جامعة الخرطوم - نظام التعدين السوداني v45.0")
+st.caption("2026 جامعة الخرطوم - نظام التعدين السوداني v46.0 - "
+           "CRI/MRI مُعايرة بقيم افتراضية (تحتاج معايرة ميدانية)")
