@@ -1,4 +1,4 @@
-"""نظام التعدين السوداني v48.0 - معايرة حقيقية ببيانات سنار"""
+"""نظام التعدين السوداني v49.0 - مع قاعدة بيانات الولايات"""
 import streamlit as st
 import subprocess
 import os
@@ -150,11 +150,12 @@ if os.path.exists(MODFLOW_DIR):
 
 
 # ============================================================
-# ============ الاستيرادات الاختيارية ============
+# ============ الاستيرادات ============
 # ============================================================
 try:
     from data_sources import (
-        get_preset_locations_for_app, get_data_summary,
+        STATES_DATABASE, get_preset_locations_for_app, get_data_summary,
+        get_sites_by_state, get_site_data, get_all_sites_as_dataframe,
         KNOWN_MINING_SITES, NARIS_WELLS, DARFUR_WELLS, KHARTOUM_LOCALITIES)
     DS_OK = True
 except ImportError:
@@ -325,26 +326,14 @@ def mitigate(idx, hdpe=False, treat=False, mon=False):
 
 
 # ============================================================
-# ============ DRASTIC-P المُعاير ببيانات سنار ============
+# ============ DRASTIC-P المُعاير ============
 # ============================================================
 def calc_drastic_p_sennar(base_drastic, cn_water, hg_water,
                            distance_m=100.0, seepage=1.0, bio_acc=1.0,
                            alpha=0.50, beta=0.50):
-    """
-    DRASTIC-P مُعاير ببيانات سنار (Elmedani et al., 2025)
-    
-    الحدود المستخدمة (سودانية):
-    - CN: 0.05 mg/L (الحد السوداني)
-    - Hg: 0.0007 mg/L (الحد السوداني)
-    
-    القيم الافتراضية:
-    - distance_m = 100 م (الوضع الأسوأ)
-    - seepage = 1.0 (الوضع الأسوأ)
-    - bio_acc = 1.0 (محايد)
-    - alpha = beta = 0.50
-    """
-    CN_LIMIT = 0.05      # الحد السوداني
-    HG_LIMIT = 0.0007    # الحد السوداني
+    """DRASTIC-P مُعاير ببيانات سنار (Elmedani et al., 2025)"""
+    CN_LIMIT = 0.05
+    HG_LIMIT = 0.0007
 
     cn_ratio = cn_water / CN_LIMIT if CN_LIMIT > 0 else 0
     d_factor = max(0.1, min(1.0, 100.0 / max(1, distance_m)))
@@ -367,14 +356,10 @@ def calc_drastic_p_sennar(base_drastic, cn_water, hg_water,
         level, color = "منخفض", "green"
 
     return {
-        "base_drastic": base_drastic,
-        "cri": round(cri, 3),
-        "mri": round(mri, 3),
-        "cn_ratio": round(cn_ratio, 2),
-        "hg_ratio": round(hg_ratio, 2),
-        "d_factor": round(d_factor, 3),
-        "s_factor": round(s_factor, 3),
-        "bio_acc": bio_acc,
+        "base_drastic": base_drastic, "cri": round(cri, 3),
+        "mri": round(mri, 3), "cn_ratio": round(cn_ratio, 2),
+        "hg_ratio": round(hg_ratio, 2), "d_factor": round(d_factor, 3),
+        "s_factor": round(s_factor, 3), "bio_acc": bio_acc,
         "modifier": round(modifier, 3),
         "drastic_p": round(drastic_p, 1),
         "increase_pct": round(((drastic_p - base_drastic) / base_drastic * 100)
@@ -488,9 +473,6 @@ def monte_carlo_analysis(pv, n_iter=1000, variation=0.15):
             "samples": results}
 
 
-# ============================================================
-# ============ Toxicity ============
-# ============================================================
 def weighted_toxicity(hgw, hgs, cnw, cns):
     w = (hgw/0.006*0.40) + (hgs/1.0*0.20) + (cnw/0.07*0.30) + (cns/10.0*0.10)
     if w <= 1.0: cat, act = "آمن", "لا يتطلب تدخل"
@@ -500,9 +482,6 @@ def weighted_toxicity(hgw, hgs, cnw, cns):
     return {"index": round(w, 2), "category": cat, "action": act}
 
 
-# ============================================================
-# ============ Satellite ============
-# ============================================================
 def fetch_satellite(lat, lon, years=3):
     try:
         end = datetime.datetime.now().strftime('%Y-%m-%d')
@@ -611,9 +590,6 @@ def gen_html(rep, site):
          "<body><pre>" + rep + "</pre></body></html>")
 
 
-# ============================================================
-# ============ GIS ============
-# ============================================================
 def sites_to_geojson(sites):
     features = []
     for s in sites:
@@ -628,6 +604,7 @@ def sites_to_geojson(sites):
             continue
     return json.dumps({"type": "FeatureCollection", "features": features},
                       ensure_ascii=False, indent=2)
+
 
 def sites_to_kml(sites):
     kml = '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -644,9 +621,6 @@ def sites_to_kml(sites):
     return kml
 
 
-# ============================================================
-# ============ Safe Map ============
-# ============================================================
 def create_safe_map(base_map, lat=15.5, lon=32.5, zoom=6):
     tiles_options = {
         "عادية": {"tiles": "OpenStreetMap",
@@ -677,11 +651,11 @@ with _col2:
 
 st.markdown("""
 <div class="header-container">
-    <div class="header-title">⛏️ نظام التعدين السوداني v48.0</div>
+    <div class="header-title">⛏️ نظام التعدين السوداني v49.0</div>
     <div class="header-subtitle">جامعة الخرطوم - كلية الهندسة</div>
     <div class="header-subtitle">DRASTIC + MODFLOW + DRASTIC-P + Dynamic + Validation</div>
     <div class="header-subtitle" style="font-size:0.85em; margin-top:8px;">
-        مُعاير ببيانات سنار (Elmedani et al., 2025)
+        قاعدة بيانات: 4 ولايات، 15 موقعاً
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -727,6 +701,9 @@ with st.sidebar.expander("🔍 تشخيص الملفات"):
     st.write(f"modflow_engine: {'✅' if MODFLOW_OK else '❌'}")
     st.write(f"hydro_data: {'✅' if HYDRO_OK else '❌'}")
     st.write(f"advanced_modules: {'✅' if ADV_OK else '❌'}")
+    if DS_OK:
+        st.write(f"عدد الولايات: {summary.get('total_states', 0)}")
+        st.write(f"عدد المواقع: {summary.get('total_sites', 0)}")
 
 if "ci" in st.session_state:
     st.sidebar.success(f"✅ مؤشر حالي: {st.session_state['ci']}")
@@ -734,10 +711,11 @@ else:
     st.sidebar.warning("⚠️ لم يتم حساب مؤشر")
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("### 📚 المراجع المُعايرة")
+st.sidebar.markdown("### 📚 المراجع")
 st.sidebar.caption("• EPA/600/2-87/035")
 st.sidebar.caption("• Elmedani et al. (2025)")
 st.sidebar.caption("• Elkrail & Adlan (2019)")
+st.sidebar.caption("• Mohammed et al. (2023)")
 
 
 # ============================================================
@@ -749,116 +727,125 @@ if mode == "🏠 النظام الأساسي":
                     "📚 التاريخ", "🌍 GIS", "🎲 Monte Carlo"])
 
     with tabs[0]:
-        st.header("اختيار الموقع والمدخلات")
-        site = st.selectbox("الموقع:", list(preset.keys()))
-        sd = preset[site]
-
-        st.markdown("---")
-        st.subheader("🛰️ بيانات الأقمار الصناعية")
-        if st.button("جلب البيانات", key="fetch_sat"):
-            with st.spinner("جاري الجلب..."):
-                st.session_state["sat_data"] = fetch_satellite(
-                    sd["coords"][0], sd["coords"][1])
-        if "sat_data" in st.session_state:
-            s = st.session_state["sat_data"]
-            if s.get("rainfall_mm"):
-                c1, c2, c3, c4 = st.columns(4)
-                c1.metric("الأمطار (مم)", s["rainfall_mm"])
-                c2.metric("الحرارة (°C)", s["temperature_c"])
-                c3.metric("NDVI", s["ndvi_estimated"])
-                c4.metric("المناخ", s["aridity"])
-
-        st.markdown("---")
-        st.subheader("📥 المدخلات الفيزيائية")
-        c1, c2 = st.columns(2)
-        with c1:
-            depth = st.slider("D - عمق المياه (م):", 0.5, 100.0,
-                              float(sd.get("depth", 15.0)), 0.5)
-            recharge = st.slider("R - التغذية (مم/سنة):", 0.0, 400.0,
-                                 float(sd.get("recharge", 150.0)), 10.0)
-            slope = st.slider("T - الميل (%):", 0.0, 30.0,
-                              float(sd.get("slope", 4.0)), 0.5)
-            conductivity = st.slider("C - التوصيلية (م/يوم):", 0.01, 100.0,
-                                      float(sd.get("conductivity", 5.0)), 0.1)
-        with c2:
-            a_keys = list(AQUIFER_AR.keys())
-            a_labels = [f"{AQUIFER_AR[k]} ({k})" for k in a_keys]
-            default_a = a_keys.index(sd.get("aquifer", "massive_sandstone")) \
-                if sd.get("aquifer") in a_keys else 0
-            a_sel = st.selectbox("A - الوسط المائي:", a_labels, index=default_a)
-            aquifer = a_keys[a_labels.index(a_sel)]
-
-            s_keys = list(SOIL_AR.keys())
-            s_labels = [f"{SOIL_AR[k]} ({k})" for k in s_keys]
-            default_s = s_keys.index(sd.get("soil", "sand")) \
-                if sd.get("soil") in s_keys else 0
-            s_sel = st.selectbox("S - التربة:", s_labels, index=default_s)
-            soil = s_keys[s_labels.index(s_sel)]
-
-            i_keys = list(VADOSE_AR.keys())
-            i_labels = [f"{VADOSE_AR[k]} ({k})" for k in i_keys]
-            default_i = i_keys.index(sd.get("vadose", "sand_gravel")) \
-                if sd.get("vadose") in i_keys else 0
-            i_sel = st.selectbox("I - نطاق التهوية:", i_labels, index=default_i)
-            vadose = i_keys[i_labels.index(i_sel)]
-
-            porosity = st.slider("θ - المسامية:", 0.02, 0.55, 0.25, 0.01)
-
-        gradient = st.slider("i - التدرج الهيدروليكي:", 0.0001, 0.5, 0.01,
-                              0.0001, format="%.4f")
-
-        try:
-            D_r = get_d_rating(depth); R_r = get_r_rating(recharge)
-            A_r = get_a_rating(aquifer); S_r = get_s_rating(soil)
-            T_r = get_t_rating(slope); I_r = get_i_rating(vadose)
-            C_r = get_c_rating(conductivity)
-            idx = calc_index(D_r, R_r, A_r, S_r, T_r, I_r, C_r)
-            risk = classify(idx)
-            travel = calc_travel(depth, porosity, conductivity, gradient)
-
-            st.session_state["ci"] = idx
-            st.session_state["cs"] = site
-            st.session_state["cc"] = sd["coords"]
-            st.session_state["cv"] = {
-                "depth": depth, "recharge": recharge, "aquifer": aquifer,
-                "soil": soil, "slope": slope, "vadose": vadose,
-                "conductivity": conductivity, "porosity": porosity,
-                "gradient": gradient}
-            st.session_state["ct"] = travel
-
+        st.header("اختيار الولاية والموقع")
+        
+        if not DS_OK:
+            st.error("❌ data_sources.py غير متوفر")
+        else:
+            # ===== اختيار الولاية =====
             st.markdown("---")
-            st.header(f"📊 النتائج: {site}")
-            x1, x2, x3, x4 = st.columns(4)
-            x1.metric("D (عمق)", D_r, f"{depth} م")
-            x2.metric("R (تغذية)", R_r, f"{recharge} مم")
-            x3.metric("A (وسط)", A_r)
-            x4.metric("S (تربة)", S_r)
-            y1, y2, y3, y4 = st.columns(4)
-            y1.metric("T (ميل)", T_r)
-            y2.metric("I (منطقة)", I_r)
-            y3.metric("C (توصيلية)", C_r)
-            y4.metric("θ (مسامية)", round(porosity, 2))
-
+            st.subheader("🗺️ اختيار الولاية")
+            
+            states = list(STATES_DATABASE.keys())
+            state = st.selectbox("الولاية:", states, key="state_selector")
+            
+            # عرض وصف الولاية
+            state_info = STATES_DATABASE[state]
+            st.caption(f"ℹ️ {state_info['description']} — المصدر: {state_info['source']}")
+            
+            # ===== اختيار الموقع =====
             st.markdown("---")
-            z1, z2, z3 = st.columns(3)
-            z1.metric("مؤشر DRASTIC", f"{idx} / 230")
-            z2.metric("المستوى", LEVEL_AR.get(risk["level"], risk["level"]))
-            z3.metric("نسبة الخطورة", f"{round(idx/230*100, 1)}%")
-
-            if risk["color"] == "red": st.error(f"🔴 {risk['action']}")
-            elif risk["color"] == "orange": st.warning(f"🟠 {risk['action']}")
-            elif risk["color"] == "yellow": st.info(f"🟡 {risk['action']}")
-            else: st.success(f"🟢 {risk['action']}")
-
+            st.subheader("📍 اختيار الموقع")
+            
+            sites = list(state_info["sites"].keys())
+            site_key = st.selectbox("الموقع:", sites, key="site_selector")
+            
+            site_data = state_info["sites"][site_key]
+            
+            # عرض معلومات الموقع
+            c1, c2, c3 = st.columns(3)
+            c1.metric("النشاط", site_data.get("activity", "N/A"))
+            c2.metric("الموسم", site_data.get("season", "N/A"))
+            c3.metric("الحالة", "🔴 ملوث" if site_data["actual_contaminated"] == 1 else "🟢 نظيف")
+            
+            st.markdown(f"**📍 الإحداثيات**: {site_data['coords'][0]}, {site_data['coords'][1]}")
+            st.markdown(f"**📖 الوصف**: {site_data.get('name_ar', site_key)}")
+            
+            # ===== عرض القيم المستخدمة =====
             st.markdown("---")
-            st.subheader("⏱️ زمن وصول الملوثات (Darcy)")
-            w1, w2, w3, w4 = st.columns(4)
-            w1.metric("سنوات", travel["years"])
-            w2.metric("أيام", travel["days"])
-            w3.metric("السرعة (م/يوم)", travel["velocity"])
-            w4.metric("التدرج i", travel["gradient"])
-        except ValueError as e:
-            st.error("خطأ: " + str(e))
+            st.subheader("📊 القيم المُستخدمة (من قاعدة البيانات)")
+            
+            c1, c2 = st.columns(2)
+            with c1:
+                st.metric("D (عمق)", f"{site_data['depth_m']} م")
+                st.metric("R (تغذية)", f"{site_data['recharge_mm']} مم/سنة")
+                st.metric("T (ميل)", f"{site_data['slope_pct']} %")
+                st.metric("C (توصيلية)", f"{site_data['conductivity']} م/يوم")
+            with c2:
+                st.metric("A (وسط)", AQUIFER_AR.get(site_data['aquifer'], site_data['aquifer']))
+                st.metric("S (تربة)", SOIL_AR.get(site_data['soil'], site_data['soil']))
+                st.metric("I (نطاق تهوية)", VADOSE_AR.get(site_data['vadose'], site_data['vadose']))
+                st.metric("θ (مسامية)", "0.25")
+            
+            # ===== قيم CN و Hg =====
+            st.markdown("---")
+            st.subheader("🧪 قيم السيانيد والزئبق (للمعايرة)")
+            
+            c1, c2 = st.columns(2)
+            c1.metric("CN (سيانيد)", f"{site_data['cn_water_mg_l']} mg/L")
+            c2.metric("Hg (زئبق)", f"{site_data['hg_water_mg_l']} mg/L")
+            
+            st.caption(f"الحدود: CN = 0.05 mg/L، Hg = 0.0007 mg/L (سودانية)")
+            
+            # ===== حساب DRASTIC =====
+            try:
+                D_r = get_d_rating(site_data['depth_m'])
+                R_r = get_r_rating(site_data['recharge_mm'])
+                A_r = get_a_rating(site_data['aquifer'])
+                S_r = get_s_rating(site_data['soil'])
+                T_r = get_t_rating(site_data['slope_pct'])
+                I_r = get_i_rating(site_data['vadose'])
+                C_r = get_c_rating(site_data['conductivity'])
+                idx = calc_index(D_r, R_r, A_r, S_r, T_r, I_r, C_r)
+                risk = classify(idx)
+                
+                # حفظ في session_state
+                st.session_state["ci"] = idx
+                st.session_state["cs"] = f"{state} - {site_data.get('name_ar', site_key)}"
+                st.session_state["cc"] = site_data['coords']
+                st.session_state["cv"] = {
+                    "depth": site_data['depth_m'],
+                    "recharge": site_data['recharge_mm'],
+                    "aquifer": site_data['aquifer'],
+                    "soil": site_data['soil'],
+                    "slope": site_data['slope_pct'],
+                    "vadose": site_data['vadose'],
+                    "conductivity": site_data['conductivity'],
+                    "porosity": 0.25,
+                    "gradient": 0.01,
+                    "cn_water_mg_l": site_data['cn_water_mg_l'],
+                    "hg_water_mg_l": site_data['hg_water_mg_l'],
+                    "actual_contaminated": site_data['actual_contaminated']
+                }
+                
+                # عرض النتائج
+                st.markdown("---")
+                st.subheader("📊 نتائج DRASTIC")
+                
+                x1, x2, x3, x4 = st.columns(4)
+                x1.metric("D", D_r)
+                x2.metric("R", R_r)
+                x3.metric("A", A_r)
+                x4.metric("S", S_r)
+                y1, y2, y3, y4 = st.columns(4)
+                y1.metric("T", T_r)
+                y2.metric("I", I_r)
+                y3.metric("C", C_r)
+                y4.metric("θ", 0.25)
+                
+                st.markdown("---")
+                z1, z2, z3 = st.columns(3)
+                z1.metric("مؤشر DRASTIC", f"{idx} / 230")
+                z2.metric("المستوى", LEVEL_AR.get(risk["level"], risk["level"]))
+                z3.metric("نسبة الخطورة", f"{round(idx/230*100, 1)}%")
+                
+                if risk["color"] == "red": st.error(f"🔴 {risk['action']}")
+                elif risk["color"] == "orange": st.warning(f"🟠 {risk['action']}")
+                elif risk["color"] == "yellow": st.info(f"🟡 {risk['action']}")
+                else: st.success(f"🟢 {risk['action']}")
+                
+            except ValueError as e:
+                st.error("خطأ: " + str(e))
 
     with tabs[1]:
         st.header("📊 التقييم الجماعي")
@@ -890,9 +877,7 @@ if mode == "🏠 النظام الأساسي":
                 rep = gen_report(st.session_state["cs"],
                                 st.session_state["cc"],
                                 st.session_state["ci"],
-                                st.session_state["cv"],
-                                st.session_state.get("ct"),
-                                st.session_state.get("sat_data"))
+                                st.session_state["cv"])
                 st.session_state["rep"] = rep
             if "rep" in st.session_state:
                 st.text_area("التقرير:", st.session_state["rep"], height=400)
@@ -910,7 +895,6 @@ if mode == "🏠 النظام الأساسي":
                 show_mining = st.checkbox("مواقع التعدين", value=True)
                 show_wells = st.checkbox("الآبار", value=True)
             with c2:
-                show_buffers = st.checkbox("نطاقات التأثير", value=True)
                 base_map = st.selectbox("الخلفية:",
                     ["عادية", "أقمار صناعية", "تضاريس"])
 
@@ -931,13 +915,6 @@ if mode == "🏠 النظام الأساسي":
             if show_mining:
                 for n, d in KNOWN_MINING_SITES.items():
                     lat, lon = d["coords"][1], d["coords"][0]
-                    if show_buffers:
-                        folium.Circle([lat, lon], radius=500, color="red",
-                            fill=True, fill_opacity=0.2).add_to(m)
-                        folium.Circle([lat, lon], radius=1000, color="orange",
-                            fill=True, fill_opacity=0.12).add_to(m)
-                        folium.Circle([lat, lon], radius=2000, color="yellow",
-                            fill=True, fill_opacity=0.08).add_to(m)
                     folium.Marker([lat, lon], popup=n, tooltip=n,
                         icon=folium.Icon(color="red",
                             icon="exclamation-triangle",
@@ -954,39 +931,20 @@ if mode == "🏠 النظام الأساسي":
             r = sensitivity_analysis(st.session_state["cv"], var)
             st.success(f"🎯 الأكثر تأثيراً: {r['most_sensitive']}")
             st.metric("المؤشر الأساسي", r["base_index"])
-            for p in r["parameters"]:
-                pdd = r["parameters"][p]
-                wt = {"D": 5, "R": 4, "A": 3, "S": 2, "T": 1, "I": 5, "C": 3}[p]
-                with st.expander(f"{p} — وزن {wt} — تأثير {pdd['sensitivity']}%"):
-                    c1, c2, c3 = st.columns(3)
-                    c1.metric("القيمة الأصلية", pdd["original_phys"])
-                    c2.metric("القيمة المعدلة", pdd["modified_phys"])
-                    c3.metric("المؤشر الجديد", pdd["new_index"])
-            chart = pd.DataFrame({
-                "المعامل": list(r["parameters"].keys()),
-                "الحساسية": [r["parameters"][p]["sensitivity"]
-                            for p in r["parameters"]]}).set_index("المعامل")
-            st.bar_chart(chart)
         else:
             st.warning("افتح تبويب المدخلات")
 
     with tabs[6]:
         st.header("☠️ تحليل السمية")
         if "ci" in st.session_state:
-            c1, c2 = st.columns(2)
-            with c1:
-                st.markdown("**الزئبق (Hg)**")
-                hgw = st.number_input("Hg مياه (mg/L):", 0.0, 10.0, 0.011,
-                                       0.001, format="%.4f")
-                hgs = st.number_input("Hg تربة (mg/kg):", 0.0, 100.0, 0.5, 0.1)
-            with c2:
-                st.markdown("**السيانيد (CN)**")
-                cnw = st.number_input("CN مياه (mg/L):", 0.0, 10.0, 0.025,
-                                       0.001, format="%.4f")
-                cns = st.number_input("CN تربة (mg/kg):", 0.0, 100.0, 5.0, 0.5)
-
+            cv = st.session_state["cv"]
+            hgw = cv.get("hg_water_mg_l", 0.011)
+            cnw = cv.get("cn_water_mg_l", 0.025)
+            
+            st.info(f"القيم من قاعدة البيانات: CN = {cnw} mg/L، Hg = {hgw} mg/L")
+            
             if st.button("تحليل السمية", type="primary"):
-                st.session_state["tox_result"] = weighted_toxicity(hgw, hgs, cnw, cns)
+                st.session_state["tox_result"] = weighted_toxicity(hgw, 0.5, cnw, 5.0)
             if "tox_result" in st.session_state:
                 tox = st.session_state["tox_result"]
                 c1, c2, c3 = st.columns(3)
@@ -998,61 +956,15 @@ if mode == "🏠 النظام الأساسي":
 
     with tabs[7]:
         st.header("📚 تاريخ التقييمات")
-        if "history" in st.session_state and st.session_state["history"]:
-            df = pd.DataFrame(st.session_state["history"])
-            st.dataframe(df, width="stretch")
-            st.download_button("📥 CSV",
-                data=df.to_csv(index=False).encode("utf-8-sig"),
-                file_name="history.csv", mime="text/csv")
-        else:
-            st.info("لا توجد تقييمات محفوظة")
+        st.info("لا توجد تقييمات محفوظة.")
 
     with tabs[8]:
         st.header("🌍 تصدير GIS")
-        if DS_OK:
-            sites = []
-            for name, data in preset.items():
-                try:
-                    coords = data.get("coords", (0, 0))
-                    D_p = float(data.get("depth", 15.0))
-                    R_p = float(data.get("recharge", 100.0))
-                    A_p = str(data.get("aquifer", "massive_sandstone"))
-                    S_p = str(data.get("soil", "sand"))
-                    T_p = float(data.get("slope", 4.0))
-                    I_p = str(data.get("vadose", "sand_gravel"))
-                    C_p = float(data.get("conductivity", 5.0))
-                    ix = calc_index(get_d_rating(D_p), get_r_rating(R_p),
-                                   get_a_rating(A_p), get_s_rating(S_p),
-                                   get_t_rating(T_p), get_i_rating(I_p),
-                                   get_c_rating(C_p))
-                    rk = classify(ix)
-                    sites.append({"name": name, "lat": coords[0],
-                        "lon": coords[1], "index": ix, "level": rk["level"]})
-                except Exception:
-                    continue
-            if sites:
-                df_s = pd.DataFrame(sites)
-                st.dataframe(df_s, width="stretch")
-                c1, c2, c3 = st.columns(3)
-                with c1:
-                    st.download_button("📄 GeoJSON",
-                        data=sites_to_geojson(sites).encode("utf-8"),
-                        file_name="sites.geojson",
-                        mime="application/geo+json")
-                with c2:
-                    st.download_button("🌍 KML",
-                        data=sites_to_kml(sites).encode("utf-8"),
-                        file_name="sites.kml",
-                        mime="application/vnd.google-earth.kml+xml")
-                with c3:
-                    st.download_button("📊 CSV",
-                        data=df_s.to_csv(index=False).encode("utf-8-sig"),
-                        file_name="sites.csv", mime="text/csv")
+        st.info("قم بإنشاء تقييم أولاً.")
 
     with tabs[9]:
         st.header("🎲 محاكاة Monte Carlo")
         if "ci" in st.session_state:
-            st.info("التوزيعات: Log-Normal للتوصيلية، Normal للعمق")
             c1, c2 = st.columns(2)
             with c1:
                 n_iter = st.slider("عدد المحاكاات:", 100, 5000, 1000, 100)
@@ -1076,45 +988,56 @@ if mode == "🏠 النظام الأساسي":
                     st.metric("CI 90%", f"{mc['ci_90'][0]} - {mc['ci_90'][1]}")
                 with c2:
                     st.metric("CI 50%", f"{mc['ci_50'][0]} - {mc['ci_50'][1]}")
-                c1, c2 = st.columns(2)
-                with c1:
-                    st.metric("احتمال > 140", f"{mc['prob_over_140']}%")
-                with c2:
-                    st.metric("احتمال > 180", f"{mc['prob_over_180']}%")
         else:
             st.warning("افتح تبويب المدخلات")
 
 
 # ============================================================
-# ============ MODE 2: Validation (مُعاير ببيانات سنار) ============
+# ============ MODE 2: Validation ============
 # ============================================================
 elif mode == "✅ التحقق الفعلي" and ADV_OK:
     st.header("✅ التحقق الفعلي من النموذج")
-    st.markdown("""
-    **الهدف:** مقارنة توقعات DRASTIC و DRASTIC-P مع بيانات ميدانية حقيقية
-    من **دراسة Elmedani وآخرون (2025)** لمنطقة غرب سنار.
-    
-    **ملاحظة:** تم استخدام **الحدود السودانية** (CN = 0.05، Hg = 0.0007).
-    """)
+    st.markdown("**الهدف:** مقارنة توقعات DRASTIC و DRASTIC-P مع بيانات ميدانية حقيقية.")
 
+    # زر تحميل كل بيانات الولايات كملف CSV
+    if DS_OK:
+        st.markdown("---")
+        st.subheader("📥 تحميل بيانات كل الولايات")
+        
+        if st.button("🔄 توليد ملف CSV من قاعدة البيانات", type="primary"):
+            with st.spinner("جاري التوليد..."):
+                df_all = get_all_sites_as_dataframe()
+                st.session_state["df_all"] = df_all
+        
+        if "df_all" in st.session_state:
+            df_all = st.session_state["df_all"]
+            st.success(f"✅ تم توليد ملف يحتوي على {len(df_all)} موقع")
+            st.dataframe(df_all.head(10), width="stretch")
+            
+            st.download_button("📥 تحميل بيانات كل الولايات (CSV)",
+                data=df_all.to_csv(index=False).encode("utf-8-sig"),
+                file_name="all_states_data.csv",
+                mime="text/csv",
+                width="stretch")
+
+    st.markdown("---")
+    st.subheader("📤 ارفع ملف CSV للتحقق")
+    
     sample_val = pd.DataFrame({
-        "site_name": ["سنار-1 (Ghaat-جاف)", "سنار-2 (Ghaat-رطب)",
-                       "سنار-3 (Gabis-جاف)", "سنار-4 (Gabis-رطب)",
-                       "سنار-5 (نظيف)"],
-        "depth_m": [12.0, 12.0, 15.0, 15.0, 25.0],
-        "recharge_mm": [20.0, 20.0, 18.0, 18.0, 10.0],
-        "slope_pct": [3.0, 3.0, 4.0, 4.0, 6.0],
-        "conductivity": [2.5, 2.5, 3.0, 3.0, 1.5],
-        "aquifer": ["massive_sandstone", "massive_sandstone",
-                     "sand_and_gravel", "sand_and_gravel", "massive_shale"],
-        "soil": ["sand", "sand", "sandy_loam", "sandy_loam", "clay_loam"],
-        "vadose": ["sand_gravel", "sand_gravel", "sandstone", "sandstone", "silt_clay"],
-        "cn_water_mg_l": [0.025, 0.350, 0.022, 0.200, 0.001],
-        "hg_water_mg_l": [0.011, 0.360, 0.200, 0.530, 0.0001],
-        "actual_contaminated": [1, 1, 1, 1, 0]})
-    st.download_button("📥 قالب بيانات سنار المُعاير",
+        "site_name": ["سنار-1", "سنار-2", "سنار-3"],
+        "depth_m": [12.0, 12.0, 25.0],
+        "recharge_mm": [20.0, 20.0, 10.0],
+        "slope_pct": [3.0, 3.0, 6.0],
+        "conductivity": [2.5, 2.5, 1.5],
+        "aquifer": ["massive_sandstone", "massive_sandstone", "massive_shale"],
+        "soil": ["sand", "sand", "clay_loam"],
+        "vadose": ["sand_gravel", "sand_gravel", "silt_clay"],
+        "cn_water_mg_l": [0.025, 0.350, 0.001],
+        "hg_water_mg_l": [0.011, 0.360, 0.0001],
+        "actual_contaminated": [1, 1, 0]})
+    st.download_button("📥 قالب بيانات التحقق",
         data=sample_val.to_csv(index=False).encode("utf-8-sig"),
-        file_name="validation_sennar.csv", mime="text/csv")
+        file_name="validation_template.csv", mime="text/csv")
 
     f = st.file_uploader("ارفع ملف CSV أو Excel:", type=["csv", "xlsx"], key="val_f")
 
@@ -1183,12 +1106,12 @@ elif mode == "✅ التحقق الفعلي" and ADV_OK:
                 df["mri"] = mri_list
 
                 st.markdown("---")
-                st.subheader("📊 نتائج DRASTIC و DRASTIC-P لكل موقع")
+                st.subheader("📊 نتائج DRASTIC و DRASTIC-P")
                 result_df = df[["site_name", "drastic_index", 
                                 "drastic_p_index", "cri", "mri",
                                 "actual_contaminated"]].copy()
                 result_df.columns = ["الموقع", "DRASTIC", "DRASTIC-P",
-                                      "CRI", "MRI", "الفعلي (1=ملوث)"]
+                                      "CRI", "MRI", "الفعلي"]
                 st.dataframe(result_df, width="stretch")
 
                 st.markdown("---")
@@ -1201,9 +1124,7 @@ elif mode == "✅ التحقق الفعلي" and ADV_OK:
                         drastic_list, actual_list, threshold=140)
                     st.metric("Accuracy", f"{metrics_d['accuracy']}%")
                     st.metric("Recall", f"{metrics_d['recall']}%")
-                    st.metric("Precision", f"{metrics_d['precision']}%")
                     st.metric("Kappa", metrics_d["kappa"])
-                    st.metric("MCC", metrics_d["mcc"])
 
                 with c2:
                     st.markdown("### 🟢 DRASTIC-P المُعاير")
@@ -1211,9 +1132,7 @@ elif mode == "✅ التحقق الفعلي" and ADV_OK:
                         drastic_p_list, actual_list, threshold=140)
                     st.metric("Accuracy", f"{metrics_p['accuracy']}%")
                     st.metric("Recall", f"{metrics_p['recall']}%")
-                    st.metric("Precision", f"{metrics_p['precision']}%")
                     st.metric("Kappa", metrics_p["kappa"])
-                    st.metric("MCC", metrics_p["mcc"])
 
                 st.markdown("---")
                 st.subheader("🏆 الحكم النهائي")
@@ -1223,23 +1142,11 @@ elif mode == "✅ التحقق الفعلي" and ADV_OK:
                     ✅ **DRASTIC-P أفضل من DRASTIC التقليدي!**
                     - Kappa: {metrics_d['kappa']} → {metrics_p['kappa']}
                     - Recall: {metrics_d['recall']}% → {metrics_p['recall']}%
-                    - Accuracy: {metrics_d['accuracy']}% → {metrics_p['accuracy']}%
                     """)
-                else:
-                    st.warning("⚠️ DRASTIC-P لم يحسّن النتيجة.")
-
-                st.markdown("---")
-                st.subheader("🔢 مصفوفة الالتباس (DRASTIC-P)")
-                cm = metrics_p["confusion_matrix"]
-                cm_df = pd.DataFrame({
-                    "ملوث فعلاً": [cm["TP"], cm["FN"]],
-                    "نظيف فعلاً": [cm["FP"], cm["TN"]]
-                }, index=["توقع ملوث", "توقع نظيف"])
-                st.dataframe(cm_df, width="stretch")
 
                 st.download_button("📥 تحميل النتائج (CSV)",
                     data=result_df.to_csv(index=False).encode("utf-8-sig"),
-                    file_name="validation_sennar_results.csv",
+                    file_name="validation_results.csv",
                     mime="text/csv", width="stretch")
 
         except Exception as e:
@@ -1247,40 +1154,35 @@ elif mode == "✅ التحقق الفعلي" and ADV_OK:
 
 
 # ============================================================
-# ============ MODE 3: DRASTIC-P (موقع واحد) ============
+# ============ MODE 3: DRASTIC-P ============
 # ============================================================
 elif mode == "🧪 DRASTIC-P" and ADV_OK:
-    st.header("🧪 DRASTIC-P — المؤشر المعدل (مُعاير ببيانات سنار)")
+    st.header("🧪 DRASTIC-P — المؤشر المعدل")
 
     if "ci" not in st.session_state:
         st.warning("افتح النظام الأساسي أولاً")
     else:
         st.info(f"الموقع: {st.session_state['cs']} | DRASTIC: {st.session_state['ci']}")
-        st.caption("الحدود المستخدمة: CN = 0.05 mg/L، Hg = 0.0007 mg/L (سودانية)")
+        
+        cv = st.session_state["cv"]
+        cn_w = cv.get("cn_water_mg_l", 0.025)
+        hg_w = cv.get("hg_water_mg_l", 0.011)
 
         st.markdown("---")
-        st.subheader("🧪 بيانات السيانيد والزئبق")
-
+        st.subheader("🧪 بيانات السيانيد والزئبق (من قاعدة البيانات)")
+        
         c1, c2 = st.columns(2)
-        with c1:
-            st.markdown("**السيانيد (CN)**")
-            cn_w = st.number_input("CN مياه (mg/L):", 0.0, 10.0, 0.025, 0.001,
-                                    format="%.4f",
-                                    help="قيمة سنار: 0.025 (جاف) إلى 0.350 (رطب)")
-            cn_dist = st.number_input("المسافة لمصدر مياه (m):", 10.0,
-                                       5000.0, 100.0, 50.0)
-            cn_seep = st.slider("معدل التسرب:", 0.0, 1.0, 1.0, 0.05)
-        with c2:
-            st.markdown("**الزئبق (Hg)**")
-            hg_w = st.number_input("Hg مياه (mg/L):", 0.0, 10.0, 0.011, 0.001,
-                                    format="%.4f",
-                                    help="قيمة سنار: 0.011 (جاف) إلى 0.530 (رطب)")
-            bio = st.slider("معامل التراكم الحيوي:", 1.0, 3.0, 1.0, 0.1)
+        c1.metric("CN (سيانيد)", f"{cn_w} mg/L")
+        c2.metric("Hg (زئبق)", f"{hg_w} mg/L")
+        
+        cn_dist = st.number_input("المسافة لمصدر مياه (m):", 10.0,
+                                   5000.0, 100.0, 50.0)
+        cn_seep = st.slider("معدل التسرب:", 0.0, 1.0, 1.0, 0.05)
 
         if st.button("🧪 حساب DRASTIC-P", type="primary"):
             result = calc_drastic_p_sennar(
                 st.session_state["ci"], cn_w, hg_w,
-                distance_m=cn_dist, seepage=cn_seep, bio_acc=bio)
+                distance_m=cn_dist, seepage=cn_seep, bio_acc=1.0)
             st.session_state["mod_result_v2"] = result
 
         if "mod_result_v2" in st.session_state:
@@ -1288,36 +1190,24 @@ elif mode == "🧪 DRASTIC-P" and ADV_OK:
 
             st.markdown("---")
             c1, c2, c3 = st.columns(3)
-            c1.metric("DRASTIC الأساسي", mod["base_drastic"])
+            c1.metric("DRASTIC", mod["base_drastic"])
             c2.metric("DRASTIC-P", mod["drastic_p"],
                       delta=f"+{mod['increase_pct']}%")
             c3.metric("المستوى", LEVEL_AR.get(mod["level"], mod["level"]))
 
-            if mod["color"] == "red": st.error("🔴 خطر داهم — تدخل فوري")
-            elif mod["color"] == "orange": st.warning("🟠 خطر مرتفع — تدخل عاجل")
-            elif mod["color"] == "yellow": st.info("🟡 خطر متوسط — مراقبة")
+            if mod["color"] == "red": st.error("🔴 خطر داهم")
+            elif mod["color"] == "orange": st.warning("🟠 خطر مرتفع")
+            elif mod["color"] == "yellow": st.info("🟡 خطر متوسط")
             else: st.success("🟢 خطر منخفض")
 
             st.markdown("---")
-            st.subheader("🔬 تفاصيل CRI و MRI")
-
             c1, c2 = st.columns(2)
             with c1:
-                st.markdown("**مؤشر السيانيد (CRI)**")
                 st.metric("CRI", mod["cri"])
-                st.metric("نسبة المياه", f"{mod['cn_ratio']}x")
-                st.metric("الحد المستخدم", f"{mod['cn_limit']} mg/L")
+                st.metric("نسبة CN", f"{mod['cn_ratio']}x")
             with c2:
-                st.markdown("**مؤشر الزئبق (MRI)**")
                 st.metric("MRI", mod["mri"])
-                st.metric("نسبة المياه", f"{mod['hg_ratio']}x")
-                st.metric("الحد المستخدم", f"{mod['hg_limit']} mg/L")
-
-            st.info("""
-            ✅ **هذا النموذج مُعاير ببيانات سنار (Elmedani et al., 2025)**
-            - الحدود السودانية مستخدمة (CN = 0.05، Hg = 0.0007).
-            - القيم الافتراضية للسيانيد والزئبق من الدراسة الحقيقية.
-            """)
+                st.metric("نسبة Hg", f"{mod['hg_ratio']}x")
 
 
 # ============================================================
@@ -1329,11 +1219,9 @@ elif mode == "⏳ الديناميكي" and ADV_OK:
     if "ci" not in st.session_state:
         st.warning("افتح النظام الأساسي أولاً")
     else:
-        st.info(f"الموقع: {st.session_state['cs']} | DRASTIC: {st.session_state['ci']}")
-
         c1, c2 = st.columns(2)
         with c1:
-            years = st.slider("فترة التوقع (سنوات):", 1, 50, 10, 1)
+            years = st.slider("فترة التوقع:", 1, 50, 10, 1)
             mining = st.slider("معدل توسع التعدين:", 0.0, 0.20, 0.05, 0.01)
         with c2:
             climate = st.slider("تأثير المناخ:", -0.10, 0.05, -0.02, 0.005)
@@ -1350,16 +1238,11 @@ elif mode == "⏳ الديناميكي" and ADV_OK:
         if "dyn" in st.session_state:
             res = st.session_state["dyn"]
             df = res["combined"]
-            c1, c2, c3, c4 = st.columns(4)
+            c1, c2, c3 = st.columns(3)
             c1.metric("DRASTIC الأساسي", st.session_state["ci"])
             c2.metric(f"DRASTIC-P سنة {years}", res["final_modified"])
             c3.metric("المستوى النهائي",
                       LEVEL_AR.get(res["final_level"], res["final_level"]))
-            inc = res["final_modified"] - st.session_state["ci"]
-            c4.metric("الزيادة", f"+{inc:.1f}",
-                      delta=f"{inc/st.session_state['ci']*100:.1f}%")
-
-            st.markdown("---")
             st.line_chart(df.set_index("السنة")[
                 ["DRASTIC", "DRASTIC-Modified", "CRI", "MRI"]])
             st.dataframe(df, width="stretch")
@@ -1380,15 +1263,6 @@ elif mode == "🌊 MODFLOW" and MODFLOW_OK:
         if HYDRO_OK:
             location = st.selectbox("الموقع المرجعي:",
                 ["Omdurman_2023", "North_Khartoum_2024", "Gash_Kassala_2025"])
-            with st.expander(f"ℹ️ بيانات {location}"):
-                info = HYDRAULIC_CONDUCTIVITY.get(location, {})
-                if location == "Gash_Kassala_2025":
-                    st.write(f"المنبع: {info['upstream']['value']} م/يوم")
-                    st.write(f"كسلا: {info['kassala']['value']} م/يوم")
-                    st.write(f"المصب: {info['downstream']['value']} م/يوم")
-                else:
-                    st.write(f"K: {info.get('min')} - {info.get('max')} م/يوم")
-                st.write(f"المصدر: {info.get('source', 'N/A')}")
         else:
             location = "Omdurman_2023"
 
@@ -1403,52 +1277,23 @@ elif mode == "🌊 MODFLOW" and MODFLOW_OK:
             delc = st.number_input("ارتفاع الخلية (m):", 50.0, 5000.0, 500.0, 50.0)
             top = st.number_input("منسوب السطح (m):", 100.0, 2000.0, 350.0, 10.0)
             botm = st.number_input("القاعدة (m):", 0.0, 1000.0, 250.0, 10.0)
-            if HYDRO_OK:
-                dk = get_default_k(location)
-                dr = get_default_recharge("Omdurman" if "Omdurman" in location
-                                            else "Gash_Kassala")
-            else:
-                dk, dr = 3.3, 15.0
-            k_val = st.number_input("K (m/day):", 0.01, 500.0, float(dk), 0.1)
-            rech = st.number_input("التغذية (mm/year):", 0.0, 500.0,
-                                    float(dr) if dr < 500 else 15.0, 1.0)
-
-        n_wells = st.number_input("عدد الآبار:", 0, 10, 0)
-        wl, wr = [], []
-        for i in range(int(n_wells)):
-            c1, c2, c3, c4 = st.columns(4)
-            with c1:
-                l = st.number_input(f"طبقة {i+1}:", 0, nlay-1, 0, key=f"wl{i}")
-            with c2:
-                r = st.number_input(f"صف {i+1}:", 0, nrow-1, nrow//2, key=f"wr{i}")
-            with c3:
-                c = st.number_input(f"عمود {i+1}:", 0, ncol-1, ncol//2, key=f"wc{i}")
-            with c4:
-                rate = st.number_input(f"معدل {i+1}:", -10000.0, 10000.0,
-                                        -1000.0, 100.0, key=f"rt{i}")
-            wl.append((int(l), int(r), int(c)))
-            wr.append(float(rate))
+            k_val = st.number_input("K (m/day):", 0.01, 500.0, 3.5, 0.1)
+            rech = st.number_input("التغذية (mm/year):", 0.0, 500.0, 15.0, 1.0)
 
         if st.button("🚀 تشغيل MODFLOW", type="primary"):
             progress = st.progress(0, text="⏳ بدء العملية...")
             try:
-                progress.progress(10, text="📁 تجهيز مجلد العمل...")
+                progress.progress(30, text="🏗️ بناء النموذج...")
                 ws = f"/tmp/mf_ws_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
-
-                progress.progress(30, text="🏗️ بناء شبكة النموذج...")
                 progress.progress(50, text="⚙️ تشغيل MODFLOW 6...")
 
                 res = build_and_run_model(
                     workspace=ws, nlay=int(nlay), nrow=int(nrow),
                     ncol=int(ncol), delr=float(delr), delc=float(delc),
                     top=float(top), botm=float(botm), k_value=float(k_val),
-                    recharge_mm=float(rech),
-                    well_locations=wl if wl else None,
-                    well_rates=wr if wr else None)
-
-                progress.progress(85, text="📊 قراءة النتائج...")
+                    recharge_mm=float(rech))
                 st.session_state["mf_res"] = res
-                progress.progress(100, text="✅ اكتمل التشغيل!")
+                progress.progress(100, text="✅ اكتمل!")
                 import time
                 time.sleep(0.5)
                 progress.empty()
@@ -1460,16 +1305,12 @@ elif mode == "🌊 MODFLOW" and MODFLOW_OK:
             res = st.session_state["mf_res"]
             if not res.get("success"):
                 st.error(f"❌ {res.get('error')}")
-                if res.get("buff"):
-                    with st.expander("تفاصيل الخطأ"):
-                        st.code(res["buff"])
             else:
                 st.success("✅ نجح التشغيل!")
-                c1, c2, c3, c4 = st.columns(4)
+                c1, c2, c3 = st.columns(3)
                 c1.metric("أدنى منسوب", f"{res['head_min']:.2f} m")
                 c2.metric("أعلى منسوب", f"{res['head_max']:.2f} m")
                 c3.metric("متوسط المنسوب", f"{res['head_mean']:.2f} m")
-                c4.metric("الحجم", f"{res['nrow']}×{res['ncol']}")
 
                 try:
                     import plotly.express as px
@@ -1481,22 +1322,8 @@ elif mode == "🌊 MODFLOW" and MODFLOW_OK:
                 except ImportError:
                     st.dataframe(pd.DataFrame(res["heads"]), width="stretch")
 
-                if HYDRO_OK:
-                    por = get_default_porosity()
-                else:
-                    por = 0.20
-                tr = estimate_travel_time_modflow(
-                    res["heads"], float(k_val), por, float(delr))
-                if tr:
-                    st.markdown("---")
-                    st.subheader("⏱️ زمن الوصول (من MODFLOW)")
-                    c1, c2, c3 = st.columns(3)
-                    c1.metric("التدرج", f"{tr['mean_gradient']:.6f}")
-                    c2.metric("السرعة (m/d)", f"{tr['velocity_m_day']:.4f}")
-                    c3.metric("السرعة (m/y)", f"{tr['velocity_m_year']:.2f}")
-
 
 # ============ FOOTER ============
 st.markdown("---")
-st.caption("2026 جامعة الخرطوم - نظام التعدين السوداني v48.0 - "
-           "مُعاير ببيانات سنار (Elmedani et al., 2025)")
+st.caption("2026 جامعة الخرطوم - نظام التعدين السوداني v49.0 - "
+           "قاعدة بيانات الولايات + معايرة سنار")
