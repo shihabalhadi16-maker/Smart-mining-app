@@ -1,4 +1,4 @@
-"""نظام التعدين السوداني v41.0 - النسخة الكاملة مع تشخيص MODFLOW"""
+"""نظام التعدين السوداني v42.0 - النسخة الكاملة مع تشخيص MODFLOW المفصل"""
 import streamlit as st
 import subprocess
 import os
@@ -666,7 +666,7 @@ with _col2:
 
 st.markdown("""
 <div class="header-container">
-    <div class="header-title">⛏️ نظام التعدين السوداني v41.0</div>
+    <div class="header-title">⛏️ نظام التعدين السوداني v42.0</div>
     <div class="header-subtitle">جامعة الخرطوم - كلية الهندسة</div>
     <div class="header-subtitle">DRASTIC + MODFLOW + DRASTIC-P + Dynamic + Validation</div>
 </div>
@@ -1167,7 +1167,6 @@ if mode == "🏠 النظام الأساسي":
 # ============================================================
 elif mode == "✅ التحقق الفعلي" and ADV_OK:
     st.header("✅ التحقق الفعلي من النموذج")
-    st.markdown("**الهدف:** مقارنة توقعات النظام مع بيانات ميدانية حقيقية.")
 
     sample_val = pd.DataFrame({
         "site_name": ["S1", "S2", "S3", "S4"],
@@ -1332,13 +1331,13 @@ elif mode == "⏳ الديناميكي" and ADV_OK:
 
 
 # ============================================================
-# ============ MODE 5: MODFLOW (مع تشخيص) ============
+# ============ MODE 5: MODFLOW ============
 # ============================================================
 elif mode == "🌊 MODFLOW" and MODFLOW_OK:
     st.header("🌊 محاكاة MODFLOW 6")
 
     # ===== تشخيص مفصل =====
-    with st.expander("🔍 تشخيص MODFLOW", expanded=True):
+    with st.expander("🔍 تشخيص MODFLOW", expanded=False):
         mf6_path = shutil.which("mf6")
         st.write(f"**مسار mf6**: `{mf6_path or 'غير موجود'}`")
         st.write(f"**حالة MODFLOW**: `{_modflow_status}`")
@@ -1355,7 +1354,7 @@ elif mode == "🌊 MODFLOW" and MODFLOW_OK:
                     if result.stderr:
                         st.error(f"**stderr**:\n```\n{result.stderr[:500]}\n```")
                 except subprocess.TimeoutExpired:
-                    st.error("انتهت المهلة (30 ثانية) — mf6 لا يستجيب")
+                    st.error("انتهت المهلة (30 ثانية)")
                 except Exception as e:
                     st.error(f"فشل التشغيل: {e}")
             else:
@@ -1446,15 +1445,43 @@ elif mode == "🌊 MODFLOW" and MODFLOW_OK:
                 progress.empty()
                 st.error(f"❌ خطأ: {e}")
 
+        # ===== عرض النتائج مع التفاصيل الكاملة =====
         if "mf_res" in st.session_state:
             res = st.session_state["mf_res"]
             if not res.get("success"):
                 st.error(f"❌ {res.get('error')}")
-                if res.get("buff"):
-                    with st.expander("تفاصيل الخطأ"):
+
+                with st.expander("🔍 تفاصيل الخطأ الكاملة", expanded=True):
+                    if res.get("copy_status"):
+                        st.markdown(f"**copy_status**: `{res['copy_status']}`")
+                    if res.get("manual_status"):
+                        st.markdown(f"**manual_status**: `{res['manual_status']}`")
+                    if res.get("manual_code"):
+                        st.markdown(f"**manual_code**: `{res['manual_code']}`")
+                    if res.get("manual_stderr"):
+                        st.markdown("**manual_stderr (رسالة الخطأ الفعلية):**")
+                        st.code(res["manual_stderr"])
+                    if res.get("manual_stdout"):
+                        st.markdown("**manual_stdout:**")
+                        st.code(res["manual_stdout"])
+                    if res.get("mfsim_content"):
+                        st.markdown("**mfsim.nam:**")
+                        st.code(res["mfsim_content"])
+                    if res.get("lst_content"):
+                        st.markdown("**mfsim.lst (سجل MODFLOW):**")
+                        st.code(res["lst_content"])
+                    if res.get("workspace_files"):
+                        st.markdown("**workspace_files:**")
+                        st.write(res["workspace_files"])
+                    if res.get("workspace"):
+                        st.markdown(f"**workspace**: `{res['workspace']}`")
+                    if res.get("buff"):
+                        st.markdown("**buff:**")
                         st.code(res["buff"])
-                if res.get("traceback"):
-                    with st.expander("Traceback"):
+                    if res.get("hint"):
+                        st.info(f"💡 {res['hint']}")
+                    if res.get("traceback"):
+                        st.markdown("**Traceback:**")
                         st.code(res["traceback"])
             else:
                 st.success("✅ نجح التشغيل!")
@@ -1491,5 +1518,4 @@ elif mode == "🌊 MODFLOW" and MODFLOW_OK:
 
 # ============ FOOTER ============
 st.markdown("---")
-st.caption("2026 جامعة الخرطوم - نظام التعدين السوداني v41.0 - "
-           "DRASTIC + MODFLOW + DRASTIC-P + Dynamic + Validation")
+st.caption("2026 جامعة الخرطوم - نظام التعدين السوداني v42.0")
