@@ -1,4 +1,4 @@
-"""نظام التعدين السوداني v44.0 - النسخة الكاملة مع DRASTIC-P متعدد المواقع"""
+"""نظام التعدين السوداني v45.0 - مع DRASTIC-P محسّن"""
 import streamlit as st
 import subprocess
 import os
@@ -337,6 +337,66 @@ def mitigate(idx, hdpe=False, treat=False, mon=False):
 
 
 # ============================================================
+# ============ DRASTIC-P المحسّن ============
+# ============================================================
+def calc_drastic_p(base_drastic, cn_water, hg_water, alpha=0.50, beta=0.50):
+    """
+    DRASTIC-P = DRASTIC × (1 + α×CRI + β×MRI)
+    
+    Parameters:
+    -----------
+    base_drastic : float - مؤشر DRASTIC الأساسي (0-230)
+    cn_water : float - تركيز السيانيد في المياه (mg/L)
+    hg_water : float - تركيز الزئبق في المياه (mg/L)
+    alpha : float - وزن CRI (افتراضي 0.50)
+    beta : float - وزن MRI (افتراضي 0.50)
+    
+    Returns:
+    --------
+    dict: CRI, MRI, DRASTIC-P, modifier, level
+    """
+    # حدود WHO
+    CN_LIMIT = 0.07   # mg/L
+    HG_LIMIT = 0.006  # mg/L
+    
+    # حساب النسب
+    cn_ratio = cn_water / CN_LIMIT if CN_LIMIT > 0 else 0
+    hg_ratio = hg_water / HG_LIMIT if HG_LIMIT > 0 else 0
+    
+    # CRI و MRI
+    cri = cn_ratio * 0.5
+    mri = hg_ratio * 0.6
+    
+    # Modifier
+    modifier = 1.0 + (alpha * cri) + (beta * mri)
+    
+    # DRASTIC-P
+    drastic_p = min(230, base_drastic * modifier)
+    
+    # التصنيف
+    if drastic_p >= 180:
+        level, color = "مرتفع جدا", "red"
+    elif drastic_p >= 140:
+        level, color = "مرتفع", "orange"
+    elif drastic_p >= 100:
+        level, color = "متوسط", "yellow"
+    else:
+        level, color = "منخفض", "green"
+    
+    return {
+        "base_drastic": base_drastic,
+        "cri": round(cri, 3),
+        "mri": round(mri, 3),
+        "modifier": round(modifier, 3),
+        "drastic_p": round(drastic_p, 1),
+        "increase_pct": round(((drastic_p - base_drastic) / base_drastic * 100)
+                              if base_drastic > 0 else 0, 1),
+        "level": level, "color": color,
+        "alpha": alpha, "beta": beta
+    }
+
+
+# ============================================================
 # ============ Sensitivity & Monte Carlo ============
 # ============================================================
 def sensitivity_analysis(pv, variation=0.10):
@@ -666,7 +726,7 @@ with _col2:
 
 st.markdown("""
 <div class="header-container">
-    <div class="header-title">⛏️ نظام التعدين السوداني v44.0</div>
+    <div class="header-title">⛏️ نظام التعدين السوداني v45.0</div>
     <div class="header-subtitle">جامعة الخرطوم - كلية الهندسة</div>
     <div class="header-subtitle">DRASTIC + MODFLOW + DRASTIC-P + Dynamic + Validation</div>
 </div>
@@ -720,33 +780,6 @@ if "ci" in st.session_state:
     st.sidebar.success(f"✅ مؤشر حالي: {st.session_state['ci']}")
 else:
     st.sidebar.warning("⚠️ لم يتم حساب مؤشر")
-
-st.sidebar.markdown("---")
-st.sidebar.markdown("### 💾 إدارة المشروع")
-if "cv" in st.session_state:
-    project_data = {
-        "site": st.session_state.get("cs", ""),
-        "coords": list(st.session_state.get("cc", (0, 0))),
-        "index": st.session_state.get("ci", 0),
-        "values": st.session_state.get("cv", {}),
-        "date": datetime.datetime.now().isoformat()}
-    st.sidebar.download_button(
-        "💾 حفظ المشروع",
-        data=json.dumps(project_data, ensure_ascii=False, indent=2),
-        file_name=f"project_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.json",
-        mime="application/json", width="stretch")
-
-uploaded = st.sidebar.file_uploader("📂 تحميل مشروع", type=["json"])
-if uploaded:
-    try:
-        loaded = json.load(uploaded)
-        st.session_state["cs"] = loaded.get("site", "")
-        st.session_state["cc"] = tuple(loaded.get("coords", (0, 0)))
-        st.session_state["ci"] = loaded.get("index", 0)
-        st.session_state["cv"] = loaded.get("values", {})
-        st.sidebar.success("✅ تم التحميل")
-    except Exception as e:
-        st.sidebar.error(f"❌ {e}")
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 📚 المراجع")
@@ -1163,7 +1196,7 @@ if mode == "🏠 النظام الأساسي":
 
 
 # ============================================================
-# ============ MODE 2: Validation مع DRASTIC-P ============
+# ============ MODE 2: Validation مع DRASTIC-P محسّن ============
 # ============================================================
 elif mode == "✅ التحقق الفعلي" and ADV_OK:
     st.header("✅ التحقق الفعلي من النموذج")
@@ -1217,6 +1250,7 @@ elif mode == "✅ التحقق الفعلي" and ADV_OK:
                 drastic_p_list = []
                 cri_list = []
                 mri_list = []
+                modifier_list = []
                 actual_list = []
 
                 for i, row in df.iterrows():
@@ -1234,42 +1268,40 @@ elif mode == "✅ التحقق الفعلي" and ADV_OK:
                         if has_toxicity:
                             cn_w = float(row.get("cn_water_mg_l", 0.0))
                             hg_w = float(row.get("hg_water_mg_l", 0.0))
-                            CN_W = 0.07
-                            cn_ratio = cn_w / CN_W
-                            cri = cn_ratio * 0.5
-                            HG_W = 0.006
-                            hg_ratio = hg_w / HG_W
-                            mri = hg_ratio * 0.6
-                            modifier = 1.0 + (0.15 * cri) + (0.20 * mri)
-                            ix_p = min(230, ix * modifier)
+                            result = calc_drastic_p(ix, cn_w, hg_w)
+                            drastic_p_list.append(result["drastic_p"])
+                            cri_list.append(result["cri"])
+                            mri_list.append(result["mri"])
+                            modifier_list.append(result["modifier"])
                         else:
-                            cri = 0
-                            mri = 0
-                            ix_p = ix
+                            drastic_p_list.append(ix)
+                            cri_list.append(0)
+                            mri_list.append(0)
+                            modifier_list.append(1.0)
 
-                        drastic_p_list.append(round(ix_p, 1))
-                        cri_list.append(round(cri, 3))
-                        mri_list.append(round(mri, 3))
                         actual_list.append(int(row["actual_contaminated"]))
                     except Exception:
                         drastic_list.append(0)
                         drastic_p_list.append(0)
                         cri_list.append(0)
                         mri_list.append(0)
+                        modifier_list.append(1.0)
                         actual_list.append(int(row.get("actual_contaminated", 0)))
 
                 df["drastic_index"] = drastic_list
                 df["drastic_p_index"] = drastic_p_list
                 df["cri"] = cri_list
                 df["mri"] = mri_list
+                df["modifier"] = modifier_list
 
                 st.markdown("---")
                 st.subheader("📊 نتائج DRASTIC و DRASTIC-P لكل موقع")
                 result_df = df[["site_name", "drastic_index", 
-                                "drastic_p_index", "cri", "mri",
+                                "drastic_p_index", "cri", "mri", "modifier",
                                 "actual_contaminated"]].copy()
                 result_df.columns = ["الموقع", "DRASTIC", "DRASTIC-P",
-                                      "CRI", "MRI", "الفعلي (1=ملوث)"]
+                                      "CRI", "MRI", "Modifier",
+                                      "الفعلي (1=ملوث)"]
                 st.dataframe(result_df, width="stretch")
 
                 st.markdown("---")
@@ -1299,18 +1331,26 @@ elif mode == "✅ التحقق الفعلي" and ADV_OK:
                 st.markdown("---")
                 st.subheader("🏆 الحكم النهائي")
 
-                if metrics_p["kappa"] > metrics_d["kappa"]:
+                improvement = metrics_p["kappa"] - metrics_d["kappa"]
+                if improvement > 0.1:
                     st.success(f"""
-                    ✅ **DRASTIC-P أفضل من DRASTIC التقليدي!**
-                    - Kappa: {metrics_d['kappa']} → {metrics_p['kappa']}
+                    ✅ **DRASTIC-P أفضل بشكل ملحوظ!**
+                    - Kappa: {metrics_d['kappa']} → {metrics_p['kappa']} (تحسّن {improvement:.3f})
                     - Recall: {metrics_d['recall']}% → {metrics_p['recall']}%
+                    - Modifier: {df['modifier'].min():.2f} - {df['modifier'].max():.2f}
                     
                     **هذا يثبت أن دمج مؤشرات السيانيد والزئبق يحسّن دقة التقييم.**
                     """)
+                elif improvement > 0:
+                    st.info(f"""
+                    ℹ️ **DRASTIC-P حسّن النتيجة بشكل طفيف.**
+                    - Kappa: {metrics_d['kappa']} → {metrics_p['kappa']}
+                    """)
                 else:
                     st.warning(f"""
-                    ⚠️ **DRASTIC-P لم يحسّن النتيجة بشكل ملحوظ.**
+                    ⚠️ **DRASTIC-P لم يحسّن النتيجة.**
                     - Kappa: {metrics_d['kappa']} → {metrics_p['kappa']}
+                    - قد تحتاج مراجعة قيم CN و Hg أو تعديل α و β.
                     """)
 
                 st.markdown("---")
@@ -1322,7 +1362,18 @@ elif mode == "✅ التحقق الفعلي" and ADV_OK:
                 }, index=["توقع ملوث", "توقع نظيف"])
                 st.dataframe(cm_df, width="stretch")
 
+                st.info(f"""
+                **تفسير مصفوفة الالتباس (DRASTIC-P):**
+                - **TP**: {cm['TP']} موقع — توقع "ملوث" والموقع **ملوث فعلاً** ✅
+                - **TN**: {cm['TN']} موقع — توقع "نظيف" والموقع **نظيف فعلاً** ✅
+                - **FP**: {cm['FP']} موقع — توقع "ملوث" والموقع **نظيف** ❌
+                - **FN**: {cm['FN']} موقع — توقع "نظيف" والموقع **ملوث فعلاً** ❌
+                """)
+
                 st.markdown("---")
+                with st.expander("📄 التقرير الإحصائي الكامل (DRASTIC-P)"):
+                    st.text(generate_validation_report(metrics_p))
+
                 st.download_button("📥 تحميل النتائج الكاملة (CSV)",
                     data=result_df.to_csv(index=False).encode("utf-8-sig"),
                     file_name="validation_full_results.csv",
@@ -1345,17 +1396,17 @@ elif mode == "🧪 DRASTIC-P" and ADV_OK:
         c1, c2 = st.columns(2)
         with c1:
             st.markdown("**السيانيد (CN)**")
-            cn_w = st.number_input("CN مياه (mg/L):", 0.0, 10.0, 0.05, 0.001,
+            cn_w = st.number_input("CN مياه (mg/L):", 0.0, 10.0, 0.10, 0.001,
                                     format="%.4f")
-            cn_s = st.number_input("CN تربة (mg/kg):", 0.0, 100.0, 5.0, 0.5)
+            cn_s = st.number_input("CN تربة (mg/kg):", 0.0, 100.0, 15.0, 0.5)
             cn_dist = st.number_input("المسافة لمصدر مياه (m):", 10.0,
                                        5000.0, 500.0, 50.0)
             cn_seep = st.slider("معدل التسرب:", 0.0, 1.0, 0.3, 0.05)
         with c2:
             st.markdown("**الزئبق (Hg)**")
-            hg_w = st.number_input("Hg مياه (mg/L):", 0.0, 10.0, 0.005, 0.001,
+            hg_w = st.number_input("Hg مياه (mg/L):", 0.0, 10.0, 0.008, 0.001,
                                     format="%.4f")
-            hg_s = st.number_input("Hg تربة (mg/kg):", 0.0, 100.0, 0.5, 0.1)
+            hg_s = st.number_input("Hg تربة (mg/kg):", 0.0, 100.0, 1.5, 0.1)
             bio = st.slider("معامل التراكم الحيوي:", 1.0, 3.0, 1.5, 0.1)
             use = st.selectbox("استخدام المياه:",
                 ["drinking", "irrigation", "industrial"])
@@ -1580,4 +1631,4 @@ elif mode == "🌊 MODFLOW" and MODFLOW_OK:
 
 # ============ FOOTER ============
 st.markdown("---")
-st.caption("2026 جامعة الخرطوم - نظام التعدين السوداني v44.0")
+st.caption("2026 جامعة الخرطوم - نظام التعدين السوداني v45.0")
