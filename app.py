@@ -1,4 +1,4 @@
-"""نظام التعدين السوداني v42.0 - النسخة الكاملة مع تشخيص MODFLOW المفصل"""
+"""نظام التعدين السوداني v43.0 - النسخة النهائية الكاملة"""
 import streamlit as st
 import subprocess
 import os
@@ -666,7 +666,7 @@ with _col2:
 
 st.markdown("""
 <div class="header-container">
-    <div class="header-title">⛏️ نظام التعدين السوداني v42.0</div>
+    <div class="header-title">⛏️ نظام التعدين السوداني v43.0</div>
     <div class="header-subtitle">جامعة الخرطوم - كلية الهندسة</div>
     <div class="header-subtitle">DRASTIC + MODFLOW + DRASTIC-P + Dynamic + Validation</div>
 </div>
@@ -1163,56 +1163,154 @@ if mode == "🏠 النظام الأساسي":
 
 
 # ============================================================
-# ============ MODE 2: Validation ============
+# ============ MODE 2: Validation (محسّن) ============
 # ============================================================
 elif mode == "✅ التحقق الفعلي" and ADV_OK:
     st.header("✅ التحقق الفعلي من النموذج")
+    st.markdown("""
+    **الهدف:** مقارنة توقعات DRASTIC مع بيانات ميدانية حقيقية.
+    البرنامج سيحسب DRASTIC تلقائياً من المدخلات الفيزيائية.
+    """)
 
+    # قالب CSV
     sample_val = pd.DataFrame({
-        "site_name": ["S1", "S2", "S3", "S4"],
-        "drastic_index": [150, 80, 130, 165],
-        "actual_contaminated": [1, 0, 0, 1]})
-    st.download_button("📥 قالب التحقق",
+        "site_name": ["سنار-1", "سنار-2", "سنار-3"],
+        "depth_m": [12.0, 10.0, 25.0],
+        "recharge_mm": [80.0, 75.0, 60.0],
+        "slope_pct": [3.0, 4.0, 6.0],
+        "conductivity": [2.5, 3.0, 1.5],
+        "aquifer": ["massive_sandstone", "sand_and_gravel", "massive_shale"],
+        "soil": ["sand", "sandy_loam", "clay_loam"],
+        "vadose": ["sand_gravel", "sandstone", "silt_clay"],
+        "actual_contaminated": [1, 1, 0]})
+    st.download_button("📥 قالب بيانات التحقق",
         data=sample_val.to_csv(index=False).encode("utf-8-sig"),
-        file_name="validation.csv", mime="text/csv")
+        file_name="validation_sennar.csv", mime="text/csv")
 
-    f = st.file_uploader("ارفع:", type=["csv", "xlsx"], key="val_f")
+    f = st.file_uploader("ارفع ملف CSV أو Excel:", 
+                          type=["csv", "xlsx"], key="val_f")
+
     if f:
         try:
-            df = pd.read_csv(f) if f.name.endswith(".csv") else pd.read_excel(f)
-            if "drastic_index" in df.columns and "actual_contaminated" in df.columns:
-                threshold = st.slider("عتبة التصنيف:", 100, 200, 140, 5)
+            if f.name.endswith(".csv"):
+                df = pd.read_csv(f)
+            else:
+                df = pd.read_excel(f)
+
+            st.markdown("---")
+            st.subheader("🔍 معاينة البيانات")
+            st.dataframe(df.head(10), width="stretch")
+
+            required = ["depth_m", "recharge_mm", "slope_pct",
+                        "conductivity", "aquifer", "soil", "vadose",
+                        "actual_contaminated"]
+            missing = [c for c in required if c not in df.columns]
+
+            if missing:
+                st.error(f"❌ أعمدة مفقودة: {missing}")
+                st.info("""
+                **الأعمدة المطلوبة:**
+                - depth_m, recharge_mm, slope_pct, conductivity
+                - aquifer, soil, vadose
+                - actual_contaminated (0 = نظيف، 1 = ملوث)
+                """)
+            else:
+                drastic_list = []
+                pred_class_list = []
+                actual_list = []
+                errors_list = []
+
+                for i, row in df.iterrows():
+                    try:
+                        D_r = get_d_rating(float(row["depth_m"]))
+                        R_r = get_r_rating(float(row["recharge_mm"]))
+                        A_r = get_a_rating(str(row["aquifer"]))
+                        S_r = get_s_rating(str(row["soil"]))
+                        T_r = get_t_rating(float(row["slope_pct"]))
+                        I_r = get_i_rating(str(row["vadose"]))
+                        C_r = get_c_rating(float(row["conductivity"]))
+                        ix = calc_index(D_r, R_r, A_r, S_r, T_r, I_r, C_r)
+                        drastic_list.append(ix)
+                        pred_class_list.append(1 if ix >= 140 else 0)
+                        actual_list.append(int(row["actual_contaminated"]))
+                        errors_list.append("")
+                    except Exception as e:
+                        drastic_list.append(0)
+                        pred_class_list.append(0)
+                        actual_list.append(int(row.get("actual_contaminated", 0)))
+                        errors_list.append(str(e)[:50])
+
+                df["drastic_index"] = drastic_list
+                df["predicted"] = pred_class_list
+                df["actual"] = actual_list
+                df["error"] = errors_list
+
+                st.markdown("---")
+                st.subheader("📊 نتائج DRASTIC لكل موقع")
+                result_df = df[["site_name", "drastic_index",
+                                "predicted", "actual", "error"]].copy()
+                result_df.columns = ["الموقع", "DRASTIC",
+                                      "المتوقع (1=ملوث)",
+                                      "الفعلي (1=ملوث)", "ملاحظات"]
+                st.dataframe(result_df, width="stretch")
+
                 metrics = calculate_confusion_matrix(
-                    df["drastic_index"].values,
-                    df["actual_contaminated"].values, threshold)
+                    drastic_list, actual_list, threshold=140)
+
+                st.markdown("---")
+                st.subheader("📈 المقاييس الإحصائية")
+
                 c1, c2, c3, c4 = st.columns(4)
                 c1.metric("Accuracy", f"{metrics['accuracy']}%")
                 c2.metric("Precision", f"{metrics['precision']}%")
                 c3.metric("Recall", f"{metrics['recall']}%")
-                c4.metric("F1", f"{metrics['f1_score']}%")
-                c1, c2, c3 = st.columns(3)
-                c1.metric("Kappa", metrics["kappa"])
-                c2.metric("MCC", metrics["mcc"])
-                c3.metric("Specificity", f"{metrics['specificity']}%")
+                c4.metric("F1-Score", f"{metrics['f1_score']}%")
+
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Specificity", f"{metrics['specificity']}%")
+                c2.metric("NPV", f"{metrics['npv']}%")
+                c3.metric("Kappa", metrics["kappa"])
+                c4.metric("MCC", metrics["mcc"])
 
                 k = metrics["kappa"]
-                if k >= 0.8: st.success(f"✅ Kappa = {k} — توافق ممتاز")
-                elif k >= 0.6: st.info(f"ℹ️ Kappa = {k} — توافق جيد")
-                elif k >= 0.4: st.warning(f"⚠️ Kappa = {k} — توافق متوسط")
-                else: st.error(f"❌ Kappa = {k} — توافق ضعيف")
+                if k >= 0.8:
+                    st.success(f"✅ Kappa = {k} — توافق ممتاز مع البيانات الميدانية")
+                elif k >= 0.6:
+                    st.info(f"ℹ️ Kappa = {k} — توافق جيد")
+                elif k >= 0.4:
+                    st.warning(f"⚠️ Kappa = {k} — توافق متوسط")
+                else:
+                    st.error(f"❌ Kappa = {k} — توافق ضعيف")
 
+                st.markdown("---")
+                st.subheader("🔢 مصفوفة الالتباس")
                 cm = metrics["confusion_matrix"]
                 cm_df = pd.DataFrame({
                     "ملوث فعلاً": [cm["TP"], cm["FN"]],
-                    "نظيف فعلاً": [cm["FP"], cm["TN"]]},
-                    index=["توقع ملوث", "توقع نظيف"])
+                    "نظيف فعلاً": [cm["FP"], cm["TN"]]
+                }, index=["توقع ملوث", "توقع نظيف"])
                 st.dataframe(cm_df, width="stretch")
-                with st.expander("📄 التقرير الكامل"):
+
+                st.info(f"""
+                **تفسير مصفوفة الالتباس:**
+                - **TP**: {cm['TP']} موقع — توقع "ملوث" والموقع **ملوث فعلاً** ✅
+                - **TN**: {cm['TN']} موقع — توقع "نظيف" والموقع **نظيف فعلاً** ✅
+                - **FP**: {cm['FP']} موقع — توقع "ملوث" والموقع **نظيف** ❌
+                - **FN**: {cm['FN']} موقع — توقع "نظيف" والموقع **ملوث فعلاً** ❌
+                """)
+
+                st.markdown("---")
+                with st.expander("📄 التقرير الإحصائي الكامل"):
                     st.text(generate_validation_report(metrics))
-            else:
-                st.error("أعمدة مفقودة: drastic_index, actual_contaminated")
+
+                st.download_button("📥 تحميل النتائج (CSV)",
+                    data=result_df.to_csv(index=False).encode("utf-8-sig"),
+                    file_name="validation_results.csv",
+                    mime="text/csv",
+                    width="stretch")
+
         except Exception as e:
-            st.error(str(e))
+            st.error(f"❌ خطأ في قراءة الملف: {e}")
 
 
 # ============================================================
@@ -1336,30 +1434,6 @@ elif mode == "⏳ الديناميكي" and ADV_OK:
 elif mode == "🌊 MODFLOW" and MODFLOW_OK:
     st.header("🌊 محاكاة MODFLOW 6")
 
-    # ===== تشخيص مفصل =====
-    with st.expander("🔍 تشخيص MODFLOW", expanded=False):
-        mf6_path = shutil.which("mf6")
-        st.write(f"**مسار mf6**: `{mf6_path or 'غير موجود'}`")
-        st.write(f"**حالة MODFLOW**: `{_modflow_status}`")
-
-        if st.button("🧪 اختبار تشغيل mf6", key="test_mf6"):
-            if mf6_path:
-                try:
-                    result = subprocess.run(
-                        [mf6_path, "--version"],
-                        capture_output=True, text=True, timeout=30)
-                    st.write(f"**Return code**: `{result.returncode}`")
-                    if result.stdout:
-                        st.code(result.stdout[:500], language="text")
-                    if result.stderr:
-                        st.error(f"**stderr**:\n```\n{result.stderr[:500]}\n```")
-                except subprocess.TimeoutExpired:
-                    st.error("انتهت المهلة (30 ثانية)")
-                except Exception as e:
-                    st.error(f"فشل التشغيل: {e}")
-            else:
-                st.error("❌ mf6 غير موجود في PATH")
-
     mf_ok, mf_msg = is_modflow_available()
     if not mf_ok:
         st.error(f"❌ {mf_msg}")
@@ -1445,44 +1519,13 @@ elif mode == "🌊 MODFLOW" and MODFLOW_OK:
                 progress.empty()
                 st.error(f"❌ خطأ: {e}")
 
-        # ===== عرض النتائج مع التفاصيل الكاملة =====
         if "mf_res" in st.session_state:
             res = st.session_state["mf_res"]
             if not res.get("success"):
                 st.error(f"❌ {res.get('error')}")
-
-                with st.expander("🔍 تفاصيل الخطأ الكاملة", expanded=True):
-                    if res.get("copy_status"):
-                        st.markdown(f"**copy_status**: `{res['copy_status']}`")
-                    if res.get("manual_status"):
-                        st.markdown(f"**manual_status**: `{res['manual_status']}`")
-                    if res.get("manual_code"):
-                        st.markdown(f"**manual_code**: `{res['manual_code']}`")
-                    if res.get("manual_stderr"):
-                        st.markdown("**manual_stderr (رسالة الخطأ الفعلية):**")
-                        st.code(res["manual_stderr"])
-                    if res.get("manual_stdout"):
-                        st.markdown("**manual_stdout:**")
-                        st.code(res["manual_stdout"])
-                    if res.get("mfsim_content"):
-                        st.markdown("**mfsim.nam:**")
-                        st.code(res["mfsim_content"])
-                    if res.get("lst_content"):
-                        st.markdown("**mfsim.lst (سجل MODFLOW):**")
-                        st.code(res["lst_content"])
-                    if res.get("workspace_files"):
-                        st.markdown("**workspace_files:**")
-                        st.write(res["workspace_files"])
-                    if res.get("workspace"):
-                        st.markdown(f"**workspace**: `{res['workspace']}`")
-                    if res.get("buff"):
-                        st.markdown("**buff:**")
+                if res.get("buff"):
+                    with st.expander("تفاصيل الخطأ"):
                         st.code(res["buff"])
-                    if res.get("hint"):
-                        st.info(f"💡 {res['hint']}")
-                    if res.get("traceback"):
-                        st.markdown("**Traceback:**")
-                        st.code(res["traceback"])
             else:
                 st.success("✅ نجح التشغيل!")
                 c1, c2, c3, c4 = st.columns(4)
@@ -1518,4 +1561,4 @@ elif mode == "🌊 MODFLOW" and MODFLOW_OK:
 
 # ============ FOOTER ============
 st.markdown("---")
-st.caption("2026 جامعة الخرطوم - نظام التعدين السوداني v42.0")
+st.caption("2026 جامعة الخرطوم - نظام التعدين السوداني v43.0")
