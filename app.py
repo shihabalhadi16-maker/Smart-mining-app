@@ -1,4 +1,21 @@
-"""نظام التعدين السوداني v50.0 - مع 18 ولاية وإدخال يدوي"""
+"""
+نظام التعدين السوداني v51.0
+=====================================
+نظام متكامل لتقييم هشاشة المياه الجوفية في مناطق التعدين السودانية
+
+المعايير العالمية المستخدمة:
+- DRASTIC (US EPA / Aller et al., 1987)
+- DRASTIC-P (تعديل مخصص لمخاطر التعدين)
+- MODFLOW 6 (USGS)
+- Monte Carlo (US EPA / Risk Assessment)
+- WHO Guidelines (2022)
+
+المعاير ببيانات:
+- Elmedani et al. (2025) - سنار
+- Elkrail & Adlan (2019) - أم درمان
+- Mohammed et al. (2023) - الخرطوم
+- دراسة القاش (2025) - كسلا
+"""
 import streamlit as st
 import subprocess
 import os
@@ -23,77 +40,214 @@ try:
 except ImportError:
     PIL_OK = False
 
-st.set_page_config(page_title="نظام التعدين السوداني",
-                   page_icon="⛏️", layout="wide",
-                   initial_sidebar_state="expanded")
+# ============================================================
+# ============ إعدادات الصفحة ============
+# ============================================================
+st.set_page_config(
+    page_title="نظام التعدين السوداني",
+    page_icon="⛏️",
+    layout="wide",
+    initial_sidebar_state="expanded",
+    menu_items={
+        "About": "نظام التعدين السوداني v51.0 - جامعة الخرطوم"
+    }
+)
 
 # ============================================================
-# ============ CSS ============
+# ============ CSS الاحترافي (وفق معايير US EPA) ============
 # ============================================================
 st.markdown("""
 <style>
+    /* ===== الخطوط الأساسية ===== */
     html, body, [class*="css"] {
         font-family: 'Segoe UI', 'Tahoma', 'Arial', sans-serif;
         font-size: 15px;
     }
+    
+    /* ===== الأزرار الرئيسية ===== */
     .stButton > button {
         border-radius: 8px;
-        font-weight: bold;
-        background: linear-gradient(135deg, #c19a6b 0%, #5c2c16 100%);
-        color: white;
+        font-weight: 600;
+        padding: 10px 24px;
         border: none;
-        padding: 10px 20px;
+        transition: all 0.3s ease;
     }
-    .stTabs [data-baseweb="tab-list"] { gap: 6px; flex-wrap: wrap; }
+    .stButton > button[kind="primary"] {
+        background: linear-gradient(135deg, #5c2c16 0%, #c19a6b 100%);
+        color: white;
+    }
+    .stButton > button[kind="primary"]:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(92, 44, 22, 0.4);
+    }
+    
+    /* ===== التبويبات ===== */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 4px;
+        flex-wrap: wrap;
+        background-color: #faf8f3;
+        padding: 8px;
+        border-radius: 12px;
+        border: 1px solid #e0d4b8;
+    }
     .stTabs [data-baseweb="tab"] {
-        border-radius: 8px 8px 0 0;
+        border-radius: 8px;
         padding: 10px 16px;
         font-size: 0.95em;
         font-weight: 600;
+        background-color: transparent;
+        border: 1px solid transparent;
+        color: #5c2c16;
+    }
+    .stTabs [data-baseweb="tab"]:hover {
         background-color: #f5eedc;
-        border: 1px solid #e0d4b8;
     }
     .stTabs [aria-selected="true"] {
-        background-color: #c19a6b !important;
+        background-color: #5c2c16 !important;
         color: white !important;
+        border: 1px solid #5c2c16 !important;
     }
+    
+    /* ===== البطاقات الإحصائية ===== */
     div[data-testid="stMetric"] {
         background: linear-gradient(135deg, #ffffff 0%, #f9f5ec 100%);
         border: 2px solid #d4af37;
         border-radius: 12px;
-        padding: 16px;
-        box-shadow: 0 3px 8px rgba(212, 175, 55, 0.15);
+        padding: 16px 20px;
+        box-shadow: 0 3px 10px rgba(212, 175, 55, 0.12);
+        transition: all 0.3s ease;
     }
+    div[data-testid="stMetric"]:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(212, 175, 55, 0.25);
+    }
+    div[data-testid="stMetric"] label {
+        color: #5c2c16 !important;
+        font-weight: 600 !important;
+    }
+    div[data-testid="stMetric"] [data-testid="stMetricValue"] {
+        color: #2c1810 !important;
+        font-weight: 700 !important;
+    }
+    
+    /* ===== الشريط الجانبي ===== */
     [data-testid="stSidebar"] {
-        background-color: #f5eedc;
+        background: linear-gradient(180deg, #f5eedc 0%, #faf8f3 100%);
         border-right: 3px solid #c19a6b;
     }
+    [data-testid="stSidebar"] .stRadio > label {
+        color: #5c2c16;
+        font-weight: 600;
+    }
+    
+    /* ===== الترويسة ===== */
     .header-container {
         background: linear-gradient(135deg, #5c2c16 0%, #c19a6b 100%);
-        padding: 24px;
+        padding: 28px 24px;
         border-radius: 16px;
         margin-bottom: 24px;
         color: white;
         text-align: center;
-        box-shadow: 0 6px 20px rgba(92, 44, 22, 0.3);
+        box-shadow: 0 8px 24px rgba(92, 44, 22, 0.35);
     }
     .header-title {
-        font-size: 2.0em;
-        font-weight: bold;
+        font-size: 2.1em;
+        font-weight: 700;
         margin: 0;
-        text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        letter-spacing: 0.5px;
     }
-    .header-subtitle { font-size: 1.05em; opacity: 0.95; margin: 8px 0 0 0; }
-    .stAlert { border-radius: 10px; border-left: 5px solid; }
+    .header-subtitle {
+        font-size: 1.05em;
+        opacity: 0.95;
+        margin: 6px 0 0 0;
+    }
+    .header-badge {
+        display: inline-block;
+        background: rgba(255, 255, 255, 0.2);
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 0.85em;
+        margin-top: 10px;
+    }
+    
+    /* ===== التنبيهات ===== */
+    .stAlert {
+        border-radius: 10px;
+        border-left: 5px solid;
+        padding: 12px 16px;
+    }
+    
+    /* ===== الفواصل ===== */
+    hr {
+        margin: 20px 0;
+        border: none;
+        border-top: 2px solid #f0e6d2;
+    }
+    
+    /* ===== الأقسام ===== */
+    .section-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 16px 0 12px 0;
+        padding-bottom: 8px;
+        border-bottom: 2px solid #f0e6d2;
+    }
+    .section-header h3 {
+        color: #5c2c16;
+        margin: 0;
+        font-size: 1.25em;
+    }
+    
+    /* ===== بطاقات المعلومات ===== */
+    .info-card {
+        background: #faf8f3;
+        border: 1px solid #e0d4b8;
+        border-radius: 10px;
+        padding: 16px;
+        margin: 10px 0;
+    }
+    .info-card-title {
+        color: #5c2c16;
+        font-weight: 700;
+        margin-bottom: 8px;
+        font-size: 1.05em;
+    }
+    .info-card-value {
+        color: #2c1810;
+        font-size: 1.5em;
+        font-weight: 700;
+    }
+    
+    /* ===== إخفاء عناصر Streamlit ===== */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
+    
+    /* ===== تحسينات الهاتف ===== */
     @media (max-width: 768px) {
-        .header-title { font-size: 1.4em !important; }
-        .header-subtitle { font-size: 0.85em !important; }
-        .header-container { padding: 16px !important; }
-        [data-testid="stHorizontalBlock"] { flex-direction: column !important; }
-        [data-testid="stHorizontalBlock"] > div { width: 100% !important; margin-bottom: 10px; }
-        .stTabs [data-baseweb="tab"] { padding: 6px 10px; font-size: 0.8em; }
+        .header-title { font-size: 1.5em !important; }
+        .header-subtitle { font-size: 0.9em !important; }
+        .header-container { padding: 18px 14px !important; }
+        [data-testid="stHorizontalBlock"] {
+            flex-direction: column !important;
+        }
+        [data-testid="stHorizontalBlock"] > div {
+            width: 100% !important;
+            margin-bottom: 8px;
+        }
+        .stTabs [data-baseweb="tab"] {
+            padding: 8px 12px;
+            font-size: 0.82em;
+        }
+        div[data-testid="stMetric"] {
+            padding: 12px !important;
+        }
+        div[data-testid="stMetric"] label {
+            font-size: 0.85em !important;
+        }
+        div[data-testid="stMetric"] [data-testid="stMetricValue"] {
+            font-size: 1.3em !important;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -136,10 +290,6 @@ def setup_modflow():
         if shutil.which("mf6"):
             return "installed"
         return "installed_but_not_in_path"
-    except requests.exceptions.Timeout:
-        return "timeout"
-    except requests.exceptions.ConnectionError:
-        return "connection_error"
     except Exception as e:
         return f"error: {str(e)[:100]}"
 
@@ -244,7 +394,7 @@ LEVEL_AR = {
 
 
 # ============================================================
-# ============ DRASTIC FUNCTIONS ============
+# ============ DRASTIC FUNCTIONS (وفق US EPA) ============
 # ============================================================
 def get_d_rating(d):
     if d < 0: raise ValueError("Neg")
@@ -327,12 +477,12 @@ def mitigate(idx, hdpe=False, treat=False, mon=False):
 
 
 # ============================================================
-# ============ DRASTIC-P ============
+# ============ DRASTIC-P (المؤشر المعدل) ============
 # ============================================================
-def calc_drastic_p_sennar(base_drastic, cn_water, hg_water,
-                           distance_m=100.0, seepage=1.0, bio_acc=1.0,
-                           alpha=0.50, beta=0.50):
-    """DRASTIC-P مُعاير ببيانات سنار"""
+def calc_drastic_p(base_drastic, cn_water, hg_water,
+                    distance_m=100.0, seepage=1.0, bio_acc=1.0,
+                    alpha=0.50, beta=0.50):
+    """DRASTIC-P = DRASTIC × (1 + α×CRI + β×MRI)"""
     CN_LIMIT = 0.05
     HG_LIMIT = 0.0007
 
@@ -482,45 +632,6 @@ def weighted_toxicity(hgw, hgs, cnw, cns):
     return {"index": round(w, 2), "category": cat, "action": act}
 
 
-def fetch_satellite(lat, lon, years=3):
-    try:
-        end = datetime.datetime.now().strftime('%Y-%m-%d')
-        start = (datetime.datetime.now() - timedelta(days=365*years)).strftime('%Y-%m-%d')
-        r1 = requests.get("https://archive-api.open-meteo.com/v1/archive",
-            params={"latitude": lat, "longitude": lon,
-                    "start_date": start, "end_date": end,
-                    "daily": "precipitation_sum",
-                    "timezone": "Africa/Khartoum"}, timeout=30)
-        rain_data = r1.json().get("daily", {}).get("precipitation_sum", [])
-        rv = [x for x in rain_data if x is not None]
-        rain = round(sum(rv) / years, 1) if rv else None
-
-        r2 = requests.get("https://archive-api.open-meteo.com/v1/archive",
-            params={"latitude": lat, "longitude": lon,
-                    "start_date": start, "end_date": end,
-                    "daily": "temperature_2m_mean",
-                    "timezone": "Africa/Khartoum"}, timeout=30)
-        temp_data = r2.json().get("daily", {}).get("temperature_2m_mean", [])
-        tv = [x for x in temp_data if x is not None]
-        temp = round(sum(tv) / len(tv), 1) if tv else None
-
-        aridity = "غير محدد"
-        if rain is not None:
-            if rain < 100: aridity = "صحراوي"
-            elif rain < 250: aridity = "شبه جاف"
-            elif rain < 500: aridity = "شبه رطب"
-            else: aridity = "رطب"
-
-        return {"rainfall_mm": rain, "temperature_c": temp,
-                "aridity": aridity,
-                "ndvi_estimated": round(min(0.7, max(0.05, (rain or 0) / 1000.0)), 3) if rain else None,
-                "source": "ERA5 via Open-Meteo"}
-    except Exception:
-        return {"rainfall_mm": None, "temperature_c": None,
-                "aridity": "غير محدد", "ndvi_estimated": None,
-                "source": "فشل الجلب"}
-
-
 # ============================================================
 # ============ Lists ============
 # ============================================================
@@ -536,88 +647,9 @@ VALID_VADOSE = ["confining_layer", "silt_clay", "shale",
     "sand_gravel_silt_clay", "sand_gravel", "basalt", "karst_limestone"]
 
 
-def validate_bulk_row(row, idx):
-    errors, warnings = [], []
-    try:
-        d = float(row.get("depth_m", 15))
-        if not (0.5 <= d <= 100): errors.append("D")
-    except Exception: errors.append("D")
-    try:
-        r = float(row.get("recharge_mm", 100))
-        if not (0 <= r <= 400): errors.append("R")
-    except Exception: errors.append("R")
-    try:
-        t = float(row.get("slope_pct", 4))
-        if not (0 <= t <= 30): errors.append("T")
-    except Exception: errors.append("T")
-    try:
-        c = float(row.get("conductivity", 5))
-        if not (0.01 <= c <= 100): errors.append("C")
-    except Exception: errors.append("C")
-    quality = "ضعيف" if errors else "متوسط" if warnings else "ممتاز"
-    return errors, warnings, quality
-
-
-# ============================================================
-# ============ Report ============
-# ============================================================
-def gen_report(site, coords, idx, values, travel=None):
-    L = ["=" * 60, "تقرير تقييم هشاشة المياه الجوفية", "=" * 60, "",
-         f"التاريخ: {datetime.date.today().strftime('%Y-%m-%d')}",
-         f"الموقع: {site}", f"الإحداثيات: {coords[0]}, {coords[1]}", "",
-         f"مؤشر DRASTIC: {idx} / 230", "",
-         f"D: {values.get('depth', 'N/A')}",
-         f"R: {values.get('recharge', 'N/A')}",
-         f"A: {AQUIFER_AR.get(values.get('aquifer', ''), values.get('aquifer', 'N/A'))}",
-         f"S: {SOIL_AR.get(values.get('soil', ''), values.get('soil', 'N/A'))}",
-         f"T: {values.get('slope', 'N/A')}",
-         f"I: {VADOSE_AR.get(values.get('vadose', ''), values.get('vadose', 'N/A'))}",
-         f"C: {values.get('conductivity', 'N/A')}", ""]
-    if travel and isinstance(travel, dict):
-        L.append(f"زمن الوصول: {travel.get('years', 0)} سنة")
-    L.append("")
-    L.append("ملاحظة: CRI و MRI مُعايران ببيانات سنار")
-    return "\n".join(L)
-
-
-def gen_html(rep, site):
-    return ("<!DOCTYPE html><html dir='rtl' lang='ar'><head>"
-         "<meta charset='UTF-8'><title>" + site + "</title>"
-         "<style>body{font-family:Arial;direction:rtl;text-align:right;"
-         "padding:30px;max-width:900px;margin:auto;line-height:1.9;}"
-         "pre{white-space:pre-wrap;background:#f8f9fa;padding:25px;"
-         "border-radius:8px;font-family:inherit;}</style></head>"
-         "<body><pre>" + rep + "</pre></body></html>")
-
-
-def create_safe_map(base_map, lat=15.5, lon=32.5, zoom=6):
-    tiles_options = {
-        "عادية": {"tiles": "OpenStreetMap",
-                   "attr": "© OpenStreetMap contributors"},
-        "أقمار صناعية": {
-            "tiles": "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-            "attr": "Tiles © Esri"},
-        "تضاريس": {
-            "tiles": "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
-            "attr": "Tiles © Esri"}}
-    opt = tiles_options.get(base_map, tiles_options["عادية"])
-    return folium.Map(location=[lat, lon], zoom_start=zoom,
-                       tiles=opt["tiles"], attr=opt["attr"],
-                       control_scale=True)
-
-
 # ============================================================
 # ============ UI HEADER ============
 # ============================================================
-_col1, _col2, _col3 = st.columns([1, 3, 1])
-with _col2:
-    try:
-        st.image("logo.png", width=180)
-    except Exception:
-        st.markdown("""
-        <div style='text-align:center; font-size:4em;'>⛏️</div>
-        """, unsafe_allow_html=True)
-
 if DS_OK:
     preset = get_preset_locations_for_app()
     summary = get_data_summary()
@@ -630,12 +662,10 @@ else:
 
 st.markdown(f"""
 <div class="header-container">
-    <div class="header-title">⛏️ نظام التعدين السوداني v50.0</div>
+    <div class="header-title">⛏️ نظام التعدين السوداني</div>
     <div class="header-subtitle">جامعة الخرطوم - كلية الهندسة</div>
-    <div class="header-subtitle">DRASTIC + MODFLOW + DRASTIC-P + Dynamic + Validation</div>
-    <div class="header-subtitle" style="font-size:0.85em; margin-top:8px;">
-        قاعدة بيانات: {n_states} ولاية، {n_sites} موقعاً
-    </div>
+    <div class="header-subtitle">DRASTIC + MODFLOW 6 + Monte Carlo + DRASTIC-P</div>
+    <div class="header-badge">الإصدار 51.0 | {n_states} ولاية | {n_sites} موقعاً</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -656,21 +686,17 @@ mode = st.sidebar.radio("اختر الوضع:", mode_options, key="app_mode")
 st.sidebar.markdown("---")
 
 st.sidebar.markdown("### 🔧 حالة النظام")
-if _modflow_status == "already_installed":
-    st.sidebar.success("✅ MODFLOW مثبت مسبقاً")
-elif _modflow_status == "installed":
-    st.sidebar.success("✅ تم تثبيت MODFLOW")
-else:
-    st.sidebar.warning(f"⚠️ {_modflow_status}")
+status_icon = "✅" if _modflow_status in ["already_installed", "installed"] else "⚠️"
+st.sidebar.info(f"{status_icon} MODFLOW: {_modflow_status}")
 
-with st.sidebar.expander("🔍 تشخيص الملفات"):
-    st.write(f"data_sources: {'✅' if DS_OK else '❌'}")
-    st.write(f"modflow_engine: {'✅' if MODFLOW_OK else '❌'}")
-    st.write(f"hydro_data: {'✅' if HYDRO_OK else '❌'}")
-    st.write(f"advanced_modules: {'✅' if ADV_OK else '❌'}")
+with st.sidebar.expander("📋 تشخيص الملفات"):
+    st.write(f"**data_sources**: {'✅' if DS_OK else '❌'}")
+    st.write(f"**modflow_engine**: {'✅' if MODFLOW_OK else '❌'}")
+    st.write(f"**hydro_data**: {'✅' if HYDRO_OK else '❌'}")
+    st.write(f"**advanced_modules**: {'✅' if ADV_OK else '❌'}")
     if DS_OK:
-        st.write(f"عدد الولايات: {n_states}")
-        st.write(f"عدد المواقع: {n_sites}")
+        st.write(f"**الولايات**: {n_states}")
+        st.write(f"**المواقع**: {n_sites}")
 
 if "ci" in st.session_state:
     st.sidebar.success(f"✅ مؤشر حالي: {st.session_state['ci']}")
@@ -678,84 +704,108 @@ else:
     st.sidebar.warning("⚠️ لم يتم حساب مؤشر")
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("### 📚 المراجع")
-st.sidebar.caption("• EPA/600/2-87/035")
+st.sidebar.markdown("### 📚 المراجع المعتمدة")
+st.sidebar.caption("• EPA/600/2-87/035 (1987)")
 st.sidebar.caption("• Elmedani et al. (2025)")
 st.sidebar.caption("• Elkrail & Adlan (2019)")
 st.sidebar.caption("• Mohammed et al. (2023)")
-st.sidebar.caption("• UNEP Darfur Reports")
+st.sidebar.caption("• WHO Guidelines (2022)")
 
 
 # ============================================================
 # ============ MODE 1: النظام الأساسي ============
 # ============================================================
 if mode == "🏠 النظام الأساسي":
-    tabs = st.tabs(["📍 المدخلات", "➕ إدخال يدوي", "📊 الجماعي",
-                    "🛡️ الحلول", "📄 التقرير", "🗺️ الخريطة",
-                    "📈 الحساسية", "☠️ السمية", "🌍 GIS", "🎲 Monte Carlo"])
+    tabs = st.tabs([
+        "📍 المدخلات",
+        "➕ إدخال يدوي",
+        "📊 التقييم الجماعي",
+        "🛡️ الحلول",
+        "📄 التقرير",
+        "🗺️ الخريطة",
+        "📈 الحساسية",
+        "☠️ السمية",
+        "🌍 GIS",
+        "🎲 Monte Carlo"
+    ])
 
     # ============ TAB 0: المدخلات ============
     with tabs[0]:
-        st.header("اختيار الولاية والموقع")
+        st.markdown('<div class="section-header"><h3>📍 اختيار الولاية والموقع</h3></div>',
+                    unsafe_allow_html=True)
 
         if not DS_OK:
-            st.error("❌ data_sources.py غير متوفر")
+            st.error("❌ `data_sources.py` غير متوفر")
         else:
-            # ===== اختيار الولاية =====
-            st.markdown("---")
-            st.subheader("🗺️ اختيار الولاية")
+            # اختيار الولاية
+            c1, c2 = st.columns([1, 2])
+            with c1:
+                states = get_states_list()
+                state = st.selectbox("**الولاية:**", states, key="state_selector")
+            with c2:
+                state_info = STATES_DATABASE[state]
+                st.markdown(f"""
+                <div class="info-card" style="margin-top:28px;">
+                    <div style="font-size:0.9em; color:#5c2c16;">
+                        ℹ️ {state_info['description']}<br>
+                        <span style="font-size:0.85em; color:#666;">
+                        المصدر: {state_info['source']}</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
 
-            states = get_states_list()
-            state = st.selectbox("الولاية:", states, key="state_selector")
-
-            state_info = STATES_DATABASE[state]
-            st.caption(f"ℹ️ {state_info['description']} — المصدر: {state_info['source']}")
-
-            # ===== اختيار الموقع =====
-            st.markdown("---")
-            st.subheader("📍 اختيار الموقع")
+            # اختيار الموقع
+            st.markdown('<div class="section-header"><h3>📌 الموقع</h3></div>',
+                        unsafe_allow_html=True)
 
             sites = get_sites_list(state)
-            site_key = st.selectbox("الموقع:", sites, key="site_selector")
-
+            site_key = st.selectbox("**الموقع:**", sites, key="site_selector")
             site_data = get_site_data(state, site_key)
 
-            # عرض معلومات الموقع
+            # بطاقات المعلومات الأساسية
             c1, c2, c3 = st.columns(3)
             c1.metric("النشاط", site_data.get("activity", "N/A"))
             c2.metric("الموسم", site_data.get("season", "N/A"))
-            c3.metric("الحالة",
-                      "🔴 ملوث" if site_data["actual_contaminated"] == 1 else "🟢 نظيف")
+            status = "🔴 ملوث" if site_data["actual_contaminated"] == 1 else "🟢 نظيف"
+            c3.metric("الحالة", status)
 
-            st.markdown(f"**📍 الإحداثيات**: {site_data['coords'][0]}, {site_data['coords'][1]}")
-            st.markdown(f"**📖 الوصف**: {site_data.get('name_ar', site_key)}")
+            st.markdown(f"""
+            <div class="info-card">
+                <div class="info-card-title">📍 الإحداثيات والوصف</div>
+                <div>الإحداثيات: <b>{site_data['coords'][0]}, {site_data['coords'][1]}</b></div>
+                <div>الوصف: <b>{site_data.get('name_ar', site_key)}</b></div>
+            </div>
+            """, unsafe_allow_html=True)
 
-            # ===== عرض القيم =====
-            st.markdown("---")
-            st.subheader("📊 القيم المُستخدمة (من قاعدة البيانات)")
+            # القيم الهيدروجيولوجية
+            st.markdown('<div class="section-header"><h3>💧 القيم الهيدروجيولوجية</h3></div>',
+                        unsafe_allow_html=True)
 
             c1, c2 = st.columns(2)
             with c1:
-                st.metric("D (عمق)", f"{site_data['depth_m']} م")
-                st.metric("R (تغذية)", f"{site_data['recharge_mm']} مم/سنة")
-                st.metric("T (ميل)", f"{site_data['slope_pct']} %")
-                st.metric("C (توصيلية)", f"{site_data['conductivity']} م/يوم")
+                st.metric("D - عمق المياه", f"{site_data['depth_m']} م")
+                st.metric("R - التغذية", f"{site_data['recharge_mm']} مم/سنة")
+                st.metric("T - الميل", f"{site_data['slope_pct']} %")
+                st.metric("C - التوصيلية", f"{site_data['conductivity']} م/يوم")
             with c2:
-                st.metric("A (وسط)", AQUIFER_AR.get(site_data['aquifer'], site_data['aquifer']))
-                st.metric("S (تربة)", SOIL_AR.get(site_data['soil'], site_data['soil']))
-                st.metric("I (نطاق تهوية)", VADOSE_AR.get(site_data['vadose'], site_data['vadose']))
-                st.metric("θ (مسامية)", "0.25")
+                st.metric("A - الوسط المائي",
+                          AQUIFER_AR.get(site_data['aquifer'], site_data['aquifer']))
+                st.metric("S - التربة",
+                          SOIL_AR.get(site_data['soil'], site_data['soil']))
+                st.metric("I - نطاق التهوية",
+                          VADOSE_AR.get(site_data['vadose'], site_data['vadose']))
+                st.metric("θ - المسامية", "0.25")
 
-            # ===== قيم CN و Hg =====
-            st.markdown("---")
-            st.subheader("🧪 قيم السيانيد والزئبق")
+            # قيم CN و Hg
+            st.markdown('<div class="section-header"><h3>🧪 قيم السيانيد والزئبق</h3></div>',
+                        unsafe_allow_html=True)
 
             c1, c2 = st.columns(2)
-            c1.metric("CN", f"{site_data['cn_water_mg_l']} mg/L")
-            c2.metric("Hg", f"{site_data['hg_water_mg_l']} mg/L")
-            st.caption(f"الحدود السودانية: CN = 0.05، Hg = 0.0007 mg/L")
+            c1.metric("CN - سيانيد", f"{site_data['cn_water_mg_l']} mg/L")
+            c2.metric("Hg - زئبق", f"{site_data['hg_water_mg_l']} mg/L")
+            st.caption("**الحدود السودانية:** CN = 0.05 mg/L | Hg = 0.0007 mg/L")
 
-            # ===== حساب DRASTIC =====
+            # حساب DRASTIC
             try:
                 D_r = get_d_rating(site_data['depth_m'])
                 R_r = get_r_rating(site_data['recharge_mm'])
@@ -767,7 +817,6 @@ if mode == "🏠 النظام الأساسي":
                 idx = calc_index(D_r, R_r, A_r, S_r, T_r, I_r, C_r)
                 risk = classify(idx)
 
-                # حفظ
                 st.session_state["ci"] = idx
                 st.session_state["cs"] = f"{state} - {site_data.get('name_ar', site_key)}"
                 st.session_state["cc"] = site_data['coords']
@@ -785,8 +834,8 @@ if mode == "🏠 النظام الأساسي":
                     "actual_contaminated": site_data['actual_contaminated']
                 }
 
-                st.markdown("---")
-                st.subheader("📊 نتائج DRASTIC")
+                st.markdown('<div class="section-header"><h3>📊 نتائج DRASTIC</h3></div>',
+                            unsafe_allow_html=True)
 
                 x1, x2, x3, x4 = st.columns(4)
                 x1.metric("D", D_r); x2.metric("R", R_r)
@@ -796,8 +845,9 @@ if mode == "🏠 النظام الأساسي":
                 y3.metric("C", C_r); y4.metric("θ", 0.25)
 
                 st.markdown("---")
+
                 z1, z2, z3 = st.columns(3)
-                z1.metric("DRASTIC", f"{idx} / 230")
+                z1.metric("مؤشر DRASTIC", f"{idx} / 230")
                 z2.metric("المستوى", LEVEL_AR.get(risk["level"], risk["level"]))
                 z3.metric("نسبة الخطورة", f"{round(idx/230*100, 1)}%")
 
@@ -809,38 +859,44 @@ if mode == "🏠 النظام الأساسي":
             except ValueError as e:
                 st.error("خطأ: " + str(e))
 
-    # ============ TAB 1: إدخال يدوي (جديد) ============
+    # ============ TAB 1: إدخال يدوي ============
     with tabs[1]:
-        st.header("➕ إدخال موقع جديد")
-        st.markdown("**أضف موقعاً جديداً إلى قاعدة البيانات بسهولة**")
+        st.markdown('<div class="section-header"><h3>➕ إضافة موقع جديد</h3></div>',
+                    unsafe_allow_html=True)
+        st.markdown("أضف موقعاً جديداً إلى قاعدة البيانات بسهولة.")
 
         if not DS_OK:
-            st.error("❌ data_sources.py غير متوفر")
+            st.error("❌ `data_sources.py` غير متوفر")
         else:
-            # ===== معلومات الموقع =====
             st.markdown("---")
-            st.subheader("📍 معلومات الموقع")
 
+            # معلومات الموقع
+            st.markdown("##### 📌 معلومات الموقع")
             c1, c2 = st.columns(2)
             with c1:
-                new_state = st.text_input("الولاية:", value="سنار", key="new_state")
-                new_site_key = st.text_input("اسم الموقع (إنجليزي):",
-                                              value="New_Site", key="new_site_key")
+                new_state = st.text_input("الولاية:", value="سنار",
+                                           key="new_state")
+                new_site_key = st.text_input("اسم الموقع (بالإنجليزية):",
+                                              value="New_Site",
+                                              key="new_site_key")
                 new_name_ar = st.text_input("الاسم بالعربية:",
-                                             value="موقع جديد", key="new_name_ar")
+                                             value="موقع جديد",
+                                             key="new_name_ar")
             with c2:
-                new_lat = st.number_input("خط العرض:", -90.0, 90.0, 13.55, 0.01,
+                new_lat = st.number_input("خط العرض:", -90.0, 90.0,
+                                           13.55, 0.01,
                                            key="new_lat", format="%.4f")
-                new_lon = st.number_input("خط الطول:", -180.0, 180.0, 33.60, 0.01,
+                new_lon = st.number_input("خط الطول:", -180.0, 180.0,
+                                           33.60, 0.01,
                                            key="new_lon", format="%.4f")
                 new_activity = st.selectbox("النشاط:",
                     ["تعدين أهلي", "زراعة", "حضري", "رعوي", "صناعي", "مرجعي"],
                     key="new_activity")
 
-            # ===== القيم الهيدروجيولوجية =====
             st.markdown("---")
-            st.subheader("💧 القيم الهيدروجيولوجية")
 
+            # القيم الهيدروجيولوجية
+            st.markdown("##### 💧 القيم الهيدروجيولوجية")
             c1, c2 = st.columns(2)
             with c1:
                 new_depth = st.number_input("D - عمق المياه (م):",
@@ -863,10 +919,10 @@ if mode == "🏠 النظام الأساسي":
                 new_vadose = st.selectbox("I - نطاق التهوية:",
                     VALID_VADOSE, key="new_vadose")
 
-            # ===== قيم CN و Hg =====
             st.markdown("---")
-            st.subheader("🧪 قيم السيانيد والزئبق")
 
+            # قيم CN و Hg
+            st.markdown("##### 🧪 قيم السيانيد والزئبق")
             c1, c2 = st.columns(2)
             with c1:
                 new_cn = st.number_input("CN - سيانيد (mg/L):",
@@ -877,10 +933,10 @@ if mode == "🏠 النظام الأساسي":
                                           0.0, 10.0, 0.001, 0.0001,
                                           key="new_hg", format="%.4f")
 
-            # ===== الحالة =====
             st.markdown("---")
-            st.subheader("📊 الحالة")
 
+            # الحالة
+            st.markdown("##### 📊 الحالة")
             c1, c2 = st.columns(2)
             with c1:
                 new_contaminated = st.selectbox("الحالة الفعلية:",
@@ -889,9 +945,9 @@ if mode == "🏠 النظام الأساسي":
                 new_season = st.selectbox("الموسم:",
                     ["-", "جاف", "رطب"], key="new_season")
 
-            # ===== معاينة DRASTIC =====
+            # معاينة DRASTIC
             st.markdown("---")
-            st.subheader("🔍 معاينة DRASTIC")
+            st.markdown("##### 🔍 معاينة DRASTIC")
 
             try:
                 D_r = get_d_rating(new_depth)
@@ -906,12 +962,13 @@ if mode == "🏠 النظام الأساسي":
 
                 c1, c2, c3 = st.columns(3)
                 c1.metric("DRASTIC المتوقع", f"{preview_idx} / 230")
-                c2.metric("المستوى", LEVEL_AR.get(preview_risk["level"], preview_risk["level"]))
+                c2.metric("المستوى",
+                          LEVEL_AR.get(preview_risk["level"], preview_risk["level"]))
                 c3.metric("نسبة الخطورة", f"{round(preview_idx/230*100, 1)}%")
             except Exception:
                 st.warning("⚠️ تحقق من القيم المدخلة")
 
-            # ===== زر الحفظ =====
+            # زر الحفظ
             st.markdown("---")
             if st.button("💾 حفظ الموقع في قاعدة البيانات", type="primary"):
                 if not new_state or not new_site_key:
@@ -934,85 +991,222 @@ if mode == "🏠 النظام الأساسي":
                         "activity": new_activity
                     }
                     add_new_site(new_state, new_site_key, site_data)
-                    st.success(f"✅ تم حفظ الموقع '{new_name_ar}' في ولاية '{new_state}'")
-                    st.info("ℹ️ الموقع محفوظ في الذاكرة. استخدم زر 'تصدير CSV' أدناه لحفظه بشكل دائم.")
+                    st.success(f"✅ تم حفظ الموقع **{new_name_ar}** في ولاية **{new_state}**")
+                    st.info("ℹ️ الموقع محفوظ في الذاكرة. استخدم زر 'تصدير CSV' لحفظه بشكل دائم.")
                     st.rerun()
 
-            # ===== تصدير كل المواقع =====
-            st.markdown("---")
-            st.subheader("📥 تصدير قاعدة البيانات")
-
-            if st.button("🔄 تحديث قاعدة البيانات", key="refresh_db"):
-                st.rerun()
-
-            try:
-                df_all = get_all_sites_as_dataframe()
-                st.success(f"📊 عدد المواقع الحالي: {len(df_all)}")
-                st.download_button(
-                    "📥 تحميل قاعدة البيانات الكاملة (CSV)",
-                    data=df_all.to_csv(index=False).encode("utf-8-sig"),
-                    file_name="sudan_sites_database.csv",
-                    mime="text/csv",
-                    width="stretch")
-            except Exception as e:
-                st.warning(f"⚠️ تعذر تصدير البيانات: {e}")
-
-    # ============ TAB 2: الجماعي ============
+    # ============ TAB 2: التقييم الجماعي ============
     with tabs[2]:
-        st.header("📊 التقييم الجماعي")
-        st.info("ارفع ملف CSV يحتوي على بيانات المواقع.")
+        st.markdown('<div class="section-header"><h3>📊 التقييم الجماعي</h3></div>',
+                    unsafe_allow_html=True)
+        st.markdown("ارفع ملف CSV يحتوي على **مواقع متعددة** لتقييمها دفعة واحدة.")
+
+        # قالب CSV
+        sample_bulk = pd.DataFrame({
+            "name": ["موقع 1", "موقع 2", "موقع 3"],
+            "lat": [13.55, 15.45, 19.53],
+            "lon": [33.60, 36.40, 33.32],
+            "depth_m": [12.0, 20.0, 22.0],
+            "recharge_mm": [20.0, 96.0, 12.0],
+            "slope_pct": [3.0, 3.0, 3.0],
+            "conductivity": [2.5, 30.0, 3.5],
+            "aquifer": ["massive_sandstone", "sand_and_gravel", "massive_sandstone"],
+            "soil": ["sand", "sandy_loam", "sandy_loam"],
+            "vadose": ["sand_gravel", "sand_gravel", "sand_gravel"]
+        })
+        st.download_button(
+            "📥 تحميل قالب CSV",
+            data=sample_bulk.to_csv(index=False).encode("utf-8-sig"),
+            file_name="bulk_template.csv",
+            mime="text/csv")
+
+        st.markdown("---")
+
+        f_bulk = st.file_uploader("📤 ارفع ملف CSV أو Excel:",
+                                   type=["csv", "xlsx"],
+                                   key="bulk_uploader")
+
+        if f_bulk:
+            try:
+                if f_bulk.name.endswith(".csv"):
+                    df_bulk = pd.read_csv(f_bulk)
+                else:
+                    df_bulk = pd.read_excel(f_bulk)
+
+                st.markdown("---")
+                st.subheader("🔍 معاينة البيانات")
+                st.dataframe(df_bulk.head(10), width="stretch")
+
+                required_cols = ["depth_m", "recharge_mm", "slope_pct",
+                                  "conductivity", "aquifer", "soil", "vadose"]
+                missing_cols = [c for c in required_cols
+                               if c not in df_bulk.columns]
+
+                if missing_cols:
+                    st.error(f"❌ أعمدة مفقودة: {missing_cols}")
+                else:
+                    results = []
+                    for i, row in df_bulk.iterrows():
+                        try:
+                            D_r = get_d_rating(float(row.get("depth_m", 15)))
+                            R_r = get_r_rating(float(row.get("recharge_mm", 100)))
+                            A_r = get_a_rating(str(row.get("aquifer",
+                                                          "massive_sandstone")))
+                            S_r = get_s_rating(str(row.get("soil", "sand")))
+                            T_r = get_t_rating(float(row.get("slope_pct", 4)))
+                            I_r = get_i_rating(str(row.get("vadose", "sand_gravel")))
+                            C_r = get_c_rating(float(row.get("conductivity", 5)))
+                            ix = calc_index(D_r, R_r, A_r, S_r, T_r, I_r, C_r)
+                            rk = classify(ix)
+
+                            results.append({
+                                "الموقع": row.get("name", f"موقع {i+1}"),
+                                "lat": row.get("lat", 0),
+                                "lon": row.get("lon", 0),
+                                "DRASTIC": ix,
+                                "المستوى": rk["level"],
+                                "الحالة": "🔴" if ix >= 140 else "🟢"
+                            })
+                        except Exception as e:
+                            results.append({
+                                "الموقع": row.get("name", f"موقع {i+1}"),
+                                "lat": 0, "lon": 0,
+                                "DRASTIC": 0,
+                                "المستوى": "فشل",
+                                "الحالة": "❌"
+                            })
+
+                    df_results = pd.DataFrame(results)
+
+                    st.markdown("---")
+                    st.subheader("📊 نتائج التقييم الجماعي")
+
+                    valid = df_results[df_results["DRASTIC"] > 0]
+                    if not valid.empty:
+                        c1, c2, c3, c4 = st.columns(4)
+                        c1.metric("إجمالي المواقع", len(df_results))
+                        c2.metric("متوسط DRASTIC",
+                                  round(valid["DRASTIC"].mean(), 1))
+                        c3.metric("أعلى قيمة", int(valid["DRASTIC"].max()))
+                        c4.metric("مواقع خطرة (≥140)",
+                                  int((valid["DRASTIC"] >= 140).sum()))
+
+                    st.dataframe(df_results, width="stretch")
+
+                    if not valid.empty:
+                        st.markdown("---")
+                        st.subheader("📈 توزيع قيم DRASTIC")
+                        chart_df = valid[["الموقع", "DRASTIC"]].set_index("الموقع")
+                        st.bar_chart(chart_df)
+
+                    st.markdown("---")
+                    st.download_button(
+                        "📥 تحميل النتائج (CSV)",
+                        data=df_results.to_csv(index=False).encode("utf-8-sig"),
+                        file_name="bulk_results.csv",
+                        mime="text/csv",
+                        width="stretch")
+
+            except Exception as e:
+                st.error(f"❌ خطأ في قراءة الملف: {e}")
 
     # ============ TAB 3: الحلول ============
     with tabs[3]:
-        st.header("🛡️ محاكي الحلول")
-        if "ci" in st.session_state:
+        st.markdown('<div class="section-header"><h3>🛡️ محاكي الحلول</h3></div>',
+                    unsafe_allow_html=True)
+
+        if "ci" not in st.session_state:
+            st.warning("⚠️ افتح تبويب **المدخلات** أولاً")
+        else:
             ci = st.session_state["ci"]
+            st.info(f"**الموقع:** {st.session_state['cs']} | **DRASTIC:** {ci}")
+
             c1, c2 = st.columns(2)
             with c1:
-                h = st.checkbox("HDPE Liner")
-                tr = st.checkbox("Cyanide Treatment")
+                h = st.checkbox("HDPE Liner (بطانة عازلة)")
+                tr = st.checkbox("Cyanide Treatment (معالجة السيانيد)")
             with c2:
-                mo = st.checkbox("Monitoring Wells")
+                mo = st.checkbox("Monitoring Wells (آبار مراقبة)")
+
             if h or tr or mo:
                 r = mitigate(ci, h, tr, mo)
-                a, b, c = st.columns(3)
-                a.metric("قبل", ci)
-                b.metric("بعد", r["mitigated_index"])
-                c.metric("التخفيض", f"{r['reduction_pct']} %")
-        else:
-            st.warning("افتح تبويب المدخلات")
+                c1, c2, c3 = st.columns(3)
+                c1.metric("قبل", ci)
+                c2.metric("بعد", r["mitigated_index"])
+                c3.metric("التخفيض", f"{r['reduction_pct']} %")
 
     # ============ TAB 4: التقرير ============
     with tabs[4]:
-        st.header("📄 توليد التقرير")
-        if "ci" in st.session_state:
-            if st.button("توليد التقرير", type="primary"):
-                rep = gen_report(st.session_state["cs"],
-                                st.session_state["cc"],
-                                st.session_state["ci"],
-                                st.session_state["cv"])
-                st.session_state["rep"] = rep
+        st.markdown('<div class="section-header"><h3>📄 توليد التقرير</h3></div>',
+                    unsafe_allow_html=True)
+
+        if "ci" not in st.session_state:
+            st.warning("⚠️ افتح تبويب **المدخلات** أولاً")
+        else:
+            if st.button("🔄 توليد التقرير", type="primary"):
+                site = st.session_state["cs"]
+                coords = st.session_state["cc"]
+                idx = st.session_state["ci"]
+                values = st.session_state["cv"]
+
+                L = ["=" * 60,
+                     "تقرير تقييم هشاشة المياه الجوفية",
+                     "نظام التعدين السوداني v51.0",
+                     "=" * 60, "",
+                     f"التاريخ: {datetime.date.today().strftime('%Y-%m-%d')}",
+                     f"الموقع: {site}",
+                     f"الإحداثيات: {coords[0]}, {coords[1]}", "",
+                     f"مؤشر DRASTIC: {idx} / 230", "",
+                     f"D (عمق): {values.get('depth', 'N/A')}",
+                     f"R (تغذية): {values.get('recharge', 'N/A')}",
+                     f"A: {AQUIFER_AR.get(values.get('aquifer', ''), 'N/A')}",
+                     f"S: {SOIL_AR.get(values.get('soil', ''), 'N/A')}",
+                     f"T (ميل): {values.get('slope', 'N/A')}",
+                     f"I: {VADOSE_AR.get(values.get('vadose', ''), 'N/A')}",
+                     f"C (توصيلية): {values.get('conductivity', 'N/A')}", "",
+                     f"CN (سيانيد): {values.get('cn_water_mg_l', 'N/A')} mg/L",
+                     f"Hg (زئبق): {values.get('hg_water_mg_l', 'N/A')} mg/L", "",
+                     "المراجع:",
+                     "- EPA/600/2-87/035 (1987)",
+                     "- Elmedani et al. (2025)",
+                     "- WHO Guidelines (2022)", "",
+                     "=" * 60]
+
+                st.session_state["rep"] = "\n".join(L)
+
             if "rep" in st.session_state:
                 st.text_area("التقرير:", st.session_state["rep"], height=400)
-                st.download_button("📥 TXT",
+                st.download_button("📥 تحميل التقرير (TXT)",
                     data=st.session_state["rep"].encode("utf-8"),
                     file_name="report.txt", mime="text/plain")
-        else:
-            st.warning("افتح تبويب المدخلات")
 
     # ============ TAB 5: الخريطة ============
     with tabs[5]:
-        st.header("🗺️ الخريطة التفاعلية")
+        st.markdown('<div class="section-header"><h3>🗺️ الخريطة التفاعلية</h3></div>',
+                    unsafe_allow_html=True)
+
         if DS_OK:
             c1, c2 = st.columns(2)
             with c1:
-                show_mining = st.checkbox("مواقع التعدين", value=True)
-                show_wells = st.checkbox("الآبار", value=True)
+                show_mining = st.checkbox("عرض مواقع التعدين", value=True)
+                show_wells = st.checkbox("عرض الآبار", value=True)
             with c2:
                 base_map = st.selectbox("الخلفية:",
                     ["عادية", "أقمار صناعية", "تضاريس"])
 
-            m = create_safe_map(base_map)
+            tiles_options = {
+                "عادية": {"tiles": "OpenStreetMap",
+                           "attr": "© OpenStreetMap contributors"},
+                "أقمار صناعية": {
+                    "tiles": "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+                    "attr": "Tiles © Esri"},
+                "تضاريس": {
+                    "tiles": "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
+                    "attr": "Tiles © Esri"}}
+            opt = tiles_options[base_map]
+            m = folium.Map(location=[15.5, 32.5], zoom_start=6,
+                           tiles=opt["tiles"], attr=opt["attr"],
+                           control_scale=True)
 
             if show_wells:
                 for n, d in NARIS_WELLS.items():
@@ -1036,71 +1230,77 @@ if mode == "🏠 النظام الأساسي":
 
             st_folium(m, height=600, key="map_main")
         else:
-            st.warning("data_sources.py غير متوفر")
+            st.warning("⚠️ `data_sources.py` غير متوفر")
 
     # ============ TAB 6: الحساسية ============
     with tabs[6]:
-        st.header("📈 تحليل الحساسية")
-        if "ci" in st.session_state:
+        st.markdown('<div class="section-header"><h3>📈 تحليل الحساسية</h3></div>',
+                    unsafe_allow_html=True)
+
+        if "ci" not in st.session_state:
+            st.warning("⚠️ افتح تبويب **المدخلات** أولاً")
+        else:
             var = st.slider("نسبة التغيير (%):", 5, 30, 10, 5) / 100.0
             r = sensitivity_analysis(st.session_state["cv"], var)
-            st.success(f"🎯 الأكثر تأثيراً: {r['most_sensitive']}")
+            st.success(f"🎯 الأكثر تأثيراً: **{r['most_sensitive']}**")
             st.metric("المؤشر الأساسي", r["base_index"])
-        else:
-            st.warning("افتح تبويب المدخلات")
 
     # ============ TAB 7: السمية ============
     with tabs[7]:
-        st.header("☠️ تحليل السمية")
-        if "ci" in st.session_state:
+        st.markdown('<div class="section-header"><h3>☠️ تحليل السمية</h3></div>',
+                    unsafe_allow_html=True)
+
+        if "ci" not in st.session_state:
+            st.warning("⚠️ افتح تبويب **المدخلات** أولاً")
+        else:
             cv = st.session_state["cv"]
             hgw = cv.get("hg_water_mg_l", 0.011)
             cnw = cv.get("cn_water_mg_l", 0.025)
 
-            st.info(f"القيم: CN = {cnw} mg/L، Hg = {hgw} mg/L")
+            st.info(f"**القيم من قاعدة البيانات:** CN = {cnw} mg/L | Hg = {hgw} mg/L")
 
-            if st.button("تحليل السمية", type="primary"):
+            if st.button("🔄 تحليل السمية", type="primary"):
                 st.session_state["tox_result"] = weighted_toxicity(hgw, 0.5, cnw, 5.0)
+
             if "tox_result" in st.session_state:
                 tox = st.session_state["tox_result"]
                 c1, c2, c3 = st.columns(3)
                 c1.metric("المؤشر", tox["index"])
                 c2.metric("التصنيف", tox["category"])
                 c3.metric("الإجراء", tox["action"])
-        else:
-            st.warning("افتح تبويب المدخلات")
 
     # ============ TAB 8: GIS ============
     with tabs[8]:
-        st.header("🌍 تصدير GIS")
+        st.markdown('<div class="section-header"><h3>🌍 تصدير GIS</h3></div>',
+                    unsafe_allow_html=True)
+
         if DS_OK:
             try:
                 df_all = get_all_sites_as_dataframe()
                 st.dataframe(df_all, width="stretch")
-
-                c1, c2 = st.columns(2)
-                with c1:
-                    st.download_button("📊 CSV",
-                        data=df_all.to_csv(index=False).encode("utf-8-sig"),
-                        file_name="sudan_sites.csv", mime="text/csv",
-                        width="stretch")
-                with c2:
-                    if "cs" in st.session_state:
-                        st.info(f"الموقع الحالي: {st.session_state['cs']}")
+                st.download_button("📊 تحميل البيانات (CSV)",
+                    data=df_all.to_csv(index=False).encode("utf-8-sig"),
+                    file_name="sudan_sites.csv",
+                    mime="text/csv",
+                    width="stretch")
             except Exception as e:
                 st.error(f"خطأ: {e}")
 
     # ============ TAB 9: Monte Carlo ============
     with tabs[9]:
-        st.header("🎲 محاكاة Monte Carlo")
-        if "ci" in st.session_state:
+        st.markdown('<div class="section-header"><h3>🎲 محاكاة Monte Carlo</h3></div>',
+                    unsafe_allow_html=True)
+
+        if "ci" not in st.session_state:
+            st.warning("⚠️ افتح تبويب **المدخلات** أولاً")
+        else:
             c1, c2 = st.columns(2)
             with c1:
                 n_iter = st.slider("عدد المحاكاات:", 100, 5000, 1000, 100)
             with c2:
                 var_pct = st.slider("معامل الاختلاف (%):", 5, 30, 15, 5)
 
-            if st.button("تشغيل المحاكاة", type="primary"):
+            if st.button("🔄 تشغيل المحاكاة", type="primary"):
                 with st.spinner("جاري المحاكاة..."):
                     st.session_state["mc_result"] = monte_carlo_analysis(
                         st.session_state["cv"], n_iter, var_pct / 100.0)
@@ -1117,46 +1317,41 @@ if mode == "🏠 النظام الأساسي":
                     st.metric("CI 90%", f"{mc['ci_90'][0]} - {mc['ci_90'][1]}")
                 with c2:
                     st.metric("CI 50%", f"{mc['ci_50'][0]} - {mc['ci_50'][1]}")
-        else:
-            st.warning("افتح تبويب المدخلات")
 
 
 # ============================================================
 # ============ MODE 2: Validation ============
 # ============================================================
 elif mode == "✅ التحقق الفعلي" and ADV_OK:
-    st.header("✅ التحقق الفعلي من النموذج")
+    st.markdown('<div class="section-header"><h3>✅ التحقق الفعلي من النموذج</h3></div>',
+                unsafe_allow_html=True)
 
     if DS_OK:
-        st.markdown("---")
-        st.subheader("📥 تحميل بيانات كل الولايات")
+        st.markdown("### 📥 توليد ملف CSV من قاعدة البيانات")
 
-        if st.button("🔄 توليد ملف CSV من قاعدة البيانات", type="primary"):
+        if st.button("🔄 توليد ملف CSV", type="primary"):
             with st.spinner("جاري التوليد..."):
-                df_all = get_all_sites_as_dataframe()
-                st.session_state["df_all"] = df_all
+                st.session_state["df_all"] = get_all_sites_as_dataframe()
 
         if "df_all" in st.session_state:
             df_all = st.session_state["df_all"]
-            st.success(f"✅ تم توليد ملف يحتوي على {len(df_all)} موقع")
+            st.success(f"✅ تم توليد ملف يحتوي على **{len(df_all)}** موقع")
             st.dataframe(df_all.head(10), width="stretch")
-
-            st.download_button("📥 تحميل بيانات كل الولايات (CSV)",
+            st.download_button("📥 تحميل الملف (CSV)",
                 data=df_all.to_csv(index=False).encode("utf-8-sig"),
                 file_name="all_states_data.csv",
-                mime="text/csv", width="stretch")
+                mime="text/csv",
+                width="stretch")
 
     st.markdown("---")
-    st.subheader("📤 ارفع ملف CSV للتحقق")
+    st.markdown("### 📤 ارفع ملف CSV للتحقق")
 
-    f = st.file_uploader("ارفع ملف CSV أو Excel:", type=["csv", "xlsx"], key="val_f")
+    f = st.file_uploader("ارفع ملف CSV أو Excel:",
+                          type=["csv", "xlsx"], key="val_f")
 
     if f:
         try:
-            if f.name.endswith(".csv"):
-                df = pd.read_csv(f)
-            else:
-                df = pd.read_excel(f)
+            df = pd.read_csv(f) if f.name.endswith(".csv") else pd.read_excel(f)
 
             st.markdown("---")
             st.subheader("🔍 معاينة البيانات")
@@ -1191,7 +1386,7 @@ elif mode == "✅ التحقق الفعلي" and ADV_OK:
                         if has_toxicity:
                             cn_w = float(row.get("cn_water_mg_l", 0.0))
                             hg_w = float(row.get("hg_water_mg_l", 0.0))
-                            result = calc_drastic_p_sennar(ix, cn_w, hg_w)
+                            result = calc_drastic_p(ix, cn_w, hg_w)
                             drastic_p_list.append(result["drastic_p"])
                         else:
                             drastic_p_list.append(ix)
@@ -1202,22 +1397,12 @@ elif mode == "✅ التحقق الفعلي" and ADV_OK:
                         drastic_p_list.append(0)
                         actual_list.append(int(row.get("actual_contaminated", 0)))
 
-                df["drastic_index"] = drastic_list
-                df["drastic_p_index"] = drastic_p_list
-
-                st.markdown("---")
-                st.subheader("📊 نتائج DRASTIC و DRASTIC-P")
-                result_df = df[["site_name", "drastic_index",
-                                "drastic_p_index", "actual_contaminated"]].copy()
-                result_df.columns = ["الموقع", "DRASTIC", "DRASTIC-P", "الفعلي"]
-                st.dataframe(result_df, width="stretch")
-
                 st.markdown("---")
                 st.subheader("📈 مقارنة DRASTIC vs DRASTIC-P")
 
                 c1, c2 = st.columns(2)
                 with c1:
-                    st.markdown("### 🔵 DRASTIC التقليدي")
+                    st.markdown("#### 🔵 DRASTIC التقليدي")
                     metrics_d = calculate_confusion_matrix(
                         drastic_list, actual_list, threshold=140)
                     st.metric("Accuracy", f"{metrics_d['accuracy']}%")
@@ -1225,7 +1410,7 @@ elif mode == "✅ التحقق الفعلي" and ADV_OK:
                     st.metric("Kappa", metrics_d["kappa"])
 
                 with c2:
-                    st.markdown("### 🟢 DRASTIC-P المُعاير")
+                    st.markdown("#### 🟢 DRASTIC-P المعدل")
                     metrics_p = calculate_confusion_matrix(
                         drastic_p_list, actual_list, threshold=140)
                     st.metric("Accuracy", f"{metrics_p['accuracy']}%")
@@ -1233,19 +1418,12 @@ elif mode == "✅ التحقق الفعلي" and ADV_OK:
                     st.metric("Kappa", metrics_p["kappa"])
 
                 st.markdown("---")
-                st.subheader("🏆 الحكم النهائي")
-
                 if metrics_p["kappa"] > metrics_d["kappa"]:
                     st.success(f"""
                     ✅ **DRASTIC-P أفضل من DRASTIC التقليدي!**
                     - Kappa: {metrics_d['kappa']} → {metrics_p['kappa']}
                     - Recall: {metrics_d['recall']}% → {metrics_p['recall']}%
                     """)
-
-                st.download_button("📥 تحميل النتائج (CSV)",
-                    data=result_df.to_csv(index=False).encode("utf-8-sig"),
-                    file_name="validation_results.csv",
-                    mime="text/csv", width="stretch")
 
         except Exception as e:
             st.error(f"❌ خطأ في قراءة الملف: {e}")
@@ -1255,19 +1433,17 @@ elif mode == "✅ التحقق الفعلي" and ADV_OK:
 # ============ MODE 3: DRASTIC-P ============
 # ============================================================
 elif mode == "🧪 DRASTIC-P" and ADV_OK:
-    st.header("🧪 DRASTIC-P — المؤشر المعدل")
+    st.markdown('<div class="section-header"><h3>🧪 DRASTIC-P</h3></div>',
+                unsafe_allow_html=True)
 
     if "ci" not in st.session_state:
-        st.warning("افتح النظام الأساسي أولاً")
+        st.warning("⚠️ افتح **النظام الأساسي** أولاً")
     else:
-        st.info(f"الموقع: {st.session_state['cs']} | DRASTIC: {st.session_state['ci']}")
+        st.info(f"**الموقع:** {st.session_state['cs']} | **DRASTIC:** {st.session_state['ci']}")
 
         cv = st.session_state["cv"]
         cn_w = cv.get("cn_water_mg_l", 0.025)
         hg_w = cv.get("hg_water_mg_l", 0.011)
-
-        st.markdown("---")
-        st.subheader("🧪 بيانات السيانيد والزئبق")
 
         c1, c2 = st.columns(2)
         c1.metric("CN", f"{cn_w} mg/L")
@@ -1278,7 +1454,7 @@ elif mode == "🧪 DRASTIC-P" and ADV_OK:
         cn_seep = st.slider("معدل التسرب:", 0.0, 1.0, 1.0, 0.05)
 
         if st.button("🧪 حساب DRASTIC-P", type="primary"):
-            result = calc_drastic_p_sennar(
+            result = calc_drastic_p(
                 st.session_state["ci"], cn_w, hg_w,
                 distance_m=cn_dist, seepage=cn_seep, bio_acc=1.0)
             st.session_state["mod_result_v2"] = result
@@ -1286,7 +1462,6 @@ elif mode == "🧪 DRASTIC-P" and ADV_OK:
         if "mod_result_v2" in st.session_state:
             mod = st.session_state["mod_result_v2"]
 
-            st.markdown("---")
             c1, c2, c3 = st.columns(3)
             c1.metric("DRASTIC", mod["base_drastic"])
             c2.metric("DRASTIC-P", mod["drastic_p"],
@@ -1298,24 +1473,16 @@ elif mode == "🧪 DRASTIC-P" and ADV_OK:
             elif mod["color"] == "yellow": st.info("🟡 خطر متوسط")
             else: st.success("🟢 خطر منخفض")
 
-            st.markdown("---")
-            c1, c2 = st.columns(2)
-            with c1:
-                st.metric("CRI", mod["cri"])
-                st.metric("نسبة CN", f"{mod['cn_ratio']}x")
-            with c2:
-                st.metric("MRI", mod["mri"])
-                st.metric("نسبة Hg", f"{mod['hg_ratio']}x")
-
 
 # ============================================================
 # ============ MODE 4: Dynamic ============
 # ============================================================
 elif mode == "⏳ الديناميكي" and ADV_OK:
-    st.header("⏳ التقييم الديناميكي")
+    st.markdown('<div class="section-header"><h3>⏳ التقييم الديناميكي</h3></div>',
+                unsafe_allow_html=True)
 
     if "ci" not in st.session_state:
-        st.warning("افتح النظام الأساسي أولاً")
+        st.warning("⚠️ افتح **النظام الأساسي** أولاً")
     else:
         c1, c2 = st.columns(2)
         with c1:
@@ -1350,7 +1517,8 @@ elif mode == "⏳ الديناميكي" and ADV_OK:
 # ============ MODE 5: MODFLOW ============
 # ============================================================
 elif mode == "🌊 MODFLOW" and MODFLOW_OK:
-    st.header("🌊 محاكاة MODFLOW 6")
+    st.markdown('<div class="section-header"><h3>🌊 محاكاة MODFLOW 6</h3></div>',
+                unsafe_allow_html=True)
 
     mf_ok, mf_msg = is_modflow_available()
     if not mf_ok:
@@ -1358,13 +1526,7 @@ elif mode == "🌊 MODFLOW" and MODFLOW_OK:
     else:
         st.success(f"✅ {mf_msg}")
 
-        if HYDRO_OK:
-            location = st.selectbox("الموقع المرجعي:",
-                ["Omdurman_2023", "North_Khartoum_2024", "Gash_Kassala_2025"])
-        else:
-            location = "Omdurman_2023"
-
-        st.markdown("---")
+        st.markdown("### ⚙️ إعدادات النموذج")
         c1, c2 = st.columns(2)
         with c1:
             nlay = st.number_input("طبقات:", 1, 5, 1)
@@ -1384,11 +1546,13 @@ elif mode == "🌊 MODFLOW" and MODFLOW_OK:
                 progress.progress(30, text="🏗️ بناء النموذج...")
                 ws = f"/tmp/mf_ws_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
                 progress.progress(50, text="⚙️ تشغيل MODFLOW 6...")
+
                 res = build_and_run_model(
                     workspace=ws, nlay=int(nlay), nrow=int(nrow),
                     ncol=int(ncol), delr=float(delr), delc=float(delc),
                     top=float(top), botm=float(botm), k_value=float(k_val),
                     recharge_mm=float(rech))
+
                 st.session_state["mf_res"] = res
                 progress.progress(100, text="✅ اكتمل!")
                 import time
@@ -1422,5 +1586,9 @@ elif mode == "🌊 MODFLOW" and MODFLOW_OK:
 
 # ============ FOOTER ============
 st.markdown("---")
-st.caption("2026 جامعة الخرطوم - نظام التعدين السوداني v50.0 - "
-           "18 ولاية + إدخال يدوي + معايرة سنار")
+st.markdown("""
+<div style="text-align:center; color:#666; padding:10px;">
+    <b>نظام التعدين السوداني v51.0</b> - جامعة الخرطوم - كلية الهندسة<br>
+    <span style="font-size:0.85em;">مبني على معايير US EPA و USGS و WHO</span>
+</div>
+""", unsafe_allow_html=True)
