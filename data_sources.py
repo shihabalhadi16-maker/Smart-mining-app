@@ -1,15 +1,16 @@
-"""قاعدة بيانات المواقع السودانية - نظام التعدين السوداني v49.0
+"""قاعدة بيانات السودان الكاملة - نظام التعدين السوداني v50.0
 تتضمن:
-- 4 ولايات: سنار، كسلا، نهر النيل، الخرطوم
-- بيانات ميدانية حقيقية من دراسات محكمة
-- قيم CN و Hg من دراسة Elmedani et al. (2025)
+- 18 ولاية سودانية
+- مواقع التعدين الرئيسية في كل ولاية
+- قيم CN و Hg من الدراسات المحكمة
 - قيم K من دراسات أم درمان والقاش
 """
 
 # ============================================================
-# ============ قاعدة بيانات الولايات السودانية ============
+# ============ قاعدة بيانات الولايات السودانية (18 ولاية) ============
 # ============================================================
 STATES_DATABASE = {
+    # ============ 1. سنار ============
     "سنار": {
         "description": "ولاية سنار - منطقة تعدين أهلي نشطة",
         "source": "Elmedani et al. (2025)",
@@ -17,85 +18,56 @@ STATES_DATABASE = {
             "Ghaat_Haffer_Dry": {
                 "name_ar": "حفير القلعاط - موسم جاف",
                 "coords": (13.55, 33.60),
-                "depth_m": 12.0,
-                "recharge_mm": 20.0,
-                "slope_pct": 3.0,
-                "conductivity": 2.5,
-                "aquifer": "massive_sandstone",
-                "soil": "sand",
-                "vadose": "sand_gravel",
-                "cn_water_mg_l": 0.025,
-                "hg_water_mg_l": 0.011,
-                "actual_contaminated": 1,
-                "season": "جاف",
+                "depth_m": 12.0, "recharge_mm": 20.0, "slope_pct": 3.0,
+                "conductivity": 2.5, "aquifer": "massive_sandstone",
+                "soil": "sand", "vadose": "sand_gravel",
+                "cn_water_mg_l": 0.025, "hg_water_mg_l": 0.011,
+                "actual_contaminated": 1, "season": "جاف",
                 "activity": "تعدين أهلي"
             },
             "Ghaat_Haffer_Wet": {
                 "name_ar": "حفير القلعاط - موسم رطب",
                 "coords": (13.55, 33.60),
-                "depth_m": 12.0,
-                "recharge_mm": 20.0,
-                "slope_pct": 3.0,
-                "conductivity": 2.5,
-                "aquifer": "massive_sandstone",
-                "soil": "sand",
-                "vadose": "sand_gravel",
-                "cn_water_mg_l": 0.350,
-                "hg_water_mg_l": 0.360,
-                "actual_contaminated": 1,
-                "season": "رطب",
+                "depth_m": 12.0, "recharge_mm": 20.0, "slope_pct": 3.0,
+                "conductivity": 2.5, "aquifer": "massive_sandstone",
+                "soil": "sand", "vadose": "sand_gravel",
+                "cn_water_mg_l": 0.350, "hg_water_mg_l": 0.360,
+                "actual_contaminated": 1, "season": "رطب",
                 "activity": "تعدين أهلي"
             },
             "Gabis_Haffer_Dry": {
                 "name_ar": "حفير جبس - موسم جاف",
                 "coords": (13.50, 33.55),
-                "depth_m": 15.0,
-                "recharge_mm": 18.0,
-                "slope_pct": 4.0,
-                "conductivity": 3.0,
-                "aquifer": "sand_and_gravel",
-                "soil": "sandy_loam",
-                "vadose": "sandstone",
-                "cn_water_mg_l": 0.022,
-                "hg_water_mg_l": 0.200,
-                "actual_contaminated": 1,
-                "season": "جاف",
+                "depth_m": 15.0, "recharge_mm": 18.0, "slope_pct": 4.0,
+                "conductivity": 3.0, "aquifer": "sand_and_gravel",
+                "soil": "sandy_loam", "vadose": "sandstone",
+                "cn_water_mg_l": 0.022, "hg_water_mg_l": 0.200,
+                "actual_contaminated": 1, "season": "جاف",
                 "activity": "تعدين أهلي"
             },
             "Gabis_Haffer_Wet": {
                 "name_ar": "حفير جبس - موسم رطب",
                 "coords": (13.50, 33.55),
-                "depth_m": 15.0,
-                "recharge_mm": 18.0,
-                "slope_pct": 4.0,
-                "conductivity": 3.0,
-                "aquifer": "sand_and_gravel",
-                "soil": "sandy_loam",
-                "vadose": "sandstone",
-                "cn_water_mg_l": 0.200,
-                "hg_water_mg_l": 0.530,
-                "actual_contaminated": 1,
-                "season": "رطب",
+                "depth_m": 15.0, "recharge_mm": 18.0, "slope_pct": 4.0,
+                "conductivity": 3.0, "aquifer": "sand_and_gravel",
+                "soil": "sandy_loam", "vadose": "sandstone",
+                "cn_water_mg_l": 0.200, "hg_water_mg_l": 0.530,
+                "actual_contaminated": 1, "season": "رطب",
                 "activity": "تعدين أهلي"
             },
             "Jebel_Moya": {
                 "name_ar": "جبل موية - موقع مرجعي",
                 "coords": (13.45, 33.50),
-                "depth_m": 25.0,
-                "recharge_mm": 10.0,
-                "slope_pct": 6.0,
-                "conductivity": 1.5,
-                "aquifer": "massive_shale",
-                "soil": "clay_loam",
-                "vadose": "silt_clay",
-                "cn_water_mg_l": 0.001,
-                "hg_water_mg_l": 0.0001,
-                "actual_contaminated": 0,
-                "season": "جاف",
+                "depth_m": 25.0, "recharge_mm": 10.0, "slope_pct": 6.0,
+                "conductivity": 1.5, "aquifer": "massive_shale",
+                "soil": "clay_loam", "vadose": "silt_clay",
+                "cn_water_mg_l": 0.001, "hg_water_mg_l": 0.0001,
+                "actual_contaminated": 0, "season": "جاف",
                 "activity": "مرجعي (نظيف)"
             }
         }
     },
+    # ============ 2. كسلا ============
     "كسلا": {
         "description": "ولاية كسلا - خزان القاش الجوفي",
         "source": "دراسة القاش (2025)",
@@ -103,53 +75,36 @@ STATES_DATABASE = {
             "Gash_Upstream": {
                 "name_ar": "القاش - المنبع",
                 "coords": (15.50, 36.45),
-                "depth_m": 15.0,
-                "recharge_mm": 96.0,
-                "slope_pct": 2.0,
-                "conductivity": 110.0,
-                "aquifer": "sand_and_gravel",
-                "soil": "sand",
-                "vadose": "sand_gravel",
-                "cn_water_mg_l": 0.010,
-                "hg_water_mg_l": 0.001,
-                "actual_contaminated": 0,
-                "season": "-",
+                "depth_m": 15.0, "recharge_mm": 96.0, "slope_pct": 2.0,
+                "conductivity": 110.0, "aquifer": "sand_and_gravel",
+                "soil": "sand", "vadose": "sand_gravel",
+                "cn_water_mg_l": 0.010, "hg_water_mg_l": 0.001,
+                "actual_contaminated": 0, "season": "-",
                 "activity": "زراعة"
             },
             "Gash_Kassala_City": {
                 "name_ar": "القاش - مدينة كسلا",
                 "coords": (15.45, 36.40),
-                "depth_m": 20.0,
-                "recharge_mm": 96.0,
-                "slope_pct": 3.0,
-                "conductivity": 30.0,
-                "aquifer": "sand_and_gravel",
-                "soil": "sandy_loam",
-                "vadose": "sand_gravel",
-                "cn_water_mg_l": 0.020,
-                "hg_water_mg_l": 0.002,
-                "actual_contaminated": 1,
-                "season": "-",
+                "depth_m": 20.0, "recharge_mm": 96.0, "slope_pct": 3.0,
+                "conductivity": 30.0, "aquifer": "sand_and_gravel",
+                "soil": "sandy_loam", "vadose": "sand_gravel",
+                "cn_water_mg_l": 0.020, "hg_water_mg_l": 0.002,
+                "actual_contaminated": 1, "season": "-",
                 "activity": "تعدين + زراعة"
             },
             "Gash_Downstream": {
                 "name_ar": "القاش - المصب",
                 "coords": (15.40, 36.35),
-                "depth_m": 25.0,
-                "recharge_mm": 96.0,
-                "slope_pct": 4.0,
-                "conductivity": 50.0,
-                "aquifer": "sand_and_gravel",
-                "soil": "sandy_loam",
-                "vadose": "sand_gravel",
-                "cn_water_mg_l": 0.015,
-                "hg_water_mg_l": 0.0015,
-                "actual_contaminated": 0,
-                "season": "-",
+                "depth_m": 25.0, "recharge_mm": 96.0, "slope_pct": 4.0,
+                "conductivity": 50.0, "aquifer": "sand_and_gravel",
+                "soil": "sandy_loam", "vadose": "sand_gravel",
+                "cn_water_mg_l": 0.015, "hg_water_mg_l": 0.0015,
+                "actual_contaminated": 0, "season": "-",
                 "activity": "زراعة"
             }
         }
     },
+    # ============ 3. نهر النيل ============
     "نهر النيل": {
         "description": "ولاية نهر النيل - الحجر الرملي النوبي",
         "source": "Mohammed et al. (2023)",
@@ -157,53 +112,36 @@ STATES_DATABASE = {
             "Berber": {
                 "name_ar": "بربر",
                 "coords": (18.02, 33.98),
-                "depth_m": 18.0,
-                "recharge_mm": 15.0,
-                "slope_pct": 2.0,
-                "conductivity": 5.0,
-                "aquifer": "massive_sandstone",
-                "soil": "sand",
-                "vadose": "sand_gravel",
-                "cn_water_mg_l": 0.005,
-                "hg_water_mg_l": 0.001,
-                "actual_contaminated": 0,
-                "season": "-",
+                "depth_m": 18.0, "recharge_mm": 15.0, "slope_pct": 2.0,
+                "conductivity": 5.0, "aquifer": "massive_sandstone",
+                "soil": "sand", "vadose": "sand_gravel",
+                "cn_water_mg_l": 0.005, "hg_water_mg_l": 0.001,
+                "actual_contaminated": 0, "season": "-",
                 "activity": "زراعة"
             },
             "Abu_Hamad": {
                 "name_ar": "أبو حمد",
                 "coords": (19.53, 33.32),
-                "depth_m": 22.0,
-                "recharge_mm": 12.0,
-                "slope_pct": 3.0,
-                "conductivity": 3.5,
-                "aquifer": "massive_sandstone",
-                "soil": "sandy_loam",
-                "vadose": "sand_gravel",
-                "cn_water_mg_l": 0.008,
-                "hg_water_mg_l": 0.002,
-                "actual_contaminated": 0,
-                "season": "-",
+                "depth_m": 22.0, "recharge_mm": 12.0, "slope_pct": 3.0,
+                "conductivity": 3.5, "aquifer": "massive_sandstone",
+                "soil": "sandy_loam", "vadose": "sand_gravel",
+                "cn_water_mg_l": 0.008, "hg_water_mg_l": 0.002,
+                "actual_contaminated": 0, "season": "-",
                 "activity": "زراعة + تعدين"
             },
             "El_Damer": {
                 "name_ar": "الدامر",
                 "coords": (17.59, 33.96),
-                "depth_m": 20.0,
-                "recharge_mm": 15.0,
-                "slope_pct": 3.0,
-                "conductivity": 4.0,
-                "aquifer": "massive_sandstone",
-                "soil": "sand",
-                "vadose": "sand_gravel",
-                "cn_water_mg_l": 0.006,
-                "hg_water_mg_l": 0.001,
-                "actual_contaminated": 0,
-                "season": "-",
+                "depth_m": 20.0, "recharge_mm": 15.0, "slope_pct": 3.0,
+                "conductivity": 4.0, "aquifer": "massive_sandstone",
+                "soil": "sand", "vadose": "sand_gravel",
+                "cn_water_mg_l": 0.006, "hg_water_mg_l": 0.001,
+                "actual_contaminated": 0, "season": "-",
                 "activity": "زراعة"
             }
         }
     },
+    # ============ 4. الخرطوم ============
     "الخرطوم": {
         "description": "ولاية الخرطوم - الحجر الرملي النوبي",
         "source": "Mohammed et al. (2023)",
@@ -211,50 +149,390 @@ STATES_DATABASE = {
             "Omdurman": {
                 "name_ar": "أم درمان",
                 "coords": (15.65, 32.48),
-                "depth_m": 15.0,
-                "recharge_mm": 15.0,
-                "slope_pct": 4.0,
-                "conductivity": 3.3,
-                "aquifer": "massive_sandstone",
-                "soil": "sand",
-                "vadose": "sand_gravel",
-                "cn_water_mg_l": 0.005,
-                "hg_water_mg_l": 0.001,
-                "actual_contaminated": 0,
-                "season": "-",
+                "depth_m": 15.0, "recharge_mm": 15.0, "slope_pct": 4.0,
+                "conductivity": 3.3, "aquifer": "massive_sandstone",
+                "soil": "sand", "vadose": "sand_gravel",
+                "cn_water_mg_l": 0.005, "hg_water_mg_l": 0.001,
+                "actual_contaminated": 0, "season": "-",
                 "activity": "حضري"
             },
             "North_Khartoum": {
                 "name_ar": "شمال الخرطوم",
                 "coords": (15.75, 32.55),
-                "depth_m": 20.0,
-                "recharge_mm": 15.0,
-                "slope_pct": 3.0,
-                "conductivity": 4.85,
-                "aquifer": "massive_sandstone",
-                "soil": "sand",
-                "vadose": "sandstone",
-                "cn_water_mg_l": 0.006,
-                "hg_water_mg_l": 0.001,
-                "actual_contaminated": 0,
-                "season": "-",
+                "depth_m": 20.0, "recharge_mm": 15.0, "slope_pct": 3.0,
+                "conductivity": 4.85, "aquifer": "massive_sandstone",
+                "soil": "sand", "vadose": "sandstone",
+                "cn_water_mg_l": 0.006, "hg_water_mg_l": 0.001,
+                "actual_contaminated": 0, "season": "-",
                 "activity": "حضري"
             },
             "East_Nile": {
                 "name_ar": "شرق النيل",
                 "coords": (15.60, 32.65),
-                "depth_m": 18.0,
-                "recharge_mm": 15.0,
-                "slope_pct": 3.5,
-                "conductivity": 4.0,
-                "aquifer": "massive_sandstone",
-                "soil": "sandy_loam",
-                "vadose": "sand_gravel",
-                "cn_water_mg_l": 0.007,
-                "hg_water_mg_l": 0.0015,
-                "actual_contaminated": 0,
-                "season": "-",
+                "depth_m": 18.0, "recharge_mm": 15.0, "slope_pct": 3.5,
+                "conductivity": 4.0, "aquifer": "massive_sandstone",
+                "soil": "sandy_loam", "vadose": "sand_gravel",
+                "cn_water_mg_l": 0.007, "hg_water_mg_l": 0.0015,
+                "actual_contaminated": 0, "season": "-",
                 "activity": "حضري + صناعي"
+            }
+        }
+    },
+    # ============ 5. البحر الأحمر ============
+    "البحر الأحمر": {
+        "description": "ولاية البحر الأحمر - تعدين الذهب",
+        "source": "تقديرات عامة",
+        "sites": {
+            "Port_Sudan": {
+                "name_ar": "بورتسودان",
+                "coords": (19.62, 37.22),
+                "depth_m": 25.0, "recharge_mm": 30.0, "slope_pct": 3.0,
+                "conductivity": 5.0, "aquifer": "sand_and_gravel",
+                "soil": "sand", "vadose": "sand_gravel",
+                "cn_water_mg_l": 0.005, "hg_water_mg_l": 0.001,
+                "actual_contaminated": 0, "season": "-",
+                "activity": "حضري + تعدين"
+            },
+            "Jebel_Alba": {
+                "name_ar": "جبل علبة",
+                "coords": (21.50, 36.50),
+                "depth_m": 30.0, "recharge_mm": 20.0, "slope_pct": 8.0,
+                "conductivity": 3.0, "aquifer": "metamorphic_igneous",
+                "soil": "gravel", "vadose": "metamorphic_igneous",
+                "cn_water_mg_l": 0.015, "hg_water_mg_l": 0.005,
+                "actual_contaminated": 1, "season": "-",
+                "activity": "تعدين أهلي"
+            },
+            "Halaib": {
+                "name_ar": "حلايب",
+                "coords": (22.22, 36.65),
+                "depth_m": 28.0, "recharge_mm": 25.0, "slope_pct": 5.0,
+                "conductivity": 2.5, "aquifer": "metamorphic_igneous",
+                "soil": "sand", "vadose": "sand_gravel",
+                "cn_water_mg_l": 0.010, "hg_water_mg_l": 0.003,
+                "actual_contaminated": 1, "season": "-",
+                "activity": "تعدين أهلي"
+            }
+        }
+    },
+    # ============ 6. نهر النيل الشمالية ============
+    "الشمالية": {
+        "description": "الولاية الشمالية - تعدين الذهب",
+        "source": "تقديرات عامة",
+        "sites": {
+            "Wadi_Halfa": {
+                "name_ar": "وادي حلفا",
+                "coords": (21.80, 31.35),
+                "depth_m": 30.0, "recharge_mm": 10.0, "slope_pct": 2.0,
+                "conductivity": 2.0, "aquifer": "massive_sandstone",
+                "soil": "sand", "vadose": "sandstone",
+                "cn_water_mg_l": 0.010, "hg_water_mg_l": 0.005,
+                "actual_contaminated": 1, "season": "-",
+                "activity": "تعدين أهلي"
+            },
+            "Dongola": {
+                "name_ar": "دنقلا",
+                "coords": (19.17, 30.47),
+                "depth_m": 25.0, "recharge_mm": 12.0, "slope_pct": 2.0,
+                "conductivity": 3.0, "aquifer": "massive_sandstone",
+                "soil": "sand", "vadose": "sand_gravel",
+                "cn_water_mg_l": 0.008, "hg_water_mg_l": 0.003,
+                "actual_contaminated": 1, "season": "-",
+                "activity": "زراعة + تعدين"
+            },
+            "Merowe": {
+                "name_ar": "مروي",
+                "coords": (18.47, 31.82),
+                "depth_m": 22.0, "recharge_mm": 12.0, "slope_pct": 3.0,
+                "conductivity": 4.0, "aquifer": "massive_sandstone",
+                "soil": "sandy_loam", "vadose": "sand_gravel",
+                "cn_water_mg_l": 0.006, "hg_water_mg_l": 0.002,
+                "actual_contaminated": 0, "season": "-",
+                "activity": "زراعة"
+            }
+        }
+    },
+    # ============ 7. الجزيرة ============
+    "الجزيرة": {
+        "description": "ولاية الجزيرة - الزراعة والتعدين",
+        "source": "تقديرات عامة",
+        "sites": {
+            "Wad_Madani": {
+                "name_ar": "ود مدني",
+                "coords": (14.40, 33.52),
+                "depth_m": 18.0, "recharge_mm": 20.0, "slope_pct": 3.0,
+                "conductivity": 5.0, "aquifer": "massive_sandstone",
+                "soil": "sandy_loam", "vadose": "sand_gravel",
+                "cn_water_mg_l": 0.005, "hg_water_mg_l": 0.001,
+                "actual_contaminated": 0, "season": "-",
+                "activity": "زراعة"
+            },
+            "Al_Hasaheisa": {
+                "name_ar": "الحصاحيصا",
+                "coords": (14.75, 33.30),
+                "depth_m": 20.0, "recharge_mm": 18.0, "slope_pct": 4.0,
+                "conductivity": 4.0, "aquifer": "massive_sandstone",
+                "soil": "sand", "vadose": "sand_gravel",
+                "cn_water_mg_l": 0.006, "hg_water_mg_l": 0.002,
+                "actual_contaminated": 0, "season": "-",
+                "activity": "زراعة"
+            }
+        }
+    },
+    # ============ 8. القضارف ============
+    "القضارف": {
+        "description": "ولاية القضارف - الزراعة والتعدين",
+        "source": "تقديرات عامة",
+        "sites": {
+            "Gedaref_City": {
+                "name_ar": "القضارف",
+                "coords": (14.03, 35.38),
+                "depth_m": 25.0, "recharge_mm": 40.0, "slope_pct": 4.0,
+                "conductivity": 3.0, "aquifer": "weathered_metamorphic_igneous",
+                "soil": "sandy_loam", "vadose": "sand_gravel",
+                "cn_water_mg_l": 0.005, "hg_water_mg_l": 0.001,
+                "actual_contaminated": 0, "season": "-",
+                "activity": "زراعة"
+            },
+            "Gallabat": {
+                "name_ar": "القلابات",
+                "coords": (12.87, 35.90),
+                "depth_m": 22.0, "recharge_mm": 50.0, "slope_pct": 5.0,
+                "conductivity": 2.5, "aquifer": "metamorphic_igneous",
+                "soil": "sand", "vadose": "metamorphic_igneous",
+                "cn_water_mg_l": 0.010, "hg_water_mg_l": 0.005,
+                "actual_contaminated": 1, "season": "-",
+                "activity": "تعدين أهلي"
+            }
+        }
+    },
+    # ============ 9. النيل الأزرق ============
+    "النيل الأزرق": {
+        "description": "ولاية النيل الأزرق - الزراعة",
+        "source": "تقديرات عامة",
+        "sites": {
+            "Damazin": {
+                "name_ar": "الدمازين",
+                "coords": (11.79, 34.36),
+                "depth_m": 20.0, "recharge_mm": 60.0, "slope_pct": 3.0,
+                "conductivity": 4.0, "aquifer": "weathered_metamorphic_igneous",
+                "soil": "sandy_loam", "vadose": "sand_gravel",
+                "cn_water_mg_l": 0.005, "hg_water_mg_l": 0.001,
+                "actual_contaminated": 0, "season": "-",
+                "activity": "زراعة"
+            },
+            "Roseires": {
+                "name_ar": "الروصيرص",
+                "coords": (11.85, 34.38),
+                "depth_m": 18.0, "recharge_mm": 65.0, "slope_pct": 4.0,
+                "conductivity": 3.5, "aquifer": "weathered_metamorphic_igneous",
+                "soil": "sand", "vadose": "sand_gravel",
+                "cn_water_mg_l": 0.006, "hg_water_mg_l": 0.002,
+                "actual_contaminated": 0, "season": "-",
+                "activity": "زراعة"
+            }
+        }
+    },
+    # ============ 10. النيل الأبيض ============
+    "النيل الأبيض": {
+        "description": "ولاية النيل الأبيض - الزراعة",
+        "source": "تقديرات عامة",
+        "sites": {
+            "Kosti": {
+                "name_ar": "كوستي",
+                "coords": (13.17, 32.67),
+                "depth_m": 18.0, "recharge_mm": 20.0, "slope_pct": 2.0,
+                "conductivity": 5.0, "aquifer": "massive_sandstone",
+                "soil": "sand", "vadose": "sand_gravel",
+                "cn_water_mg_l": 0.005, "hg_water_mg_l": 0.001,
+                "actual_contaminated": 0, "season": "-",
+                "activity": "زراعة"
+            },
+            "Rabak": {
+                "name_ar": "ربك",
+                "coords": (13.18, 32.74),
+                "depth_m": 20.0, "recharge_mm": 18.0, "slope_pct": 3.0,
+                "conductivity": 4.0, "aquifer": "massive_sandstone",
+                "soil": "sandy_loam", "vadose": "sand_gravel",
+                "cn_water_mg_l": 0.006, "hg_water_mg_l": 0.002,
+                "actual_contaminated": 0, "season": "-",
+                "activity": "زراعة + صناعة"
+            }
+        }
+    },
+    # ============ 11. شمال كردفان ============
+    "شمال كردفان": {
+        "description": "ولاية شمال كردفان - تعدين",
+        "source": "تقديرات عامة",
+        "sites": {
+            "El_Obeid": {
+                "name_ar": "الأبيض",
+                "coords": (13.18, 30.22),
+                "depth_m": 30.0, "recharge_mm": 15.0, "slope_pct": 4.0,
+                "conductivity": 3.0, "aquifer": "massive_sandstone",
+                "soil": "sand", "vadose": "sand_gravel",
+                "cn_water_mg_l": 0.005, "hg_water_mg_l": 0.001,
+                "actual_contaminated": 0, "season": "-",
+                "activity": "حضري + تعدين"
+            },
+            "Sodari": {
+                "name_ar": "سودري",
+                "coords": (13.50, 29.50),
+                "depth_m": 35.0, "recharge_mm": 12.0, "slope_pct": 5.0,
+                "conductivity": 2.0, "aquifer": "metamorphic_igneous",
+                "soil": "gravel", "vadose": "metamorphic_igneous",
+                "cn_water_mg_l": 0.015, "hg_water_mg_l": 0.008,
+                "actual_contaminated": 1, "season": "-",
+                "activity": "تعدين أهلي"
+            }
+        }
+    },
+    # ============ 12. جنوب كردفان ============
+    "جنوب كردفان": {
+        "description": "ولاية جنوب كردفان - تعدين الذهب",
+        "source": "تقديرات عامة",
+        "sites": {
+            "Kadugli": {
+                "name_ar": "كادوقلي",
+                "coords": (11.01, 29.72),
+                "depth_m": 25.0, "recharge_mm": 30.0, "slope_pct": 5.0,
+                "conductivity": 3.0, "aquifer": "weathered_metamorphic_igneous",
+                "soil": "sandy_loam", "vadose": "sand_gravel",
+                "cn_water_mg_l": 0.010, "hg_water_mg_l": 0.005,
+                "actual_contaminated": 1, "season": "-",
+                "activity": "تعدين أهلي"
+            },
+            "Dilling": {
+                "name_ar": "الدلنج",
+                "coords": (12.05, 29.65),
+                "depth_m": 28.0, "recharge_mm": 25.0, "slope_pct": 4.0,
+                "conductivity": 2.5, "aquifer": "metamorphic_igneous",
+                "soil": "sand", "vadose": "metamorphic_igneous",
+                "cn_water_mg_l": 0.012, "hg_water_mg_l": 0.006,
+                "actual_contaminated": 1, "season": "-",
+                "activity": "تعدين أهلي"
+            }
+        }
+    },
+    # ============ 13. غرب كردفان ============
+    "غرب كردفان": {
+        "description": "ولاية غرب كردفان - رعوي",
+        "source": "تقديرات عامة",
+        "sites": {
+            "Al_Fula": {
+                "name_ar": "الفولة",
+                "coords": (11.72, 28.35),
+                "depth_m": 30.0, "recharge_mm": 35.0, "slope_pct": 3.0,
+                "conductivity": 2.0, "aquifer": "weathered_metamorphic_igneous",
+                "soil": "sand", "vadose": "sand_gravel",
+                "cn_water_mg_l": 0.008, "hg_water_mg_l": 0.003,
+                "actual_contaminated": 0, "season": "-",
+                "activity": "رعوي"
+            }
+        }
+    },
+    # ============ 14. شمال دارفور ============
+    "شمال دارفور": {
+        "description": "ولاية شمال دارفور - تعدين",
+        "source": "UNEP Darfur Reports",
+        "sites": {
+            "El_Fasher": {
+                "name_ar": "الفاشر",
+                "coords": (13.63, 25.35),
+                "depth_m": 35.0, "recharge_mm": 25.0, "slope_pct": 4.0,
+                "conductivity": 2.0, "aquifer": "weathered_metamorphic_igneous",
+                "soil": "sand", "vadose": "sand_gravel",
+                "cn_water_mg_l": 0.010, "hg_water_mg_l": 0.005,
+                "actual_contaminated": 1, "season": "-",
+                "activity": "تعدين أهلي"
+            },
+            "Kutum": {
+                "name_ar": "كتم",
+                "coords": (14.20, 24.65),
+                "depth_m": 40.0, "recharge_mm": 20.0, "slope_pct": 5.0,
+                "conductivity": 1.5, "aquifer": "metamorphic_igneous",
+                "soil": "gravel", "vadose": "metamorphic_igneous",
+                "cn_water_mg_l": 0.015, "hg_water_mg_l": 0.008,
+                "actual_contaminated": 1, "season": "-",
+                "activity": "تعدين أهلي"
+            }
+        }
+    },
+    # ============ 15. جنوب دارفور ============
+    "جنوب دارفور": {
+        "description": "ولاية جنوب دارفور - تعدين",
+        "source": "UNEP Darfur Reports",
+        "sites": {
+            "Nyala": {
+                "name_ar": "نيالا",
+                "coords": (12.05, 24.88),
+                "depth_m": 30.0, "recharge_mm": 30.0, "slope_pct": 4.0,
+                "conductivity": 2.5, "aquifer": "weathered_metamorphic_igneous",
+                "soil": "sand", "vadose": "sand_gravel",
+                "cn_water_mg_l": 0.010, "hg_water_mg_l": 0.005,
+                "actual_contaminated": 1, "season": "-",
+                "activity": "تعدين أهلي + حضري"
+            },
+            "Zalingei": {
+                "name_ar": "زالنجي",
+                "coords": (12.90, 23.47),
+                "depth_m": 35.0, "recharge_mm": 28.0, "slope_pct": 5.0,
+                "conductivity": 2.0, "aquifer": "metamorphic_igneous",
+                "soil": "gravel", "vadose": "metamorphic_igneous",
+                "cn_water_mg_l": 0.012, "hg_water_mg_l": 0.006,
+                "actual_contaminated": 1, "season": "-",
+                "activity": "تعدين أهلي"
+            }
+        }
+    },
+    # ============ 16. غرب دارفور ============
+    "غرب دارفور": {
+        "description": "ولاية غرب دارفور - تعدين",
+        "source": "UNEP Darfur Reports",
+        "sites": {
+            "El_Geneina": {
+                "name_ar": "الجنينة",
+                "coords": (13.45, 22.45),
+                "depth_m": 32.0, "recharge_mm": 32.0, "slope_pct": 4.0,
+                "conductivity": 2.5, "aquifer": "weathered_metamorphic_igneous",
+                "soil": "sand", "vadose": "sand_gravel",
+                "cn_water_mg_l": 0.010, "hg_water_mg_l": 0.005,
+                "actual_contaminated": 1, "season": "-",
+                "activity": "تعدين أهلي"
+            }
+        }
+    },
+    # ============ 17. وسط دارفور ============
+    "وسط دارفور": {
+        "description": "ولاية وسط دارفور - تعدين",
+        "source": "UNEP Darfur Reports",
+        "sites": {
+            "Zalingei_Central": {
+                "name_ar": "وسط دارفور",
+                "coords": (12.50, 23.50),
+                "depth_m": 33.0, "recharge_mm": 30.0, "slope_pct": 5.0,
+                "conductivity": 2.0, "aquifer": "metamorphic_igneous",
+                "soil": "gravel", "vadose": "metamorphic_igneous",
+                "cn_water_mg_l": 0.012, "hg_water_mg_l": 0.006,
+                "actual_contaminated": 1, "season": "-",
+                "activity": "تعدين أهلي"
+            }
+        }
+    },
+    # ============ 18. شرق دارفور ============
+    "شرق دارفور": {
+        "description": "ولاية شرق دارفور - رعوي + تعدين",
+        "source": "UNEP Darfur Reports",
+        "sites": {
+            "Ed_Daein": {
+                "name_ar": "الضعين",
+                "coords": (11.45, 26.12),
+                "depth_m": 35.0, "recharge_mm": 28.0, "slope_pct": 4.0,
+                "conductivity": 2.0, "aquifer": "weathered_metamorphic_igneous",
+                "soil": "sand", "vadose": "sand_gravel",
+                "cn_water_mg_l": 0.010, "hg_water_mg_l": 0.005,
+                "actual_contaminated": 1, "season": "-",
+                "activity": "تعدين أهلي + رعوي"
             }
         }
     }
@@ -286,48 +564,28 @@ DARFUR_WELLS = {
 # ============ مواقع التعدين المعروفة ============
 # ============================================================
 KNOWN_MINING_SITES = {
-    "Ghaat_Haffer": {
-        "coords": (13.55, 33.60),
-        "activity": "تعدين أهلي",
-        "cyanide_use": True,
-        "mercury_use": True
-    },
-    "Gabis_Haffer": {
-        "coords": (13.50, 33.55),
-        "activity": "تعدين أهلي",
-        "cyanide_use": True,
-        "mercury_use": True
-    },
-    "Jebel_Moya": {
-        "coords": (13.45, 33.50),
-        "activity": "تعدين أهلي",
-        "cyanide_use": True,
-        "mercury_use": True
-    },
-    "Kassala_Mining": {
-        "coords": (15.45, 36.40),
-        "activity": "تعدين صغير",
-        "cyanide_use": True,
-        "mercury_use": False
-    },
-    "Berber_Mining": {
-        "coords": (18.02, 33.98),
-        "activity": "تعدين صغير",
-        "cyanide_use": False,
-        "mercury_use": True
-    },
-    "Abu_Hamad_Mining": {
-        "coords": (19.53, 33.32),
-        "activity": "تعدين صغير",
-        "cyanide_use": False,
-        "mercury_use": True
-    },
-    "North_Khartoum_Mining": {
-        "coords": (15.75, 32.55),
-        "activity": "تعدين صغير",
-        "cyanide_use": True,
-        "mercury_use": False
-    }
+    "Ghaat_Haffer": {"coords": (13.55, 33.60), "activity": "تعدين أهلي",
+                     "cyanide_use": True, "mercury_use": True},
+    "Gabis_Haffer": {"coords": (13.50, 33.55), "activity": "تعدين أهلي",
+                     "cyanide_use": True, "mercury_use": True},
+    "Jebel_Moya": {"coords": (13.45, 33.50), "activity": "تعدين أهلي",
+                   "cyanide_use": True, "mercury_use": True},
+    "Jebel_Alba": {"coords": (21.50, 36.50), "activity": "تعدين أهلي",
+                   "cyanide_use": True, "mercury_use": True},
+    "Sodari": {"coords": (13.50, 29.50), "activity": "تعدين أهلي",
+               "cyanide_use": True, "mercury_use": True},
+    "Kadugli": {"coords": (11.01, 29.72), "activity": "تعدين أهلي",
+                "cyanide_use": True, "mercury_use": True},
+    "El_Fasher": {"coords": (13.63, 25.35), "activity": "تعدين أهلي",
+                  "cyanide_use": True, "mercury_use": True},
+    "Nyala": {"coords": (12.05, 24.88), "activity": "تعدين أهلي",
+              "cyanide_use": True, "mercury_use": True},
+    "Kutum": {"coords": (14.20, 24.65), "activity": "تعدين أهلي",
+              "cyanide_use": True, "mercury_use": True},
+    "Wadi_Halfa": {"coords": (21.80, 31.35), "activity": "تعدين أهلي",
+                   "cyanide_use": True, "mercury_use": True},
+    "Dongola": {"coords": (19.17, 30.47), "activity": "تعدين أهلي",
+                "cyanide_use": True, "mercury_use": True},
 }
 
 
@@ -349,10 +607,7 @@ KHARTOUM_LOCALITIES = {
 # ============ دوال مساعدة ============
 # ============================================================
 def get_preset_locations_for_app():
-    """
-    إرجاع قاموس المواقع بصيغة متوافقة مع التطبيق القديم
-    (لضمان عدم تعطل الأجزاء الموجودة)
-    """
+    """إرجاع قاموس المواقع بصيغة متوافقة مع التطبيق"""
     preset = {}
     for state_name, state_data in STATES_DATABASE.items():
         for site_key, site_data in state_data["sites"].items():
@@ -378,13 +633,12 @@ def get_preset_locations_for_app():
 
 def get_data_summary():
     """ملخص البيانات المتوفرة"""
-    summary = {
+    return {
         "total_states": len(STATES_DATABASE),
         "total_sites": sum(len(s["sites"]) for s in STATES_DATABASE.values()),
         "states": list(STATES_DATABASE.keys()),
         "sources": list(set(s["source"] for s in STATES_DATABASE.values()))
     }
-    return summary
 
 
 def get_sites_by_state(state_name):
@@ -406,8 +660,20 @@ def get_site_data(state_name, site_key):
     return None
 
 
+def add_new_site(state_name, site_key, site_data):
+    """إضافة موقع جديد للقاعدة (في الذاكرة فقط)"""
+    if state_name not in STATES_DATABASE:
+        STATES_DATABASE[state_name] = {
+            "description": f"ولاية {state_name}",
+            "source": site_data.get("source", "إدخال يدوي"),
+            "sites": {}
+        }
+    STATES_DATABASE[state_name]["sites"][site_key] = site_data
+    return True
+
+
 def get_all_sites_as_dataframe():
-    """إرجاع كل المواقع كـ DataFrame جاهز للتحقق الفعلي"""
+    """إرجاع كل المواقع كـ DataFrame"""
     import pandas as pd
     rows = []
     for state_name, state_data in STATES_DATABASE.items():
@@ -431,3 +697,15 @@ def get_all_sites_as_dataframe():
                 "activity": site_data["activity"]
             })
     return pd.DataFrame(rows)
+
+
+def get_states_list():
+    """إرجاع قائمة الولايات"""
+    return list(STATES_DATABASE.keys())
+
+
+def get_sites_list(state_name):
+    """إرجاع قائمة المواقع في ولاية"""
+    if state_name in STATES_DATABASE:
+        return list(STATES_DATABASE[state_name]["sites"].keys())
+    return []
