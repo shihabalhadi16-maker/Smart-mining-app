@@ -1,9 +1,11 @@
-"""قاعدة بيانات السودان الكاملة - نظام التعدين السوداني v50.0
-تتضمن:
-- 18 ولاية سودانية
-- مواقع التعدين الرئيسية في كل ولاية
-- قيم CN و Hg من الدراسات المحكمة
-- قيم K من دراسات أم درمان والقاش
+"""قاعدة بيانات السودان الكاملة - نظام التعدين السوداني v54.0
+=====================================
+يحتوي على:
+1. 18 ولاية سودانية (STATES_DATABASE)
+2. بيانات زراعية لـ 4 ولايات (AGRICULTURAL_DATA)
+3. آبار NARIS و دارفور
+4. مواقع التعدين المعروفة
+5. محليات الخرطوم
 """
 
 # ============================================================
@@ -215,7 +217,7 @@ STATES_DATABASE = {
             }
         }
     },
-    # ============ 6. نهر النيل الشمالية ============
+    # ============ 6. الشمالية ============
     "الشمالية": {
         "description": "الولاية الشمالية - تعدين الذهب",
         "source": "تقديرات عامة",
@@ -540,6 +542,133 @@ STATES_DATABASE = {
 
 
 # ============================================================
+# ============ البيانات الزراعية ============
+# ============================================================
+AGRICULTURAL_DATA = {
+    "الجزيرة": {
+        "description": "ولاية الجزيرة - أكبر مشروع زراعي في السودان",
+        "source": "دراسات زراعية سودانية",
+        "sites": {
+            "Wad_Madani_Agri": {
+                "name_ar": "ود مدني - مشروع الجزيرة",
+                "coords": (14.40, 33.52),
+                "depth_m": 18.0, "recharge_mm": 20.0, "slope_pct": 3.0,
+                "conductivity": 5.0, "aquifer": "massive_sandstone",
+                "soil": "sandy_loam", "vadose": "sand_gravel",
+                "no3_mg_l": 35.0, "na_meq_l": 5.0, "ca_meq_l": 3.0,
+                "mg_meq_l": 1.5, "k_meq_l": 0.3, "ec_ds_m": 0.8,
+                "fertilizer_use": 0.7, "land_use_factor": 0.8,
+                "crop_type": "قطن، قمح، فول سوداني",
+                "irrigation_method": "ري سطحي"
+            },
+            "Al_Hasaheisa_Agri": {
+                "name_ar": "الحصاحيصا - الجزيرة",
+                "coords": (14.75, 33.30),
+                "depth_m": 20.0, "recharge_mm": 18.0, "slope_pct": 4.0,
+                "conductivity": 4.0, "aquifer": "massive_sandstone",
+                "soil": "sand", "vadose": "sand_gravel",
+                "no3_mg_l": 28.0, "na_meq_l": 4.0, "ca_meq_l": 3.5,
+                "mg_meq_l": 2.0, "k_meq_l": 0.4, "ec_ds_m": 0.6,
+                "fertilizer_use": 0.6, "land_use_factor": 0.7,
+                "crop_type": "قمح، ذرة",
+                "irrigation_method": "ري سطحي"
+            }
+        }
+    },
+    "النيل الأبيض": {
+        "description": "ولاية النيل الأبيض - زراعة قصب السكر",
+        "source": "دراسات زراعية سودانية",
+        "sites": {
+            "Kenana_Agri": {
+                "name_ar": "كنانة - قصب السكر",
+                "coords": (13.10, 32.85),
+                "depth_m": 15.0, "recharge_mm": 22.0, "slope_pct": 2.0,
+                "conductivity": 6.0, "aquifer": "massive_sandstone",
+                "soil": "sandy_loam", "vadose": "sand_gravel",
+                "no3_mg_l": 45.0, "na_meq_l": 6.0, "ca_meq_l": 3.5,
+                "mg_meq_l": 2.5, "k_meq_l": 0.5, "ec_ds_m": 1.2,
+                "fertilizer_use": 0.8, "land_use_factor": 0.9,
+                "crop_type": "قصب السكر",
+                "irrigation_method": "ري بالرش"
+            },
+            "Kosti_Agri": {
+                "name_ar": "كوستي - زراعة",
+                "coords": (13.17, 32.67),
+                "depth_m": 18.0, "recharge_mm": 20.0, "slope_pct": 2.5,
+                "conductivity": 5.0, "aquifer": "massive_sandstone",
+                "soil": "sand", "vadose": "sand_gravel",
+                "no3_mg_l": 30.0, "na_meq_l": 4.5, "ca_meq_l": 3.0,
+                "mg_meq_l": 2.0, "k_meq_l": 0.3, "ec_ds_m": 0.9,
+                "fertilizer_use": 0.6, "land_use_factor": 0.7,
+                "crop_type": "ذرة، فول",
+                "irrigation_method": "ري سطحي"
+            }
+        }
+    },
+    "نهر النيل": {
+        "description": "ولاية نهر النيل - زراعة على ضفاف النيل",
+        "source": "دراسات زراعية سودانية",
+        "sites": {
+            "Berber_Agri": {
+                "name_ar": "بربر - زراعة",
+                "coords": (18.02, 33.98),
+                "depth_m": 18.0, "recharge_mm": 15.0, "slope_pct": 2.0,
+                "conductivity": 5.0, "aquifer": "massive_sandstone",
+                "soil": "sand", "vadose": "sand_gravel",
+                "no3_mg_l": 22.0, "na_meq_l": 3.5, "ca_meq_l": 3.0,
+                "mg_meq_l": 1.5, "k_meq_l": 0.2, "ec_ds_m": 0.5,
+                "fertilizer_use": 0.5, "land_use_factor": 0.6,
+                "crop_type": "تمور، فواكه",
+                "irrigation_method": "ري غمر"
+            },
+            "Abu_Hamad_Agri": {
+                "name_ar": "أبو حمد - زراعة",
+                "coords": (19.53, 33.32),
+                "depth_m": 22.0, "recharge_mm": 12.0, "slope_pct": 3.0,
+                "conductivity": 3.5, "aquifer": "massive_sandstone",
+                "soil": "sandy_loam", "vadose": "sand_gravel",
+                "no3_mg_l": 18.0, "na_meq_l": 3.0, "ca_meq_l": 3.5,
+                "mg_meq_l": 2.0, "k_meq_l": 0.3, "ec_ds_m": 0.4,
+                "fertilizer_use": 0.4, "land_use_factor": 0.5,
+                "crop_type": "تمور، خضروات",
+                "irrigation_method": "ري غمر"
+            }
+        }
+    },
+    "الخرطوم": {
+        "description": "ولاية الخرطوم - زراعة حضرية",
+        "source": "دراسات زراعية سودانية",
+        "sites": {
+            "Omdurman_Agri": {
+                "name_ar": "أم درمان - زراعة حضرية",
+                "coords": (15.65, 32.48),
+                "depth_m": 15.0, "recharge_mm": 15.0, "slope_pct": 4.0,
+                "conductivity": 3.3, "aquifer": "massive_sandstone",
+                "soil": "sand", "vadose": "sand_gravel",
+                "no3_mg_l": 55.0, "na_meq_l": 8.0, "ca_meq_l": 4.0,
+                "mg_meq_l": 3.0, "k_meq_l": 0.8, "ec_ds_m": 1.5,
+                "fertilizer_use": 0.9, "land_use_factor": 0.9,
+                "crop_type": "خضروات",
+                "irrigation_method": "ري بالتنقيط"
+            },
+            "Bahri_Agri": {
+                "name_ar": "بحري - زراعة",
+                "coords": (15.60, 32.60),
+                "depth_m": 18.0, "recharge_mm": 15.0, "slope_pct": 3.0,
+                "conductivity": 4.0, "aquifer": "massive_sandstone",
+                "soil": "sandy_loam", "vadose": "sand_gravel",
+                "no3_mg_l": 48.0, "na_meq_l": 7.0, "ca_meq_l": 3.5,
+                "mg_meq_l": 2.5, "k_meq_l": 0.6, "ec_ds_m": 1.3,
+                "fertilizer_use": 0.8, "land_use_factor": 0.85,
+                "crop_type": "خضروات، فواكه",
+                "irrigation_method": "ري سطحي"
+            }
+        }
+    }
+}
+
+
+# ============================================================
 # ============ آبار NARIS ============
 # ============================================================
 NARIS_WELLS = {
@@ -604,7 +733,7 @@ KHARTOUM_LOCALITIES = {
 
 
 # ============================================================
-# ============ دوال مساعدة ============
+# ============ دوال مساعدة - التعدين ============
 # ============================================================
 def get_preset_locations_for_app():
     """إرجاع قاموس المواقع بصيغة متوافقة مع التطبيق"""
@@ -632,7 +761,7 @@ def get_preset_locations_for_app():
 
 
 def get_data_summary():
-    """ملخص البيانات المتوفرة"""
+    """ملخص بيانات التعدين"""
     return {
         "total_states": len(STATES_DATABASE),
         "total_sites": sum(len(s["sites"]) for s in STATES_DATABASE.values()),
@@ -642,14 +771,14 @@ def get_data_summary():
 
 
 def get_sites_by_state(state_name):
-    """إرجاع مواقع ولاية معينة"""
+    """مواقع ولاية معينة"""
     if state_name in STATES_DATABASE:
         return STATES_DATABASE[state_name]["sites"]
     return {}
 
 
 def get_site_data(state_name, site_key):
-    """إرجاع بيانات موقع محدد"""
+    """بيانات موقع محدد"""
     if state_name in STATES_DATABASE:
         sites = STATES_DATABASE[state_name]["sites"]
         if site_key in sites:
@@ -661,7 +790,7 @@ def get_site_data(state_name, site_key):
 
 
 def add_new_site(state_name, site_key, site_data):
-    """إضافة موقع جديد للقاعدة (في الذاكرة فقط)"""
+    """إضافة موقع جديد للتعدين"""
     if state_name not in STATES_DATABASE:
         STATES_DATABASE[state_name] = {
             "description": f"ولاية {state_name}",
@@ -673,22 +802,20 @@ def add_new_site(state_name, site_key, site_data):
 
 
 def get_all_sites_as_dataframe():
-    """إرجاع كل المواقع كـ DataFrame"""
+    """كل مواقع التعدين كـ DataFrame"""
     import pandas as pd
     rows = []
     for state_name, state_data in STATES_DATABASE.items():
         for site_key, site_data in state_data["sites"].items():
             rows.append({
                 "site_name": f"{state_name}-{site_data['name_ar']}",
-                "state": state_name,
-                "site_key": site_key,
+                "state": state_name, "site_key": site_key,
                 "depth_m": site_data["depth_m"],
                 "recharge_mm": site_data["recharge_mm"],
                 "slope_pct": site_data["slope_pct"],
                 "conductivity": site_data["conductivity"],
                 "aquifer": site_data["aquifer"],
-                "soil": site_data["soil"],
-                "vadose": site_data["vadose"],
+                "soil": site_data["soil"], "vadose": site_data["vadose"],
                 "cn_water_mg_l": site_data["cn_water_mg_l"],
                 "hg_water_mg_l": site_data["hg_water_mg_l"],
                 "actual_contaminated": site_data["actual_contaminated"],
@@ -700,12 +827,89 @@ def get_all_sites_as_dataframe():
 
 
 def get_states_list():
-    """إرجاع قائمة الولايات"""
+    """قائمة الولايات"""
     return list(STATES_DATABASE.keys())
 
 
 def get_sites_list(state_name):
-    """إرجاع قائمة المواقع في ولاية"""
+    """قائمة المواقع في ولاية"""
     if state_name in STATES_DATABASE:
         return list(STATES_DATABASE[state_name]["sites"].keys())
     return []
+
+
+# ============================================================
+# ============ دوال مساعدة - الزراعة ============
+# ============================================================
+def get_agricultural_data_summary():
+    """ملخص البيانات الزراعية"""
+    return {
+        "total_states": len(AGRICULTURAL_DATA),
+        "total_sites": sum(len(s["sites"]) for s in AGRICULTURAL_DATA.values()),
+        "states": list(AGRICULTURAL_DATA.keys())
+    }
+
+
+def get_agri_states_list():
+    """قائمة الولايات الزراعية"""
+    return list(AGRICULTURAL_DATA.keys())
+
+
+def get_agri_sites_list(state_name):
+    """قائمة المواقع الزراعية في ولاية"""
+    if state_name in AGRICULTURAL_DATA:
+        return list(AGRICULTURAL_DATA[state_name]["sites"].keys())
+    return []
+
+
+def get_agri_site_data(state_name, site_key):
+    """بيانات موقع زراعي"""
+    if state_name in AGRICULTURAL_DATA:
+        sites = AGRICULTURAL_DATA[state_name]["sites"]
+        if site_key in sites:
+            site = sites[site_key].copy()
+            site["state"] = state_name
+            site["source"] = AGRICULTURAL_DATA[state_name]["source"]
+            return site
+    return None
+
+
+def add_new_agri_site(state_name, site_key, site_data):
+    """إضافة موقع زراعي جديد"""
+    if state_name not in AGRICULTURAL_DATA:
+        AGRICULTURAL_DATA[state_name] = {
+            "description": f"ولاية {state_name} - زراعة",
+            "source": site_data.get("source", "إدخال يدوي"),
+            "sites": {}
+        }
+    AGRICULTURAL_DATA[state_name]["sites"][site_key] = site_data
+    return True
+
+
+def get_all_agri_sites_as_dataframe():
+    """كل المواقع الزراعية كـ DataFrame"""
+    import pandas as pd
+    rows = []
+    for state_name, state_data in AGRICULTURAL_DATA.items():
+        for site_key, site_data in state_data["sites"].items():
+            rows.append({
+                "site_name": f"{state_name}-{site_data['name_ar']}",
+                "state": state_name, "site_key": site_key,
+                "depth_m": site_data["depth_m"],
+                "recharge_mm": site_data["recharge_mm"],
+                "slope_pct": site_data["slope_pct"],
+                "conductivity": site_data["conductivity"],
+                "aquifer": site_data["aquifer"],
+                "soil": site_data["soil"], "vadose": site_data["vadose"],
+                "no3_mg_l": site_data["no3_mg_l"],
+                "na_meq_l": site_data["na_meq_l"],
+                "ca_meq_l": site_data["ca_meq_l"],
+                "mg_meq_l": site_data["mg_meq_l"],
+                "k_meq_l": site_data["k_meq_l"],
+                "ec_ds_m": site_data["ec_ds_m"],
+                "fertilizer_use": site_data["fertilizer_use"],
+                "land_use_factor": site_data["land_use_factor"],
+                "crop_type": site_data["crop_type"],
+                "irrigation_method": site_data["irrigation_method"]
+            })
+    return pd.DataFrame(rows)
