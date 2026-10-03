@@ -1,11 +1,13 @@
-"""وحدات متقدمة - نظام التعدين السوداني v53.1
-تتضمن:
-- Validation & Metrics
-- DRASTIC-P
-- Dynamic Assessment
-- Transport Modeling
-- Independent Validation
-- Satellite Data (محسّن)
+"""وحدات متقدمة - نظام التعدين السوداني v54.0
+=====================================
+يحتوي على:
+1. Validation Metrics (Confusion Matrix, Kappa, MCC)
+2. DRASTIC-P (Cyanide + Mercury)
+3. Dynamic Assessment
+4. Transport Modeling
+5. Independent Validation (70/30 Split)
+6. Satellite Data (ERA5)
+7. Agricultural Module (NEW)
 """
 import numpy as np
 import pandas as pd
@@ -259,7 +261,6 @@ def model_contaminant_transport(initial_conc, k_value, porosity, gradient,
             arg = distance / (2 * np.sqrt(D * time_days))
             factor = float(erfc(arg))
         else:
-            # تقريب بدون scipy
             if distance > 0:
                 factor = max(0.0, 1.0 - distance / max(distance_traveled, 1))
             else:
@@ -394,23 +395,15 @@ def generate_independent_validation_report(result):
 
 
 # ============================================================
-# ============ 6. Satellite Data (محسّن) ============
+# ============ 6. Satellite Data ============
 # ============================================================
 def fetch_satellite_data(lat, lon, years=3):
-    """
-    جلب بيانات الأقمار الصناعية من Open-Meteo (ERA5) - نسخة مُحسّنة
-    
-    Returns:
-    --------
-    dict: rainfall_mm, temperature_c, aridity, ndvi_estimated, source
-    """
+    """جلب بيانات الأقمار الصناعية من Open-Meteo (ERA5)"""
     import requests
-
     try:
         end = datetime.now().strftime('%Y-%m-%d')
         start = (datetime.now() - timedelta(days=365 * years)).strftime('%Y-%m-%d')
 
-        # ===== طلب واحد لكل البيانات =====
         url = "https://archive-api.open-meteo.com/v1/archive"
         params = {
             "latitude": float(lat),
@@ -422,15 +415,10 @@ def fetch_satellite_data(lat, lon, years=3):
         }
 
         r = requests.get(url, params=params, timeout=60)
-
         if r.status_code != 200:
-            return {
-                "rainfall_mm": None,
-                "temperature_c": None,
-                "aridity": "غير محدد",
-                "ndvi_estimated": None,
-                "source": f"HTTP {r.status_code}"
-            }
+            return {"rainfall_mm": None, "temperature_c": None,
+                    "aridity": "غير محدد", "ndvi_estimated": None,
+                    "source": f"HTTP {r.status_code}"}
 
         data = r.json()
         daily = data.get("daily", {})
@@ -454,31 +442,183 @@ def fetch_satellite_data(lat, lon, years=3):
         if rain is not None:
             ndvi = round(min(0.7, max(0.05, rain / 1000.0)), 3)
 
-        return {
-            "rainfall_mm": rain,
-            "temperature_c": temp,
-            "aridity": aridity,
-            "ndvi_estimated": ndvi,
-            "source": "ERA5 (ECMWF) via Open-Meteo",
-            "n_years": years,
-            "n_days": len(rv)
-        }
-
+        return {"rainfall_mm": rain, "temperature_c": temp,
+                "aridity": aridity, "ndvi_estimated": ndvi,
+                "source": "ERA5 (ECMWF) via Open-Meteo",
+                "n_years": years, "n_days": len(rv)}
     except requests.exceptions.Timeout:
-        return {
-            "rainfall_mm": None, "temperature_c": None,
-            "aridity": "انتهت المهلة", "ndvi_estimated": None,
-            "source": "Timeout (60s)"
-        }
+        return {"rainfall_mm": None, "temperature_c": None,
+                "aridity": "انتهت المهلة", "ndvi_estimated": None,
+                "source": "Timeout (60s)"}
     except requests.exceptions.ConnectionError:
-        return {
-            "rainfall_mm": None, "temperature_c": None,
-            "aridity": "خطأ اتصال", "ndvi_estimated": None,
-            "source": "Connection Error"
-        }
+        return {"rainfall_mm": None, "temperature_c": None,
+                "aridity": "خطأ اتصال", "ndvi_estimated": None,
+                "source": "Connection Error"}
     except Exception as e:
-        return {
-            "rainfall_mm": None, "temperature_c": None,
-            "aridity": "غير محدد", "ndvi_estimated": None,
-            "source": f"خطأ: {str(e)[:50]}"
-    } 
+        return {"rainfall_mm": None, "temperature_c": None,
+                "aridity": "غير محدد", "ndvi_estimated": None,
+                "source": f"خطأ: {str(e)[:50]}"}
+
+
+# ============================================================
+# ============ 7. Agricultural Module ============
+# ============================================================
+def calculate_sar(na, ca, mg):
+    """حساب نسبة امتصاص الصوديوم (SAR)"""
+    try:
+        na = float(na); ca = float(ca); mg = float(mg)
+        if ca + mg <= 0:
+            return {"sar": None, "level": "غير محدد", "color": "gray",
+                    "action": "بيانات ناقصة"}
+        sar = na / np.sqrt((ca + mg) / 2)
+        if sar < 10:
+            level, color, action = "منخفض", "green", "آمن للري"
+        elif sar < 18:
+            level, color, action = "متوسط", "yellow", "مراقبة دورية"
+        elif sar < 26:
+            level, color, action = "مرتفع", "orange", "يحتاج معالجة"
+        else:
+            level, color, action = "مرتفع جدا", "red", "غير مناسب للري"
+        return {"sar": round(sar, 2), "level": level, "color": color, "action": action}
+    except Exception:
+        return {"sar": None, "level": "خطأ", "color": "gray",
+                "action": "بيانات غير صحيحة"}
+
+
+def calculate_na_percent(na, ca, mg, k=0):
+    """حساب نسبة الصوديوم (Na%)"""
+    try:
+        na = float(na); ca = float(ca); mg = float(mg); k = float(k)
+        total = na + ca + mg + k
+        if total <= 0:
+            return {"na_percent": None, "level": "غير محدد", "color": "gray",
+                    "action": "بيانات ناقصة"}
+        nap = (na / total) * 100
+        if nap < 20:
+            level, color, action = "ممتاز", "green", "آمن تماماً"
+        elif nap < 40:
+            level, color, action = "جيد", "green", "آمن"
+        elif nap < 60:
+            level, color, action = "مقبول", "yellow", "مراقبة"
+        elif nap < 80:
+            level, color, action = "مشكوك", "orange", "يحتاج معالجة"
+        else:
+            level, color, action = "غير مناسب", "red", "غير صالح للري"
+        return {"na_percent": round(nap, 2), "level": level, "color": color,
+                "action": action}
+    except Exception:
+        return {"na_percent": None, "level": "خطأ", "color": "gray",
+                "action": "بيانات غير صحيحة"}
+
+
+def calculate_ec_quality(ec):
+    """تصنيف جودة المياه حسب التوصيلية الكهربائية (EC)"""
+    try:
+        ec = float(ec)
+        if ec < 0.25:
+            level, color, action = "ممتاز", "green", "آمن للري"
+        elif ec < 0.75:
+            level, color, action = "جيد", "green", "آمن"
+        elif ec < 2.25:
+            level, color, action = "مقبول", "yellow", "مراقبة"
+        elif ec < 4.0:
+            level, color, action = "مشكوك", "orange", "يحتاج معالجة"
+        else:
+            level, color, action = "غير مناسب", "red", "غير صالح للري"
+        return {"ec": ec, "level": level, "color": color, "action": action}
+    except Exception:
+        return {"ec": None, "level": "خطأ", "color": "gray",
+                "action": "بيانات غير صحيحة"}
+
+
+def calculate_nitrate_risk_index(no3_mg_l, fertilizer_use=0.5,
+                                   land_use_factor=0.5, depth_m=15):
+    """حساب مؤشر مخاطر النترات (NRI)"""
+    try:
+        no3 = float(no3_mg_l)
+        LIMIT = 50.0
+        ratio = no3 / LIMIT if LIMIT > 0 else 0
+        nri = ratio * fertilizer_use * land_use_factor
+        depth_factor = max(0.1, min(1.0, 15.0 / max(1, depth_m)))
+        nri *= depth_factor
+        nri = round(nri, 3)
+
+        if nri <= 0.3: level, color, action = "منخفض", "green", "مراقبة سنوية"
+        elif nri <= 1.0: level, color, action = "متوسط", "yellow", "مراقبة دورية"
+        elif nri <= 2.0: level, color, action = "مرتفع", "orange", "تدخل عاجل"
+        else: level, color, action = "مرتفع جدا", "red", "إيقاف التسميد"
+
+        return {"nri": nri, "no3_ratio": round(ratio, 2),
+                "fertilizer_factor": fertilizer_use,
+                "land_use_factor": land_use_factor,
+                "depth_factor": round(depth_factor, 3),
+                "level": level, "color": color, "action": action,
+                "no3_limit": LIMIT}
+    except Exception as e:
+        return {"nri": None, "level": "خطأ", "color": "gray",
+                "action": f"خطأ: {str(e)[:40]}"}
+
+
+def calculate_agricultural_drastic(base_drastic, no3_mg_l,
+                                     fertilizer_use=0.5,
+                                     land_use_factor=0.5,
+                                     depth_m=15,
+                                     alpha_agri=0.50):
+    """DRASTIC-Agri = DRASTIC × (1 + α × NRI)"""
+    nri_result = calculate_nitrate_risk_index(
+        no3_mg_l, fertilizer_use, land_use_factor, depth_m)
+    nri = nri_result.get("nri", 0)
+    if nri is None:
+        nri = 0
+
+    modifier = 1.0 + (alpha_agri * nri)
+    drastic_agri = min(230, base_drastic * modifier)
+
+    if drastic_agri >= 180: level, color = "مرتفع جدا", "red"
+    elif drastic_agri >= 140: level, color = "مرتفع", "orange"
+    elif drastic_agri >= 100: level, color = "متوسط", "yellow"
+    else: level, color = "منخفض", "green"
+
+    return {
+        "base_drastic": base_drastic,
+        "nri": nri_result.get("nri"),
+        "drastic_agri": round(drastic_agri, 1),
+        "modifier": round(modifier, 3),
+        "increase_pct": round(((drastic_agri - base_drastic) / base_drastic * 100)
+                              if base_drastic > 0 else 0, 1),
+        "level": level, "color": color,
+        "nri_details": nri_result,
+        "alpha_agri": alpha_agri
+    }
+
+
+def classify_irrigation_water(sar_result, na_result, ec_result):
+    """تصنيف شامل لجودة مياه الري"""
+    score = 0
+    if sar_result.get("color") == "green": score += 3
+    elif sar_result.get("color") == "yellow": score += 2
+    elif sar_result.get("color") == "orange": score += 1
+
+    if na_result.get("color") == "green": score += 3
+    elif na_result.get("color") == "yellow": score += 2
+    elif na_result.get("color") == "orange": score += 1
+
+    if ec_result.get("color") == "green": score += 3
+    elif ec_result.get("color") == "yellow": score += 2
+    elif ec_result.get("color") == "orange": score += 1
+
+    if score >= 8:
+        return {"class": "C1-S1", "level": "ممتاز", "color": "green",
+                "action": "آمن لجميع المحاصيل"}
+    elif score >= 6:
+        return {"class": "C2-S1", "level": "جيد", "color": "green",
+                "action": "آمن لمعظم المحاصيل"}
+    elif score >= 4:
+        return {"class": "C3-S2", "level": "مقبول", "color": "yellow",
+                "action": "آمن لمحاصيل متحملة"}
+    elif score >= 2:
+        return {"class": "C4-S3", "level": "مشكوك", "color": "orange",
+                "action": "يحتاج معالجة"}
+    else:
+        return {"class": "C4-S4", "level": "غير مناسب", "color": "red",
+                "action": "غير صالح للري"}
