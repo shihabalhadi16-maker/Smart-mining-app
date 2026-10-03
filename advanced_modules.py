@@ -1,15 +1,15 @@
-"""وحدات متقدمة - نظام التعدين السوداني v52.0
+"""وحدات متقدمة - نظام التعدين السوداني v53.1
 تتضمن:
-- Validation & Metrics (Confusion Matrix, Kappa, MCC)
-- DRASTIC-P (Cyanide + Mercury)
+- Validation & Metrics
+- DRASTIC-P
 - Dynamic Assessment
-- Transport Modeling (NEW)
-- Independent Validation (NEW)
-- Alpha/Beta Optimization (NEW)
+- Transport Modeling
+- Independent Validation
+- Satellite Data (محسّن)
 """
 import numpy as np
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 from itertools import product
 
 
@@ -148,7 +148,8 @@ def calculate_mercury_risk_index(hg_w, hg_s, bio, use="drinking"):
             "soil_ratio": round(s_r, 2), "level": level, "color": color}
 
 
-def calculate_modified_drastic(base, cri=0, mri=0, amd=0, alpha=0.50, beta=0.50, gamma=0.10):
+def calculate_modified_drastic(base, cri=0, mri=0, amd=0,
+                                alpha=0.50, beta=0.50, gamma=0.10):
     """DRASTIC-P = DRASTIC × (1 + α×CRI + β×MRI + γ×AMD)"""
     modifier = 1.0 + (alpha * cri) + (beta * mri) + (gamma * amd)
     modified = min(230, base * modifier)
@@ -224,47 +225,46 @@ def calculate_dynamic_risk(base, years, mining, climate, pop, cri0=0, mri0=0):
 
 
 # ============================================================
-# ============ 4. Transport Modeling (NEW) ============
+# ============ 4. Transport Modeling ============
 # ============================================================
 def model_contaminant_transport(initial_conc, k_value, porosity, gradient,
                                   distance, source_duration_years,
                                   decay_coefficient=0.001):
-    """
-    نمذجة انتقال الملوثات المبسطة (بديل MT3DMS)
-    
-    المعادلة:
-    C(x,t) = C0 × exp(-λ×t) × erfc(x / (2×sqrt(D×t)))
-    
-    حيث:
-    - C(x,t): التركيز على مسافة x بعد زمن t
-    - C0: التركيز الأولي
-    - λ: معامل التحلل
-    - D: معامل الانتشار (D = v × α + D*)
-    """
+    """نمذجة انتقال الملوثات المبسطة"""
     if porosity <= 0 or porosity >= 1:
         raise ValueError("Porosity must be between 0 and 1")
     if k_value <= 0:
         raise ValueError("K must be > 0")
 
-    v = (k_value * gradient) / porosity  # سرعة Darcy
+    v = (k_value * gradient) / porosity
     if v <= 0:
         return {"error": "Velocity must be > 0"}
 
-    from scipy.special import erfc
+    try:
+        from scipy.special import erfc
+        has_scipy = True
+    except ImportError:
+        has_scipy = False
 
     results = []
     for year in range(1, source_duration_years + 1):
         time_days = year * 365.25
-        # معامل الانتشار (D = v × dispersivity)
-        dispersivity = 10.0  # قيمة تقريبية (m)
+        dispersivity = 10.0
         D = v * dispersivity
         if D <= 0:
             D = 0.001
-        # المسافة المقطوعة
         distance_traveled = v * time_days
-        # التركيز على المسافة
-        arg = distance / (2 * np.sqrt(D * time_days)) if distance > 0 else 1.0
-        factor = float(erfc(arg))
+
+        if has_scipy and distance > 0:
+            arg = distance / (2 * np.sqrt(D * time_days))
+            factor = float(erfc(arg))
+        else:
+            # تقريب بدون scipy
+            if distance > 0:
+                factor = max(0.0, 1.0 - distance / max(distance_traveled, 1))
+            else:
+                factor = 1.0
+
         decay = np.exp(-decay_coefficient * time_days / 365.25)
         conc = initial_conc * factor * decay
         results.append({
@@ -296,20 +296,13 @@ def calculate_travel_time_to_well(depth, porosity, k_value, gradient,
 
 
 # ============================================================
-# ============ 5. Independent Validation (NEW) ============
+# ============ 5. Independent Validation ============
 # ============================================================
 def independent_validation(df, drastic_col, actual_col,
                             alpha_range=(0.2, 1.0, 0.1),
                             beta_range=(0.2, 1.0, 0.1),
                             test_size=0.3, random_state=42):
-    """
-    التحقق المستقل (70/30 Split) + تحسين α و β
-    
-    Steps:
-    1. تقسيم البيانات إلى تدريب (70%) واختبار (30%)
-    2. تحسين α و β على مجموعة التدريب
-    3. اختبار على مجموعة الاختبار
-    """
+    """التحقق المستقل (70/30 Split) + تحسين α و β"""
     np.random.seed(random_state)
     n = len(df)
     if n < 5:
@@ -323,7 +316,6 @@ def independent_validation(df, drastic_col, actual_col,
     df_train = df.iloc[train_idx].copy()
     df_test = df.iloc[test_idx].copy()
 
-    # Grid Search على مجموعة التدريب
     best_kappa = -1
     best_alpha = 0.5
     best_beta = 0.5
@@ -349,7 +341,6 @@ def independent_validation(df, drastic_col, actual_col,
             best_alpha = alpha
             best_beta = beta
 
-    # تطبيق أفضل α و β على مجموعة الاختبار
     test_preds = []
     for _, row in df_test.iterrows():
         base = float(row[drastic_col])
@@ -380,7 +371,7 @@ def independent_validation(df, drastic_col, actual_col,
 
 def generate_independent_validation_report(result):
     """تقرير التحقق المستقل"""
-    L = ["=" * 60, "تقرير التحقق المستقل (Independent Validation)", "=" * 60, ""]
+    L = ["=" * 60, "تقرير التحقق المستقل", "=" * 60, ""]
     L.append(f"عدد مواقع التدريب: {result['n_train']}")
     L.append(f"عدد مواقع الاختبار: {result['n_test']}")
     L.append("")
@@ -403,33 +394,53 @@ def generate_independent_validation_report(result):
 
 
 # ============================================================
-# ============ 6. Satellite Data (NEW) ============
+# ============ 6. Satellite Data (محسّن) ============
 # ============================================================
 def fetch_satellite_data(lat, lon, years=3):
-    """جلب بيانات الأقمار الصناعية من Open-Meteo (ERA5)"""
+    """
+    جلب بيانات الأقمار الصناعية من Open-Meteo (ERA5) - نسخة مُحسّنة
+    
+    Returns:
+    --------
+    dict: rainfall_mm, temperature_c, aridity, ndvi_estimated, source
+    """
     import requests
+
     try:
         end = datetime.now().strftime('%Y-%m-%d')
-        start = (datetime.now() - timedelta(days=365*years)).strftime('%Y-%m-%d')
+        start = (datetime.now() - timedelta(days=365 * years)).strftime('%Y-%m-%d')
 
-        # الأمطار
-        r1 = requests.get("https://archive-api.open-meteo.com/v1/archive",
-            params={"latitude": lat, "longitude": lon,
-                    "start_date": start, "end_date": end,
-                    "daily": "precipitation_sum",
-                    "timezone": "Africa/Khartoum"}, timeout=30)
-        rain_data = r1.json().get("daily", {}).get("precipitation_sum", [])
+        # ===== طلب واحد لكل البيانات =====
+        url = "https://archive-api.open-meteo.com/v1/archive"
+        params = {
+            "latitude": float(lat),
+            "longitude": float(lon),
+            "start_date": start,
+            "end_date": end,
+            "daily": ["precipitation_sum", "temperature_2m_mean"],
+            "timezone": "Africa/Khartoum"
+        }
+
+        r = requests.get(url, params=params, timeout=60)
+
+        if r.status_code != 200:
+            return {
+                "rainfall_mm": None,
+                "temperature_c": None,
+                "aridity": "غير محدد",
+                "ndvi_estimated": None,
+                "source": f"HTTP {r.status_code}"
+            }
+
+        data = r.json()
+        daily = data.get("daily", {})
+        rain_data = daily.get("precipitation_sum", [])
+        temp_data = daily.get("temperature_2m_mean", [])
+
         rv = [x for x in rain_data if x is not None]
-        rain = round(sum(rv) / years, 1) if rv else None
-
-        # الحرارة
-        r2 = requests.get("https://archive-api.open-meteo.com/v1/archive",
-            params={"latitude": lat, "longitude": lon,
-                    "start_date": start, "end_date": end,
-                    "daily": "temperature_2m_mean",
-                    "timezone": "Africa/Khartoum"}, timeout=30)
-        temp_data = r2.json().get("daily", {}).get("temperature_2m_mean", [])
         tv = [x for x in temp_data if x is not None]
+
+        rain = round(sum(rv) / years, 1) if rv else None
         temp = round(sum(tv) / len(tv), 1) if tv else None
 
         aridity = "غير محدد"
@@ -439,11 +450,35 @@ def fetch_satellite_data(lat, lon, years=3):
             elif rain < 500: aridity = "شبه رطب"
             else: aridity = "رطب"
 
-        return {"rainfall_mm": rain, "temperature_c": temp,
-                "aridity": aridity,
-                "ndvi_estimated": round(min(0.7, max(0.05, (rain or 0) / 1000.0)), 3) if rain else None,
-                "source": "ERA5 (ECMWF) via Open-Meteo"}
+        ndvi = None
+        if rain is not None:
+            ndvi = round(min(0.7, max(0.05, rain / 1000.0)), 3)
+
+        return {
+            "rainfall_mm": rain,
+            "temperature_c": temp,
+            "aridity": aridity,
+            "ndvi_estimated": ndvi,
+            "source": "ERA5 (ECMWF) via Open-Meteo",
+            "n_years": years,
+            "n_days": len(rv)
+        }
+
+    except requests.exceptions.Timeout:
+        return {
+            "rainfall_mm": None, "temperature_c": None,
+            "aridity": "انتهت المهلة", "ndvi_estimated": None,
+            "source": "Timeout (60s)"
+        }
+    except requests.exceptions.ConnectionError:
+        return {
+            "rainfall_mm": None, "temperature_c": None,
+            "aridity": "خطأ اتصال", "ndvi_estimated": None,
+            "source": "Connection Error"
+        }
     except Exception as e:
-        return {"rainfall_mm": None, "temperature_c": None,
-                "aridity": "غير محدد", "ndvi_estimated": None,
-                "source": f"فشل: {str(e)[:50]}"}
+        return {
+            "rainfall_mm": None, "temperature_c": None,
+            "aridity": "غير محدد", "ndvi_estimated": None,
+            "source": f"خطأ: {str(e)[:50]}"
+    } 
