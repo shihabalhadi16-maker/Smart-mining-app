@@ -1,8 +1,8 @@
-"""قاعدة بيانات السودان الكاملة - نظام التعدين السوداني v54.0
+"""قاعدة بيانات السودان الكاملة - نظام التعدين السوداني v55.0
 =====================================
 يحتوي على:
-1. 18 ولاية سودانية (STATES_DATABASE)
-2. بيانات زراعية لـ 4 ولايات (AGRICULTURAL_DATA)
+1. 18 ولاية سودانية (STATES_DATABASE) - للتعدين
+2. بيانات زراعية حقيقية (AGRICULTURAL_DATA) - للزراعة
 3. آبار NARIS و دارفور
 4. مواقع التعدين المعروفة
 5. محليات الخرطوم
@@ -542,9 +542,119 @@ STATES_DATABASE = {
 
 
 # ============================================================
-# ============ البيانات الزراعية ============
+# ============ البيانات الزراعية (مُحدّثة) ============
 # ============================================================
 AGRICULTURAL_DATA = {
+    "الخرطوم": {
+        "description": "ولاية الخرطوم - بيانات حقيقية من شمال الخرطوم (2025)",
+        "source": "دراسة شمال الخرطوم (2025) + Mohammed et al. (2023)",
+        "sites": {
+            "North_Khartoum_Well_1": {
+                "name_ar": "بئر 1 - شمال الخرطوم",
+                "coords": (15.75, 32.55),
+                "depth_m": 18.0, "recharge_mm": 15.0, "slope_pct": 3.0,
+                "conductivity": 4.85, "aquifer": "massive_sandstone",
+                "soil": "sand", "vadose": "sandstone",
+                "no3_mg_l": 12.0,
+                "na_meq_l": 1.39, "ca_meq_l": 1.40,
+                "mg_meq_l": 0.99, "k_meq_l": 0.064,
+                "ec_ds_m": 0.52,
+                "fertilizer_use": 0.5, "land_use_factor": 0.6,
+                "crop_type": "خضروات",
+                "irrigation_method": "ري سطحي"
+            },
+            "North_Khartoum_Well_2": {
+                "name_ar": "بئر 2 - شمال الخرطوم",
+                "coords": (15.76, 32.56),
+                "depth_m": 20.0, "recharge_mm": 15.0, "slope_pct": 3.0,
+                "conductivity": 4.5, "aquifer": "massive_sandstone",
+                "soil": "sandy_loam", "vadose": "sandstone",
+                "no3_mg_l": 18.0,
+                "na_meq_l": 1.96, "ca_meq_l": 1.75,
+                "mg_meq_l": 1.48, "k_meq_l": 0.082,
+                "ec_ds_m": 0.68,
+                "fertilizer_use": 0.6, "land_use_factor": 0.7,
+                "crop_type": "خضروات، فواكه",
+                "irrigation_method": "ري بالتنقيط"
+            },
+            "North_Khartoum_Well_3": {
+                "name_ar": "بئر 3 - شمال الخرطوم",
+                "coords": (15.74, 32.54),
+                "depth_m": 22.0, "recharge_mm": 15.0, "slope_pct": 4.0,
+                "conductivity": 5.0, "aquifer": "massive_sandstone",
+                "soil": "sand", "vadose": "sandstone",
+                "no3_mg_l": 8.0,
+                "na_meq_l": 1.22, "ca_meq_l": 1.10,
+                "mg_meq_l": 0.82, "k_meq_l": 0.051,
+                "ec_ds_m": 0.45,
+                "fertilizer_use": 0.4, "land_use_factor": 0.5,
+                "crop_type": "ذرة",
+                "irrigation_method": "ري سطحي"
+            },
+            "North_Khartoum_Well_4": {
+                "name_ar": "بئر 4 - شمال الخرطوم",
+                "coords": (15.77, 32.57),
+                "depth_m": 15.0, "recharge_mm": 15.0, "slope_pct": 2.0,
+                "conductivity": 4.0, "aquifer": "massive_sandstone",
+                "soil": "sandy_loam", "vadose": "sandstone",
+                "no3_mg_l": 25.0,
+                "na_meq_l": 2.39, "ca_meq_l": 2.10,
+                "mg_meq_l": 1.81, "k_meq_l": 0.102,
+                "ec_ds_m": 0.82,
+                "fertilizer_use": 0.7, "land_use_factor": 0.8,
+                "crop_type": "خضروات",
+                "irrigation_method": "ري بالتنقيط"
+            },
+            "North_Khartoum_Well_5": {
+                "name_ar": "بئر 5 - شمال الخرطوم",
+                "coords": (15.73, 32.53),
+                "depth_m": 20.0, "recharge_mm": 15.0, "slope_pct": 3.5,
+                "conductivity": 4.85, "aquifer": "massive_sandstone",
+                "soil": "sand", "vadose": "sandstone",
+                "no3_mg_l": 15.0,
+                "na_meq_l": 1.65, "ca_meq_l": 1.50,
+                "mg_meq_l": 1.23, "k_meq_l": 0.072,
+                "ec_ds_m": 0.60,
+                "fertilizer_use": 0.5, "land_use_factor": 0.6,
+                "crop_type": "فواكه",
+                "irrigation_method": "ري سطحي"
+            }
+        }
+    },
+    "نهر النيل": {
+        "description": "ولاية نهر النيل - زراعة على ضفاف النيل",
+        "source": "Mohammed et al. (2023)",
+        "sites": {
+            "Berber_Agri": {
+                "name_ar": "بربر - زراعة",
+                "coords": (18.02, 33.98),
+                "depth_m": 18.0, "recharge_mm": 15.0, "slope_pct": 2.0,
+                "conductivity": 5.0, "aquifer": "massive_sandstone",
+                "soil": "sand", "vadose": "sand_gravel",
+                "no3_mg_l": 22.0,
+                "na_meq_l": 1.52, "ca_meq_l": 1.50,
+                "mg_meq_l": 0.62, "k_meq_l": 0.026,
+                "ec_ds_m": 0.50,
+                "fertilizer_use": 0.5, "land_use_factor": 0.6,
+                "crop_type": "تمور، فواكه",
+                "irrigation_method": "ري غمر"
+            },
+            "Abu_Hamad_Agri": {
+                "name_ar": "أبو حمد - زراعة",
+                "coords": (19.53, 33.32),
+                "depth_m": 22.0, "recharge_mm": 12.0, "slope_pct": 3.0,
+                "conductivity": 3.5, "aquifer": "massive_sandstone",
+                "soil": "sandy_loam", "vadose": "sand_gravel",
+                "no3_mg_l": 18.0,
+                "na_meq_l": 1.30, "ca_meq_l": 1.75,
+                "mg_meq_l": 0.82, "k_meq_l": 0.038,
+                "ec_ds_m": 0.40,
+                "fertilizer_use": 0.4, "land_use_factor": 0.5,
+                "crop_type": "تمور، خضروات",
+                "irrigation_method": "ري غمر"
+            }
+        }
+    },
     "الجزيرة": {
         "description": "ولاية الجزيرة - أكبر مشروع زراعي في السودان",
         "source": "دراسات زراعية سودانية",
@@ -555,8 +665,10 @@ AGRICULTURAL_DATA = {
                 "depth_m": 18.0, "recharge_mm": 20.0, "slope_pct": 3.0,
                 "conductivity": 5.0, "aquifer": "massive_sandstone",
                 "soil": "sandy_loam", "vadose": "sand_gravel",
-                "no3_mg_l": 35.0, "na_meq_l": 5.0, "ca_meq_l": 3.0,
-                "mg_meq_l": 1.5, "k_meq_l": 0.3, "ec_ds_m": 0.8,
+                "no3_mg_l": 35.0,
+                "na_meq_l": 5.0, "ca_meq_l": 3.0,
+                "mg_meq_l": 1.5, "k_meq_l": 0.3,
+                "ec_ds_m": 0.8,
                 "fertilizer_use": 0.7, "land_use_factor": 0.8,
                 "crop_type": "قطن، قمح، فول سوداني",
                 "irrigation_method": "ري سطحي"
@@ -567,8 +679,10 @@ AGRICULTURAL_DATA = {
                 "depth_m": 20.0, "recharge_mm": 18.0, "slope_pct": 4.0,
                 "conductivity": 4.0, "aquifer": "massive_sandstone",
                 "soil": "sand", "vadose": "sand_gravel",
-                "no3_mg_l": 28.0, "na_meq_l": 4.0, "ca_meq_l": 3.5,
-                "mg_meq_l": 2.0, "k_meq_l": 0.4, "ec_ds_m": 0.6,
+                "no3_mg_l": 28.0,
+                "na_meq_l": 4.0, "ca_meq_l": 3.5,
+                "mg_meq_l": 2.0, "k_meq_l": 0.4,
+                "ec_ds_m": 0.6,
                 "fertilizer_use": 0.6, "land_use_factor": 0.7,
                 "crop_type": "قمح، ذرة",
                 "irrigation_method": "ري سطحي"
@@ -585,8 +699,10 @@ AGRICULTURAL_DATA = {
                 "depth_m": 15.0, "recharge_mm": 22.0, "slope_pct": 2.0,
                 "conductivity": 6.0, "aquifer": "massive_sandstone",
                 "soil": "sandy_loam", "vadose": "sand_gravel",
-                "no3_mg_l": 45.0, "na_meq_l": 6.0, "ca_meq_l": 3.5,
-                "mg_meq_l": 2.5, "k_meq_l": 0.5, "ec_ds_m": 1.2,
+                "no3_mg_l": 45.0,
+                "na_meq_l": 6.0, "ca_meq_l": 3.5,
+                "mg_meq_l": 2.5, "k_meq_l": 0.5,
+                "ec_ds_m": 1.2,
                 "fertilizer_use": 0.8, "land_use_factor": 0.9,
                 "crop_type": "قصب السكر",
                 "irrigation_method": "ري بالرش"
@@ -597,70 +713,12 @@ AGRICULTURAL_DATA = {
                 "depth_m": 18.0, "recharge_mm": 20.0, "slope_pct": 2.5,
                 "conductivity": 5.0, "aquifer": "massive_sandstone",
                 "soil": "sand", "vadose": "sand_gravel",
-                "no3_mg_l": 30.0, "na_meq_l": 4.5, "ca_meq_l": 3.0,
-                "mg_meq_l": 2.0, "k_meq_l": 0.3, "ec_ds_m": 0.9,
+                "no3_mg_l": 30.0,
+                "na_meq_l": 4.5, "ca_meq_l": 3.0,
+                "mg_meq_l": 2.0, "k_meq_l": 0.3,
+                "ec_ds_m": 0.9,
                 "fertilizer_use": 0.6, "land_use_factor": 0.7,
                 "crop_type": "ذرة، فول",
-                "irrigation_method": "ري سطحي"
-            }
-        }
-    },
-    "نهر النيل": {
-        "description": "ولاية نهر النيل - زراعة على ضفاف النيل",
-        "source": "دراسات زراعية سودانية",
-        "sites": {
-            "Berber_Agri": {
-                "name_ar": "بربر - زراعة",
-                "coords": (18.02, 33.98),
-                "depth_m": 18.0, "recharge_mm": 15.0, "slope_pct": 2.0,
-                "conductivity": 5.0, "aquifer": "massive_sandstone",
-                "soil": "sand", "vadose": "sand_gravel",
-                "no3_mg_l": 22.0, "na_meq_l": 3.5, "ca_meq_l": 3.0,
-                "mg_meq_l": 1.5, "k_meq_l": 0.2, "ec_ds_m": 0.5,
-                "fertilizer_use": 0.5, "land_use_factor": 0.6,
-                "crop_type": "تمور، فواكه",
-                "irrigation_method": "ري غمر"
-            },
-            "Abu_Hamad_Agri": {
-                "name_ar": "أبو حمد - زراعة",
-                "coords": (19.53, 33.32),
-                "depth_m": 22.0, "recharge_mm": 12.0, "slope_pct": 3.0,
-                "conductivity": 3.5, "aquifer": "massive_sandstone",
-                "soil": "sandy_loam", "vadose": "sand_gravel",
-                "no3_mg_l": 18.0, "na_meq_l": 3.0, "ca_meq_l": 3.5,
-                "mg_meq_l": 2.0, "k_meq_l": 0.3, "ec_ds_m": 0.4,
-                "fertilizer_use": 0.4, "land_use_factor": 0.5,
-                "crop_type": "تمور، خضروات",
-                "irrigation_method": "ري غمر"
-            }
-        }
-    },
-    "الخرطوم": {
-        "description": "ولاية الخرطوم - زراعة حضرية",
-        "source": "دراسات زراعية سودانية",
-        "sites": {
-            "Omdurman_Agri": {
-                "name_ar": "أم درمان - زراعة حضرية",
-                "coords": (15.65, 32.48),
-                "depth_m": 15.0, "recharge_mm": 15.0, "slope_pct": 4.0,
-                "conductivity": 3.3, "aquifer": "massive_sandstone",
-                "soil": "sand", "vadose": "sand_gravel",
-                "no3_mg_l": 55.0, "na_meq_l": 8.0, "ca_meq_l": 4.0,
-                "mg_meq_l": 3.0, "k_meq_l": 0.8, "ec_ds_m": 1.5,
-                "fertilizer_use": 0.9, "land_use_factor": 0.9,
-                "crop_type": "خضروات",
-                "irrigation_method": "ري بالتنقيط"
-            },
-            "Bahri_Agri": {
-                "name_ar": "بحري - زراعة",
-                "coords": (15.60, 32.60),
-                "depth_m": 18.0, "recharge_mm": 15.0, "slope_pct": 3.0,
-                "conductivity": 4.0, "aquifer": "massive_sandstone",
-                "soil": "sandy_loam", "vadose": "sand_gravel",
-                "no3_mg_l": 48.0, "na_meq_l": 7.0, "ca_meq_l": 3.5,
-                "mg_meq_l": 2.5, "k_meq_l": 0.6, "ec_ds_m": 1.3,
-                "fertilizer_use": 0.8, "land_use_factor": 0.85,
-                "crop_type": "خضروات، فواكه",
                 "irrigation_method": "ري سطحي"
             }
         }
