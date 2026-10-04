@@ -2,7 +2,14 @@
 نظام التعدين السوداني v55.2
 =====================================
 جامعة الخرطوم - كلية الهندسة
-الإصلاحات: عدد المواقع ديناميكي + نقل الملوثات مُصحح
+
+الميزات:
+- منافذ رفع متعددة (Sidebar + Main)
+- DRASTIC-T (Toxicity-Weighted)
+- عتبات قابلة للتعديل
+- حقل verified للمواقع (11 موثق من 40)
+- نقل الملوثات (Ogata-Banks)
+- خريطة بألوان مميزة
 """
 import streamlit as st
 import subprocess, os, sys, shutil, stat, zipfile, io
@@ -51,6 +58,8 @@ st.markdown("""
     .upload-zone { background: linear-gradient(135deg, #fff9ec 0%, #f5e6c8 100%); border: 3px dashed #c19a6b; border-radius: 14px; padding: 22px; margin: 12px 0; text-align: center; }
     .upload-zone h4 { color: #5c2c16; margin: 0 0 6px 0; font-size: 1.1em; }
     .upload-zone p { color: #777; margin: 0; font-size: 0.85em; }
+    .quality-box-ok { background:#e8f5e9; border-left:4px solid #4caf50; padding:10px 12px; border-radius:8px; margin:5px 0; }
+    .quality-box-warn { background:#fff3e0; border-left:4px solid #ff9800; padding:10px 12px; border-radius:8px; margin:5px 0; }
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     @media (max-width: 768px) {
@@ -118,10 +127,13 @@ try:
         get_agricultural_data_summary, get_agri_states_list,
         get_agri_sites_list, get_agri_site_data, add_new_agri_site,
         get_all_agri_sites_as_dataframe,
-        KNOWN_MINING_SITES, NARIS_WELLS, DARFUR_WELLS, KHARTOUM_LOCALITIES)
+        KNOWN_MINING_SITES, NARIS_WELLS, DARFUR_WELLS, KHARTOUM_LOCALITIES,
+        get_verified_sites_as_dataframe,
+        get_all_sites_as_dataframe_with_flag)
     DS_OK = True
 except ImportError as e:
     DS_OK = False
+    _ds_error = str(e)
 
 try:
     from modflow_engine import (is_modflow_available, build_and_run_model, estimate_travel_time_modflow)
@@ -301,32 +313,25 @@ calc_drastic_p = calc_drastic_t
 
 
 # ============================================================
-# ✅ FIX 3: نموذج نقل الملوثات المُصحح (Ogata-Banks)
+# نموذج نقل الملوثات المُصحح (Ogata-Banks)
 # ============================================================
 def model_contaminant_transport_fixed(C0, K, porosity, gradient, distance, years,
                                         dispersivity=10.0, retardation=1.0, decay=0.0):
-    """
-    Advection-Dispersion Equation (1D) — Ogata-Banks analytical solution.
-    C(x,t) = (C0/2) * erfc[(x - v*t) / (2*sqrt(D*t))]
-    """
     try:
         from scipy import special as sp
         has_scipy = True
     except ImportError:
         has_scipy = False
 
-    # Seepage velocity (m/day)
     v = (K * gradient) / (porosity * retardation)
     if v <= 0:
         return {"error": "Velocity is zero or negative"}
-
     D = dispersivity * v
     if D <= 0:
         return {"error": "Dispersion coefficient is zero"}
 
     total_days = int(years * 365.25)
     times = np.linspace(1, total_days, min(200, max(10, total_days)))
-
     concentrations = []
     for t in times:
         if t <= 0:
@@ -336,7 +341,6 @@ def model_contaminant_transport_fixed(C0, K, porosity, gradient, distance, years
             if has_scipy:
                 erfc_val = float(sp.erfc(arg))
             else:
-                # Fallback approximation (Abramowitz & Stegun 7.1.26)
                 z = abs(arg)
                 tt = 1.0 / (1.0 + 0.5 * z)
                 erf_approx = 1 - tt * np.exp(-z*z - 1.26551223 +
@@ -452,32 +456,32 @@ VALID_VADOSE = ["confining_layer", "silt_clay", "shale", "metamorphic_igneous",
 
 
 # ============================================================
-# ✅ FIX 4: حساب عدد المواقع ديناميكياً
+# حساب الإحصائيات (مع verified)
 # ============================================================
 if DS_OK:
     preset = get_preset_locations_for_app()
     summary = get_data_summary()
     n_states = summary.get('total_states', 0)
 
-    # حساب عدد مواقع التعدين الفعلي من قاعدة البيانات
     try:
-        _df_all = get_all_sites_as_dataframe()
-        n_sites = len(_df_all) if _df_all is not None and len(_df_all) > 0 else summary.get('total_sites', 0)
+        _df_all = get_all_sites_as_dataframe_with_flag()
+        n_sites_total = len(_df_all) if _df_all is not None else 0
+        n_sites_verified = int(_df_all["verified"].sum()) if _df_all is not None else 0
     except Exception:
-        n_sites = summary.get('total_sites', 0)
+        n_sites_total = summary.get('total_sites', 0)
+        n_sites_verified = 0
 
     agri_summary = get_agricultural_data_summary()
     n_agri_states = agri_summary.get('total_states', 0)
 
-    # حساب عدد المواقع الزراعية الفعلي
     try:
         _df_agri = get_all_agri_sites_as_dataframe()
-        n_agri_sites = len(_df_agri) if _df_agri is not None and len(_df_agri) > 0 else agri_summary.get('total_sites', 0)
+        n_agri_sites = len(_df_agri) if _df_agri is not None else 0
     except Exception:
         n_agri_sites = agri_summary.get('total_sites', 0)
 else:
     preset = {}
-    n_states = n_sites = n_agri_states = n_agri_sites = 0
+    n_states = n_sites_total = n_sites_verified = n_agri_states = n_agri_sites = 0
 
 
 # ============================================================
@@ -538,6 +542,23 @@ st.sidebar.markdown("---")
 
 
 # ============================================================
+# SIDEBAR — Quality Summary
+# ============================================================
+if DS_OK:
+    st.sidebar.markdown("### 📊 جودة البيانات")
+    st.sidebar.markdown(f"""
+    <div class="quality-box-ok">
+        <div style="font-size:0.85em; color:#2e7d32;">✅ <b>موثق:</b> {n_sites_verified} موقع</div>
+    </div>
+    <div class="quality-box-warn">
+        <div style="font-size:0.85em; color:#e65100;">ℹ️ <b>للعرض فقط:</b> {n_sites_total - n_sites_verified} موقع</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+st.sidebar.markdown("---")
+
+
+# ============================================================
 # SIDEBAR — Mode
 # ============================================================
 st.sidebar.markdown("## 🎛️ وضع التشغيل")
@@ -576,14 +597,14 @@ st.sidebar.caption("• WHO (2022)")
 
 
 # ============================================================
-# Main Header
+# Main Header (مع verified)
 # ============================================================
 st.markdown(f"""
 <div class="header-container">
     <div class="header-title">⛏️ نظام التعدين السوداني</div>
     <div class="header-subtitle">جامعة الخرطوم - كلية الهندسة</div>
     <div class="header-subtitle">DRASTIC + DRASTIC-T + MODFLOW 6 + Monte Carlo</div>
-    <div class="header-badge">الإصدار 55.2 | التعدين: {n_states} ولاية، {n_sites} موقع | الزراعة: {n_agri_states} ولاية، {n_agri_sites} موقع</div>
+    <div class="header-badge">الإصدار 55.2 | التعدين: {n_states} ولاية، {n_sites_total} موقع ({n_sites_verified} موثق) | الزراعة: {n_agri_states} ولاية، {n_agri_sites} موقع</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -665,6 +686,7 @@ if mode == "🏠 النظام الأساسي (تعدين)":
                     "🛡️ الحلول", "📄 التقرير", "🗺️ الخريطة",
                     "📈 الحساسية", "☠️ السمية", "🌍 GIS", "🎲 Monte Carlo"])
 
+    # ============ TAB 0: المدخلات ============
     with tabs[0]:
         st.markdown('<div class="section-header"><h3>📍 اختيار الولاية والموقع</h3></div>', unsafe_allow_html=True)
         if not DS_OK:
@@ -682,11 +704,13 @@ if mode == "🏠 النظام الأساسي (تعدين)":
             site_key = st.selectbox("**الموقع:**", sites, key="site_selector")
             site_data = get_site_data(state, site_key)
 
-            c1, c2, c3 = st.columns(3)
+            c1, c2, c3, c4 = st.columns(4)
             c1.metric("النشاط", site_data.get("activity", "N/A"))
             c2.metric("الموسم", site_data.get("season", "N/A"))
             status = "🔴 ملوث" if site_data["actual_contaminated"] == 1 else "🟢 نظيف"
             c3.metric("الحالة", status)
+            verified_badge = "✅ موثق" if site_data.get("verified", False) else "ℹ️ للعرض"
+            c4.metric("التوثيق", verified_badge)
 
             st.markdown(f'<div class="info-card"><div style="font-weight:700; color:#5c2c16;">📍 الإحداثيات</div><div>الإحداثيات: <b>{site_data["coords"][0]}, {site_data["coords"][1]}</b></div></div>', unsafe_allow_html=True)
 
@@ -733,6 +757,7 @@ if mode == "🏠 النظام الأساسي (تعدين)":
             except ValueError as e:
                 st.error("خطأ: " + str(e))
 
+    # ============ TAB 1: إدخال يدوي ============
     with tabs[1]:
         st.markdown('<div class="section-header"><h3>➕ إضافة موقع جديد</h3></div>', unsafe_allow_html=True)
         if DS_OK:
@@ -778,11 +803,12 @@ if mode == "🏠 النظام الأساسي (تعدين)":
                         "conductivity": new_conductivity, "aquifer": new_aquifer, "soil": new_soil,
                         "vadose": new_vadose, "cn_water_mg_l": new_cn, "hg_water_mg_l": new_hg,
                         "actual_contaminated": 1 if new_contaminated == "ملوث (1)" else 0,
-                        "season": new_season, "activity": new_activity}
+                        "season": new_season, "activity": new_activity, "verified": True}
                     add_new_site(new_state, new_site_key, site_data)
                     st.success(f"✅ تم حفظ **{new_name_ar}**")
                     st.rerun()
 
+    # ============ TAB 2: التقييم الجماعي ============
     with tabs[2]:
         st.markdown('<div class="section-header"><h3>📊 التقييم الجماعي</h3></div>', unsafe_allow_html=True)
         st.info("💡 يمكنك رفع الملف من **الشريط الجانبي** أو **منطقة الرفع في الأعلى**")
@@ -866,6 +892,7 @@ if mode == "🏠 النظام الأساسي (تعدين)":
             except Exception as e:
                 st.error(f"❌ خطأ: {e}")
 
+    # ============ TAB 3: الحلول ============
     with tabs[3]:
         st.markdown('<div class="section-header"><h3>🛡️ الحلول</h3></div>', unsafe_allow_html=True)
         if "ci" in st.session_state:
@@ -881,6 +908,7 @@ if mode == "🏠 النظام الأساسي (تعدين)":
                 c1.metric("قبل", ci); c2.metric("بعد", r["mitigated_index"])
                 c3.metric("التخفيض", f"{r['reduction_pct']}%")
 
+    # ============ TAB 4: التقرير ============
     with tabs[4]:
         st.markdown('<div class="section-header"><h3>📄 التقرير</h3></div>', unsafe_allow_html=True)
         if "ci" in st.session_state:
@@ -889,21 +917,55 @@ if mode == "🏠 النظام الأساسي (تعدين)":
             st.metric("CN", st.session_state["cv"].get("cn_water_mg_l", "N/A"))
             st.metric("Hg", st.session_state["cv"].get("hg_water_mg_l", "N/A"))
 
+    # ============ TAB 5: الخريطة (بألوان) ============
     with tabs[5]:
-        st.markdown('<div class="section-header"><h3>🗺️ الخريطة</h3></div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-header"><h3>🗺️ الخريطة التفاعلية</h3></div>', unsafe_allow_html=True)
+        st.caption("🟢 أخضر: موقع موثق | 🟠 برتقالي: موقع للعرض فقط")
+        
         if DS_OK:
-            m = folium.Map(location=[15.5, 32.5], zoom_start=6)
-            for n, d in KNOWN_MINING_SITES.items():
-                folium.Marker([d["coords"][1], d["coords"][0]], popup=n, tooltip=n,
-                    icon=folium.Icon(color="red")).add_to(m)
-            st_folium(m, height=500, key="map_main")
+            try:
+                df_map = get_all_sites_as_dataframe_with_flag()
+                m = folium.Map(location=[15.5, 32.5], zoom_start=6)
+                for _, row in df_map.iterrows():
+                    state = row["state"]
+                    site_key = row["site_key"]
+                    try:
+                        coords = STATES_DATABASE[state]["sites"][site_key]["coords"]
+                    except Exception:
+                        continue
+                    
+                    verified = row.get("verified", False)
+                    color = "green" if verified else "orange"
+                    icon_type = "ok" if verified else "info-sign"
+                    status = "✅ موثق" if verified else "ℹ️ للعرض فقط"
+                    
+                    popup_html = f"""
+                    <div style="font-family: Arial; font-size: 12px;">
+                        <b>{row['site_name']}</b><br>
+                        <b>الحالة:</b> {status}<br>
+                        <b>المصدر:</b> {row.get('source', 'N/A')}<br>
+                        <b>CN:</b> {row.get('cn_water_mg_l', 'N/A')}<br>
+                        <b>Hg:</b> {row.get('hg_water_mg_l', 'N/A')}
+                    </div>
+                    """
+                    folium.Marker(
+                        [coords[0], coords[1]],
+                        popup=folium.Popup(popup_html, max_width=300),
+                        tooltip=f"{row['site_name']} ({status})",
+                        icon=folium.Icon(color=color, icon=icon_type, prefix="glyphicon")
+                    ).add_to(m)
+                st_folium(m, height=600, key="map_main")
+            except Exception as e:
+                st.error(f"خطأ في الخريطة: {e}")
 
+    # ============ TAB 6: الحساسية ============
     with tabs[6]:
         st.markdown('<div class="section-header"><h3>📈 الحساسية</h3></div>', unsafe_allow_html=True)
         if "ci" in st.session_state:
             r = sensitivity_analysis(st.session_state["cv"], 0.10)
             st.success(f"الأكثر تأثيراً: **{r['most_sensitive']}**")
 
+    # ============ TAB 7: السمية ============
     with tabs[7]:
         st.markdown('<div class="section-header"><h3>☠️ السمية</h3></div>', unsafe_allow_html=True)
         if "ci" in st.session_state:
@@ -915,14 +977,31 @@ if mode == "🏠 النظام الأساسي (تعدين)":
                 c1.metric("المؤشر", tox["index"]); c2.metric("التصنيف", tox["category"])
                 c3.metric("الإجراء", tox["action"])
 
+    # ============ TAB 8: GIS (مع فلتر) ============
     with tabs[8]:
-        st.markdown('<div class="section-header"><h3>🌍 GIS</h3></div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-header"><h3>🌍 GIS — قاعدة البيانات الكاملة</h3></div>', unsafe_allow_html=True)
+        st.warning("⚠️ **تنبيه علمي**: بعض المواقع في هذه القائمة **مُقدَّرة** بناءً على خصائص جيولوجية عامة، وليست جميعها موثقة بأبحاث محكمة. المواقع المُعلَّمة بـ **verified = False** تُستخدم **للعرض البصري فقط**، ولا تُدخل في التحليل الإحصائي.")
+        
         if DS_OK:
-            df_all = get_all_sites_as_dataframe()
-            st.dataframe(df_all, width="stretch")
-            st.download_button("📥 CSV", data=df_all.to_csv(index=False).encode("utf-8-sig"),
-                file_name="sites.csv", mime="text/csv")
+            try:
+                df_all = get_all_sites_as_dataframe_with_flag()
+                filter_mode = st.radio("عرض:", ["الكل", "الموثقة فقط", "للعرض فقط"], 
+                                         horizontal=True, key="gis_filter")
+                if filter_mode == "الموثقة فقط":
+                    df_show = df_all[df_all["verified"] == True]
+                elif filter_mode == "للعرض فقط":
+                    df_show = df_all[df_all["verified"] == False]
+                else:
+                    df_show = df_all
+                
+                st.caption(f"📊 **{len(df_show)}** موقع")
+                st.dataframe(df_show, width="stretch")
+                st.download_button("📥 CSV", data=df_show.to_csv(index=False).encode("utf-8-sig"),
+                    file_name="sites_filtered.csv", mime="text/csv")
+            except Exception as e:
+                st.error(f"خطأ: {e}")
 
+    # ============ TAB 9: Monte Carlo ============
     with tabs[9]:
         st.markdown('<div class="section-header"><h3>🎲 Monte Carlo</h3></div>', unsafe_allow_html=True)
         if "ci" in st.session_state:
@@ -1129,7 +1208,24 @@ elif mode == "🌾 القطاع الزراعي" and ADV_OK:
 # ============================================================
 elif mode == "✅ التحقق الفعلي" and ADV_OK:
     st.markdown('<div class="section-header"><h3>✅ التحقق الفعلي</h3></div>', unsafe_allow_html=True)
-    st.info("💡 ارفع الملف من **الشريط الجانبي** أو **منطقة الرفع الرئيسية**")
+
+    # زر لتحميل المواقع الموثقة فقط
+    if DS_OK:
+        col1, col2 = st.columns([3, 1])
+        with col2:
+            if st.button("📥 تحميل المواقع الموثقة", type="primary"):
+                try:
+                    df_ver = get_verified_sites_as_dataframe()
+                    st.session_state["df_validation"] = df_ver
+                    st.success(f"✅ تم تحميل {len(df_ver)} موقع موثق")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"خطأ: {e}")
+        with col1:
+            st.info(f"💡 **{n_sites_verified}** موقع موثق جاهز للتحليل (من أصل {n_sites_total})")
+
+    st.markdown("---")
+    st.info("💡 أو ارفع ملفاً يدوياً من **الشريط الجانبي** أو **منطقة الرفع الرئيسية**")
 
     df_val = st.session_state.get("df_validation", None)
     if df_val is None:
@@ -1198,7 +1294,7 @@ elif mode == "✅ التحقق الفعلي" and ADV_OK:
 
 
 # ============================================================
-# MODE: نقل الملوثات (مع الدالة المُصححة)
+# MODE: نقل الملوثات
 # ============================================================
 elif mode == "🚀 نقل الملوثات" and ADV_OK:
     st.markdown('<div class="section-header"><h3>🚀 نمذجة نقل الملوثات (Ogata-Banks)</h3></div>', unsafe_allow_html=True)
