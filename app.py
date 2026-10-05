@@ -1,18 +1,11 @@
 """
-نظام التعدين السوداني v56.2
+نظام التعدين السوداني v56.3
 =====================================
 جامعة الخرطوم - كلية الهندسة
 
-الميزات:
-- منافذ رفع متعددة (Sidebar + Main)
-- DRASTIC + DRASTIC-T (صيغة جمعية)
-- عتبات قابلة للتعديل
-- نقل الملوثات (Ogata-Banks)
-- خريطة حرارية للمواقع الموثقة
-- التحقق المتقدم (LOOCV + ROC-AUC + Bootstrap)
-- تطوير النموذج (معايرة α و β + مقارنة النماذج)
-
-⚠️ PILOT VERSION
+الإصلاحات في v56.3:
+- إصلاح ValueError في df_cal, df_cmp, df_bulk
+- استخدام if بدلاً من or مع DataFrames
 """
 import streamlit as st
 import subprocess, os, sys, shutil, stat, zipfile, io
@@ -31,7 +24,7 @@ except ImportError:
     SKLEARN_OK = False
 
 st.set_page_config(
-    page_title="نظام التعدين السوداني v56.2",
+    page_title="نظام التعدين السوداني v56.3",
     page_icon="⛏️",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -142,7 +135,6 @@ try:
     DS_OK = True
 except ImportError as e:
     DS_OK = False
-    _ds_error = str(e)
 
 try:
     from modflow_engine import (is_modflow_available, build_and_run_model)
@@ -189,7 +181,7 @@ LEVEL_AR = {"منخفض": "🟢 منخفض", "متوسط": "🟡 متوسط", "�
 
 
 # ============================================================
-# DRASTIC Rating Functions (Aller et al., 1987)
+# DRASTIC Rating Functions
 # ============================================================
 def get_d_rating(d):
     if d < 0: raise ValueError("Neg")
@@ -262,7 +254,7 @@ def mitigate(idx, hdpe=False, treat=False, mon=False):
 
 
 # ============================================================
-# DRASTIC-T (Toxicity-Weighted)
+# DRASTIC-T
 # ============================================================
 def calc_drastic_t(base_drastic, cn_water, hg_water,
                     distance_m=100.0, seepage=1.0, bio_acc=1.0,
@@ -302,7 +294,7 @@ def calc_drastic_t(base_drastic, cn_water, hg_water,
 
 
 # ============================================================
-# نموذج نقل الملوثات (Ogata-Banks)
+# Ogata-Banks Transport
 # ============================================================
 def model_contaminant_transport_fixed(C0, K, porosity, gradient, distance, years,
                                         dispersivity=10.0):
@@ -525,7 +517,7 @@ th {{ background-color: #f5eedc; color: #5c2c16; }}
 <div class="disclaimer"><b>{recommendation}</b></div>
 <div class="footer">
 <p>⚠️ <b>PILOT VERSION</b> — أداة فرز أولي، لا تُغني عن الفحص المخبري</p>
-<p>نظام التعدين السوداني v56.2 — جامعة الخرطوم</p>
+<p>نظام التعدين السوداني v56.3 — جامعة الخرطوم</p>
 </div>
 </body></html>"""
 
@@ -730,7 +722,7 @@ with st.sidebar.expander("ℹ️ **حول الأداة**", expanded=False):
     st.markdown("""
 <div class="about-box">
 <h4>⛏️ نظام التعدين السوداني</h4>
-<p style="font-size:0.85em;">أداة تقييم مخاطر المياه الجوفية في مناطق التعدين الأهلي والزراعة.</p>
+<p style="font-size:0.85em;">أداة تقييم مخاطر المياه الجوفية.</p>
 <h4>📌 الميزات:</h4>
 <ul style="font-size:0.85em;">
 <li>DRASTIC + DRASTIC-T</li>
@@ -748,15 +740,8 @@ with st.sidebar.expander("ℹ️ **حول الأداة**", expanded=False):
 <li>n = 11 موقع موثق</li>
 <li>لا يُغني عن الفحص المخبري</li>
 </ul>
-<h4>📚 المراجع:</h4>
-<ul style="font-size:0.85em;">
-<li>Aller et al. (1987)</li>
-<li>Elmedani et al. (2025)</li>
-<li>Mohammed et al. (2023)</li>
-<li>WHO (2022)</li>
-</ul>
 <h4>🏛️ الجهة:</h4>
-<p style="font-size:0.85em;">جامعة الخرطوم — كلية الهندسة<br>الإصدار 56.2</p>
+<p style="font-size:0.85em;">جامعة الخرطوم — كلية الهندسة<br>الإصدار 56.3</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -770,7 +755,7 @@ st.markdown(f"""
 <div class="header-title">⛏️ نظام التعدين السوداني</div>
 <div class="header-subtitle">جامعة الخرطوم - كلية الهندسة</div>
 <div class="header-subtitle">DRASTIC + DRASTIC-T + MODFLOW 6</div>
-<div class="header-badge">الإصدار 56.2 | التعدين: {n_states} ولاية، {n_sites_total} موقع ({n_sites_verified} موثق) | الزراعة: {n_agri_states} ولاية، {n_agri_sites} موقع</div>
+<div class="header-badge">الإصدار 56.3 | التعدين: {n_states} ولاية، {n_sites_total} موقع ({n_sites_verified} موثق) | الزراعة: {n_agri_states} ولاية، {n_agri_sites} موقع</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -943,7 +928,11 @@ if mode == "🏠 النظام الأساسي":
         st.markdown('<div class="section-header"><h3>📊 التقييم الجماعي</h3></div>', unsafe_allow_html=True)
         st.info("💡 ارفع الملف من الشريط الجانبي أو الأعلى")
 
-        df_bulk = st.session_state.get("df_bulk") or st.session_state.get("df_validation")
+        # ✅ FIX: استخدام if بدلاً من or
+        df_bulk = st.session_state.get("df_bulk")
+        if df_bulk is None:
+            df_bulk = st.session_state.get("df_validation")
+
         if df_bulk is None:
             st.warning("⚠️ لم يتم رفع ملف")
         else:
@@ -1039,7 +1028,7 @@ if mode == "🏠 النظام الأساسي":
             with st.spinner("جاري البناء..."):
                 mapa, stats, df_sites = build_heatmap_verified(show_heat=show_heat, show_markers=show_markers)
 
-            st_folium(mapa, height=map_height, key="map_v562", use_container_width=True)
+            st_folium(mapa, height=map_height, key="map_v563", use_container_width=True)
 
             st.markdown("---")
             st.markdown("#### 📊 إحصائيات")
@@ -1252,8 +1241,10 @@ if mode == "🏠 النظام الأساسي":
             with sub_tabs[1]:
                 st.markdown("#### ⚙️ معايرة α و β (Grid Search)")
 
-                df_cal = (st.session_state.get("df_combined") or
-                          st.session_state.get("df_validation"))
+                # ✅ FIX: استخدام if بدلاً من or
+                df_cal = st.session_state.get("df_combined")
+                if df_cal is None:
+                    df_cal = st.session_state.get("df_validation")
 
                 if df_cal is None:
                     st.warning("⚠️ حمّل البيانات أولاً")
@@ -1331,8 +1322,10 @@ if mode == "🏠 النظام الأساسي":
                 st.markdown("#### 📊 مقارنة النماذج الأربعة")
                 st.info("DRASTIC vs DRASTIC-T vs DRASTIC-Lu vs AHP-DRASTIC")
 
-                df_cmp = (st.session_state.get("df_combined") or
-                          st.session_state.get("df_validation"))
+                # ✅ FIX: استخدام if بدلاً من or
+                df_cmp = st.session_state.get("df_combined")
+                if df_cmp is None:
+                    df_cmp = st.session_state.get("df_validation")
 
                 if df_cmp is None:
                     st.warning("⚠️ حمّل البيانات أولاً")
@@ -1599,7 +1592,7 @@ elif mode == "🌊 MODFLOW" and MODFLOW_OK:
 st.markdown("---")
 st.markdown("""
 <div style="text-align:center; color:#666; padding:10px;">
-<b>نظام التعدين السوداني v56.2</b> — PILOT VERSION<br>
+<b>نظام التعدين السوداني v56.3</b> — PILOT VERSION<br>
 <span style="font-size:0.85em;">⚠️ أداة فرز أولي — لا تُغني عن الفحص المخبري</span>
 </div>
 """, unsafe_allow_html=True)
