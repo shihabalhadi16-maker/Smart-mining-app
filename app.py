@@ -1,11 +1,18 @@
 """
-نظام التعدين السوداني v56.3
+نظام التعدين السوداني v57.0
 =====================================
 جامعة الخرطوم - كلية الهندسة
 
-الإصلاحات في v56.3:
-- إصلاح ValueError في df_cal, df_cmp, df_bulk
-- استخدام if بدلاً من or مع DataFrames
+الإصدار 57.0 يستعيد كل ميزات v54.0 ويضيف ميزات v56.3:
+- 12 تبويب في النظام الأساسي
+- 8 أوضاع في الشريط الجانبي
+- DRASTIC + DRASTIC-T
+- التحقق المتقدم (LOOCV + ROC-AUC)
+- تطوير النموذج (Gray Zone + Calibration)
+- نقل الملوثات (Ogata-Banks)
+- الأقمار الصناعية
+- التحقق المستقل
+- التقييم الديناميكي
 """
 import streamlit as st
 import subprocess, os, sys, shutil, stat, zipfile, io
@@ -24,7 +31,7 @@ except ImportError:
     SKLEARN_OK = False
 
 st.set_page_config(
-    page_title="نظام التعدين السوداني v56.3",
+    page_title="نظام التعدين السوداني v57.0",
     page_icon="⛏️",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -147,7 +154,8 @@ try:
         calculate_confusion_matrix, model_contaminant_transport,
         fetch_satellite_data,
         calculate_sar, calculate_na_percent, calculate_ec_quality,
-        calculate_agricultural_drastic, classify_irrigation_water)
+        calculate_agricultural_drastic, classify_irrigation_water,
+        independent_validation, calculate_dynamic_risk)
     ADV_OK = True
 except ImportError:
     ADV_OK = False
@@ -294,7 +302,90 @@ def calc_drastic_t(base_drastic, cn_water, hg_water,
 
 
 # ============================================================
-# Ogata-Banks Transport
+# تحليل الحساسية (مُستعاد)
+# ============================================================
+def sensitivity_analysis(pv, variation=0.10):
+    D = float(pv.get("depth", 15.0)); R = float(pv.get("recharge", 100.0))
+    A = str(pv.get("aquifer", "massive_sandstone")); S = str(pv.get("soil", "sand"))
+    T = float(pv.get("slope", 4.0)); I = str(pv.get("vadose", "sand_gravel"))
+    C = float(pv.get("conductivity", 5.0))
+
+    def ci(d, r, a, s, t, i, c):
+        return calc_index(get_d_rating(d), get_r_rating(r), get_a_rating(a),
+                          get_s_rating(s), get_t_rating(t), get_i_rating(i), get_c_rating(c))
+
+    base = ci(D, R, A, S, T, I, C)
+    res = {}
+    for name, val, lo, hi in [("D", D, 0.5, 100.0), ("R", R, 0.0, 400.0),
+                              ("T", T, 0.0, 30.0), ("C", C, 0.01, 100.0)]:
+        v = max(lo, min(hi, val * (1 + variation)))
+        if name == "D": ni = ci(v, R, A, S, T, I, C)
+        elif name == "R": ni = ci(D, v, A, S, T, I, C)
+        elif name == "T": ni = ci(D, R, A, S, v, I, C)
+        else: ni = ci(D, R, A, S, T, I, v)
+        res[name] = {"original": val, "modified": round(v, 2), "new_index": ni,
+                     "change": ni - base,
+                     "sensitivity": round(abs(ni - base) / base * 100, 3)}
+    for name, br, w in [("A", get_a_rating(A), 3), ("S", get_s_rating(S), 2),
+                        ("I", get_i_rating(I), 5)]:
+        nr = max(1, min(10, br + 1))
+        ni = base - br * w + nr * w
+        res[name] = {"original": "rating", "modified": "rating+1", "new_index": ni,
+                     "change": ni - base,
+                     "sensitivity": round(abs(ni - base) / base * 100, 3)}
+    sr = dict(sorted(res.items(), key=lambda x: x[1]["sensitivity"], reverse=True))
+    return {"base_index": base, "parameters": sr,
+            "most_sensitive": list(sr.keys())[0] if sr else None}
+
+
+# ============================================================
+# Monte Carlo
+# ============================================================
+def monte_carlo_analysis(pv, n_iter=1000, variation=0.15):
+    np.random.seed(42)
+    D = float(pv.get("depth", 15.0)); R = float(pv.get("recharge", 100.0))
+    A_b = get_a_rating(str(pv.get("aquifer", "massive_sandstone")))
+    S_b = get_s_rating(str(pv.get("soil", "sand")))
+    T = float(pv.get("slope", 4.0)); I_b = get_i_rating(str(pv.get("vadose", "sand_gravel")))
+    C = float(pv.get("conductivity", 5.0))
+
+    D_s = np.clip(np.random.normal(D, max(0.5, D * variation), n_iter), 0.5, 100.0)
+    R_s = np.clip(np.random.lognormal(np.log(max(1, R)) - 0.5 * variation**2, variation, n_iter), 0.0, 400.0) if R > 0 else np.zeros(n_iter)
+    A_s = np.random.choice([max(1, A_b-1), A_b, min(10, A_b+1)], n_iter, p=[0.15, 0.70, 0.15])
+    S_s = np.random.choice([max(1, S_b-1), S_b, min(10, S_b+1)], n_iter, p=[0.15, 0.70, 0.15])
+    T_s = np.clip(np.random.normal(T, max(0.5, T * variation), n_iter), 0.0, 30.0)
+    I_s = np.random.choice([max(1, I_b-1), I_b, min(10, I_b+1)], n_iter, p=[0.15, 0.70, 0.15])
+    C_s = np.clip(np.random.lognormal(np.log(max(0.01, C)) - 0.5 * variation**2, variation, n_iter), 0.01, 100.0)
+
+    D_r = np.select([D_s <= 1.5, D_s <= 4.6, D_s <= 9.1, D_s <= 15.2, D_s <= 22.9, D_s <= 30.5], [10, 9, 7, 5, 3, 2], default=1)
+    R_r = np.select([R_s <= 50.8, R_s <= 101.6, R_s <= 177.8, R_s <= 254.0], [1, 3, 6, 8], default=9)
+    T_r = np.select([T_s <= 2.0, T_s <= 6.0, T_s <= 12.0, T_s <= 18.0], [10, 9, 5, 3], default=1)
+    C_r = np.select([C_s <= 4.074, C_s <= 12.222, C_s <= 28.518, C_s <= 40.740, C_s <= 81.480], [1, 2, 4, 6, 8], default=10)
+
+    drastic = D_r*5 + R_r*4 + A_s*3 + S_s*2 + T_r*1 + I_s*5 + C_r*3
+    results = np.sort(drastic.astype(int))
+    def pct(p): return int(np.percentile(results, p))
+
+    return {"mean": round(float(np.mean(results)), 1), "std": round(float(np.std(results)), 2),
+            "min": int(results[0]), "max": int(results[-1]),
+            "ci_90": (pct(5), pct(95)),
+            "prob_over_140": round(float(np.mean(results >= 140) * 100), 1)}
+
+
+# ============================================================
+# السمية المُرجّحة (مُستعاد)
+# ============================================================
+def weighted_toxicity(hgw, hgs, cnw, cns):
+    w = (hgw/0.006*0.40) + (hgs/1.0*0.20) + (cnw/0.07*0.30) + (cns/10.0*0.10)
+    if w <= 1.0: cat, act = "آمن", "لا يتطلب تدخل"
+    elif w <= 3.0: cat, act = "تحت المراقبة", "مراقبة دورية"
+    elif w <= 10.0: cat, act = "خطر", "تدخل عاجل"
+    else: cat, act = "خطر داهم", "إيقاف النشاط"
+    return {"index": round(w, 2), "category": cat, "action": act}
+
+
+# ============================================================
+# نموذج نقل الملوثات (Ogata-Banks)
 # ============================================================
 def model_contaminant_transport_fixed(C0, K, porosity, gradient, distance, years,
                                         dispersivity=10.0):
@@ -342,49 +433,6 @@ def model_contaminant_transport_fixed(C0, K, porosity, gradient, distance, years
 
     return {"results": df, "v_seepage": round(v, 6), "D_dispersion": round(D, 4),
             "t_travel_years": round(distance / v / 365.25, 3)}
-
-
-# ============================================================
-# Monte Carlo
-# ============================================================
-def monte_carlo_analysis(pv, n_iter=1000, variation=0.15):
-    np.random.seed(42)
-    D = float(pv.get("depth", 15.0)); R = float(pv.get("recharge", 100.0))
-    A_b = get_a_rating(str(pv.get("aquifer", "massive_sandstone")))
-    S_b = get_s_rating(str(pv.get("soil", "sand")))
-    T = float(pv.get("slope", 4.0)); I_b = get_i_rating(str(pv.get("vadose", "sand_gravel")))
-    C = float(pv.get("conductivity", 5.0))
-
-    D_s = np.clip(np.random.normal(D, max(0.5, D * variation), n_iter), 0.5, 100.0)
-    R_s = np.clip(np.random.lognormal(np.log(max(1, R)) - 0.5 * variation**2, variation, n_iter), 0.0, 400.0) if R > 0 else np.zeros(n_iter)
-    A_s = np.random.choice([max(1, A_b-1), A_b, min(10, A_b+1)], n_iter, p=[0.15, 0.70, 0.15])
-    S_s = np.random.choice([max(1, S_b-1), S_b, min(10, S_b+1)], n_iter, p=[0.15, 0.70, 0.15])
-    T_s = np.clip(np.random.normal(T, max(0.5, T * variation), n_iter), 0.0, 30.0)
-    I_s = np.random.choice([max(1, I_b-1), I_b, min(10, I_b+1)], n_iter, p=[0.15, 0.70, 0.15])
-    C_s = np.clip(np.random.lognormal(np.log(max(0.01, C)) - 0.5 * variation**2, variation, n_iter), 0.01, 100.0)
-
-    D_r = np.select([D_s <= 1.5, D_s <= 4.6, D_s <= 9.1, D_s <= 15.2, D_s <= 22.9, D_s <= 30.5], [10, 9, 7, 5, 3, 2], default=1)
-    R_r = np.select([R_s <= 50.8, R_s <= 101.6, R_s <= 177.8, R_s <= 254.0], [1, 3, 6, 8], default=9)
-    T_r = np.select([T_s <= 2.0, T_s <= 6.0, T_s <= 12.0, T_s <= 18.0], [10, 9, 5, 3], default=1)
-    C_r = np.select([C_s <= 4.074, C_s <= 12.222, C_s <= 28.518, C_s <= 40.740, C_s <= 81.480], [1, 2, 4, 6, 8], default=10)
-
-    drastic = D_r*5 + R_r*4 + A_s*3 + S_s*2 + T_r*1 + I_s*5 + C_r*3
-    results = np.sort(drastic.astype(int))
-    def pct(p): return int(np.percentile(results, p))
-
-    return {"mean": round(float(np.mean(results)), 1), "std": round(float(np.std(results)), 2),
-            "min": int(results[0]), "max": int(results[-1]),
-            "ci_90": (pct(5), pct(95)),
-            "prob_over_140": round(float(np.mean(results >= 140) * 100), 1)}
-
-
-def weighted_toxicity(hgw, hgs, cnw, cns):
-    w = (hgw/0.006*0.40) + (hgs/1.0*0.20) + (cnw/0.07*0.30) + (cns/10.0*0.10)
-    if w <= 1.0: cat, act = "آمن", "لا يتطلب تدخل"
-    elif w <= 3.0: cat, act = "تحت المراقبة", "مراقبة دورية"
-    elif w <= 10.0: cat, act = "خطر", "تدخل عاجل"
-    else: cat, act = "خطر داهم", "إيقاف النشاط"
-    return {"index": round(w, 2), "category": cat, "action": act}
 
 
 # ============================================================
@@ -517,7 +565,7 @@ th {{ background-color: #f5eedc; color: #5c2c16; }}
 <div class="disclaimer"><b>{recommendation}</b></div>
 <div class="footer">
 <p>⚠️ <b>PILOT VERSION</b> — أداة فرز أولي، لا تُغني عن الفحص المخبري</p>
-<p>نظام التعدين السوداني v56.3 — جامعة الخرطوم</p>
+<p>نظام التعدين السوداني v57.0 — جامعة الخرطوم</p>
 </div>
 </body></html>"""
 
@@ -704,6 +752,8 @@ st.sidebar.markdown("## 🎛️ وضع التشغيل")
 mode_options = ["🏠 النظام الأساسي"]
 if ADV_OK:
     mode_options += ["🌾 القطاع الزراعي", "✅ التحقق الفعلي", "🚀 نقل الملوثات"]
+    mode_options += ["🔬 التحقق المستقل", "🛰️ الأقمار الصناعية"]
+    mode_options += ["⏳ الديناميكي"]
 if MODFLOW_OK:
     mode_options.append("🌊 MODFLOW")
 
@@ -721,7 +771,7 @@ st.sidebar.markdown("---")
 with st.sidebar.expander("ℹ️ **حول الأداة**", expanded=False):
     st.markdown("""
 <div class="about-box">
-<h4>⛏️ نظام التعدين السوداني</h4>
+<h4>⛏️ نظام التعدين السوداني v57.0</h4>
 <p style="font-size:0.85em;">أداة تقييم مخاطر المياه الجوفية.</p>
 <h4>📌 الميزات:</h4>
 <ul style="font-size:0.85em;">
@@ -733,6 +783,10 @@ with st.sidebar.expander("ℹ️ **حول الأداة**", expanded=False):
 <li>LOOCV + ROC-AUC</li>
 <li>معايرة α و β</li>
 <li>مقارنة النماذج</li>
+<li>تحليل الحساسية</li>
+<li>تحليل السمية</li>
+<li>الأقمار الصناعية</li>
+<li>التحقق المستقل</li>
 </ul>
 <h4>⚠️ قيود:</h4>
 <ul style="font-size:0.85em;">
@@ -741,7 +795,7 @@ with st.sidebar.expander("ℹ️ **حول الأداة**", expanded=False):
 <li>لا يُغني عن الفحص المخبري</li>
 </ul>
 <h4>🏛️ الجهة:</h4>
-<p style="font-size:0.85em;">جامعة الخرطوم — كلية الهندسة<br>الإصدار 56.3</p>
+<p style="font-size:0.85em;">جامعة الخرطوم — كلية الهندسة<br>الإصدار 57.0</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -755,7 +809,7 @@ st.markdown(f"""
 <div class="header-title">⛏️ نظام التعدين السوداني</div>
 <div class="header-subtitle">جامعة الخرطوم - كلية الهندسة</div>
 <div class="header-subtitle">DRASTIC + DRASTIC-T + MODFLOW 6</div>
-<div class="header-badge">الإصدار 56.3 | التعدين: {n_states} ولاية، {n_sites_total} موقع ({n_sites_verified} موثق) | الزراعة: {n_agri_states} ولاية، {n_agri_sites} موقع</div>
+<div class="header-badge">الإصدار 57.0 | التعدين: {n_states} ولاية، {n_sites_total} موقع ({n_sites_verified} موثق) | الزراعة: {n_agri_states} ولاية، {n_agri_sites} موقع</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -807,9 +861,12 @@ st.markdown("---")
 # MODE 1: النظام الأساسي
 # ============================================================
 if mode == "🏠 النظام الأساسي":
-    tabs = st.tabs(["📍 المدخلات", "➕ إدخال يدوي", "📊 التقييم الجماعي",
-                    "🛡️ الحلول", "🗺️ الخريطة الحرارية", "🎲 Monte Carlo",
-                    "🔬 التحقق المتقدم", "🚀 تطوير النموذج"])
+    tabs = st.tabs([
+        "📍 المدخلات", "➕ إدخال يدوي", "📊 التقييم الجماعي",
+        "🛡️ الحلول", "📄 التقرير", "🗺️ الخريطة الحرارية",
+        "📈 الحساسية", "☠️ السمية", "🌍 GIS",
+        "🎲 Monte Carlo", "🔬 التحقق المتقدم", "🚀 تطوير النموذج"
+    ])
 
     # ============ TAB 0: المدخلات ============
     with tabs[0]:
@@ -859,7 +916,8 @@ if mode == "🏠 النظام الأساسي":
                 st.session_state["ci"] = idx
                 st.session_state["cv"] = {"depth": site_data['depth_m'], "recharge": site_data['recharge_mm'],
                     "aquifer": site_data['aquifer'], "soil": site_data['soil'], "slope": site_data['slope_pct'],
-                    "vadose": site_data['vadose'], "conductivity": site_data['conductivity']}
+                    "vadose": site_data['vadose'], "conductivity": site_data['conductivity'],
+                    "cn_water_mg_l": site_data['cn_water_mg_l'], "hg_water_mg_l": site_data['hg_water_mg_l']}
 
                 z1, z2, z3 = st.columns(3)
                 z1.metric("DRASTIC", f"{idx}/230")
@@ -928,7 +986,6 @@ if mode == "🏠 النظام الأساسي":
         st.markdown('<div class="section-header"><h3>📊 التقييم الجماعي</h3></div>', unsafe_allow_html=True)
         st.info("💡 ارفع الملف من الشريط الجانبي أو الأعلى")
 
-        # ✅ FIX: استخدام if بدلاً من or
         df_bulk = st.session_state.get("df_bulk")
         if df_bulk is None:
             df_bulk = st.session_state.get("df_validation")
@@ -1008,8 +1065,47 @@ if mode == "🏠 النظام الأساسي":
                 c1.metric("قبل", ci); c2.metric("بعد", r["mitigated_index"])
                 c3.metric("التخفيض", f"{r['reduction_pct']}%")
 
-    # ============ TAB 4: الخريطة الحرارية ============
+    # ============ TAB 4: التقرير (مُستعاد) ============
     with tabs[4]:
+        st.markdown('<div class="section-header"><h3>📄 التقرير</h3></div>', unsafe_allow_html=True)
+        if "ci" not in st.session_state:
+            st.warning("⚠️ اختر موقعاً أولاً من تبويب المدخلات")
+        else:
+            cv = st.session_state.get("cv", {})
+            st.info(f"**الموقع المختار:** مؤشر DRASTIC = {st.session_state['ci']}")
+
+            c1, c2, c3 = st.columns(3)
+            c1.metric("DRASTIC", st.session_state["ci"])
+            c2.metric("CN", f"{cv.get('cn_water_mg_l', 'N/A')} mg/L")
+            c3.metric("Hg", f"{cv.get('hg_water_mg_l', 'N/A')} mg/L")
+
+            st.markdown("---")
+            st.markdown("#### 📋 ملخص كامل")
+            idx = st.session_state["ci"]
+            cn = cv.get('cn_water_mg_l', 0)
+            hg = cv.get('hg_water_mg_l', 0)
+            dt_res = calc_drastic_t(idx, cn, hg)
+
+            summary_df = pd.DataFrame({
+                "المؤشر": ["DRASTIC الأساسي", "CN_score", "Hg_score", "Bonus", "DRASTIC-T", "المستوى"],
+                "القيمة": [
+                    idx,
+                    dt_res["cn_score"],
+                    dt_res["hg_score"],
+                    dt_res["toxicity_bonus"],
+                    dt_res["drastic_t"],
+                    LEVEL_AR.get(dt_res["level"], dt_res["level"])
+                ]
+            })
+            st.dataframe(summary_df, width="stretch", hide_index=True)
+
+            st.markdown("---")
+            st.markdown("#### 💡 التوصية")
+            risk = classify(idx)
+            st.info(f"**{risk['action']}**")
+
+    # ============ TAB 5: الخريطة الحرارية ============
+    with tabs[5]:
         st.markdown('<div class="section-header"><h3>🗺️ الخريطة الحرارية</h3></div>', unsafe_allow_html=True)
         st.info(f"✅ **تعرض المواقع الموثقة فقط ({n_sites_verified} موقعاً)** من أصل {n_sites_total}")
 
@@ -1028,7 +1124,7 @@ if mode == "🏠 النظام الأساسي":
             with st.spinner("جاري البناء..."):
                 mapa, stats, df_sites = build_heatmap_verified(show_heat=show_heat, show_markers=show_markers)
 
-            st_folium(mapa, height=map_height, key="map_v563", use_container_width=True)
+            st_folium(mapa, height=map_height, key="map_v57", use_container_width=True)
 
             st.markdown("---")
             st.markdown("#### 📊 إحصائيات")
@@ -1045,8 +1141,112 @@ if mode == "🏠 النظام الأساسي":
                 data=df_sites.to_csv(index=False).encode("utf-8-sig"),
                 file_name="verified_sites.csv", mime="text/csv", use_container_width=True)
 
-    # ============ TAB 5: Monte Carlo ============
-    with tabs[5]:
+    # ============ TAB 6: الحساسية (مُستعاد) ============
+    with tabs[6]:
+        st.markdown('<div class="section-header"><h3>📈 تحليل الحساسية</h3></div>', unsafe_allow_html=True)
+        st.info("💡 يحلل تأثير تغيير كل معيار على المؤشر النهائي")
+
+        if "cv" not in st.session_state:
+            st.warning("⚠️ اختر موقعاً أولاً من تبويب المدخلات")
+        else:
+            var_pct = st.slider("نسبة التغيير (%):", 5, 30, 10, 5, key="sens_var")
+
+            if st.button("🚀 تشغيل التحليل", type="primary", key="run_sens"):
+                with st.spinner("جاري الحساب..."):
+                    sens = sensitivity_analysis(st.session_state["cv"], var_pct / 100.0)
+                    st.session_state["sens_result"] = sens
+
+            if "sens_result" in st.session_state:
+                sens = st.session_state["sens_result"]
+
+                st.markdown("---")
+                st.success(f"🏆 الأكثر تأثيراً: **{sens['most_sensitive']}**")
+
+                st.markdown("#### 📊 جدول الحساسية")
+                rows = []
+                for param, data in sens["parameters"].items():
+                    rows.append({
+                        "المعيار": param,
+                        "القيمة الأصلية": data["original"],
+                        "القيمة المعدّلة": data["modified"],
+                        "المؤشر الجديد": data["new_index"],
+                        "التغير": data["change"],
+                        "الحساسية (%)": data["sensitivity"]
+                    })
+                df_sens = pd.DataFrame(rows)
+                st.dataframe(df_sens, width="stretch", hide_index=True)
+
+                try:
+                    import plotly.express as px
+                    fig = px.bar(df_sens, x="المعيار", y="الحساسية (%)",
+                                 color="الحساسية (%)", color_continuous_scale="RdYlGn_r",
+                                 title="حساسية المعايير")
+                    st.plotly_chart(fig, use_container_width=True)
+                except Exception:
+                    pass
+
+    # ============ TAB 7: السمية (مُستعاد) ============
+    with tabs[7]:
+        st.markdown('<div class="section-header"><h3>☠️ تحليل السمية</h3></div>', unsafe_allow_html=True)
+        st.info("💡 تحليل السمية المُرجّحة للملوثات")
+
+        if "cv" not in st.session_state:
+            st.warning("⚠️ اختر موقعاً أولاً")
+        else:
+            cv = st.session_state["cv"]
+            hgw = cv.get("hg_water_mg_l", 0.011)
+            cnw = cv.get("cn_water_mg_l", 0.025)
+
+            c1, c2 = st.columns(2)
+            c1.metric("CN", f"{cnw} mg/L")
+            c2.metric("Hg", f"{hgw} mg/L")
+
+            st.markdown("#### ⚙️ المدخلات الإضافية")
+            c1, c2 = st.columns(2)
+            with c1: hgs = st.number_input("Hg في التربة (mg/kg):", 0.0, 100.0, 0.5, 0.1)
+            with c2: cns = st.number_input("CN في التربة (mg/kg):", 0.0, 100.0, 5.0, 0.5)
+
+            if st.button("تحليل السمية", type="primary", key="run_tox"):
+                tox = weighted_toxicity(hgw, hgs, cnw, cns)
+                st.session_state["tox_result"] = tox
+
+            if "tox_result" in st.session_state:
+                tox = st.session_state["tox_result"]
+                st.markdown("---")
+                c1, c2, c3 = st.columns(3)
+                c1.metric("المؤشر", tox["index"])
+                c2.metric("التصنيف", tox["category"])
+                c3.metric("الإجراء", tox["action"])
+
+    # ============ TAB 8: GIS (مُستعاد) ============
+    with tabs[8]:
+        st.markdown('<div class="section-header"><h3>🌍 GIS — قاعدة البيانات</h3></div>', unsafe_allow_html=True)
+        st.warning("⚠️ **تنبيه**: بعض المواقع **مُقدَّرة** ولا تُستخدم في التحليل الإحصائي.")
+
+        if not DS_OK:
+            st.error("❌ `data_sources.py` غير متوفر")
+        else:
+            filter_mode = st.radio("عرض:", ["الكل", "الموثقة فقط", "للعرض فقط"],
+                                     horizontal=True, key="gis_filter")
+            try:
+                df_all = get_all_sites_as_dataframe_with_flag()
+                if filter_mode == "الموثقة فقط":
+                    df_show = df_all[df_all["verified"] == True]
+                elif filter_mode == "للعرض فقط":
+                    df_show = df_all[df_all["verified"] == False]
+                else:
+                    df_show = df_all
+
+                st.caption(f"📊 **{len(df_show)}** موقع")
+                st.dataframe(df_show, width="stretch")
+                st.download_button("📥 CSV",
+                    data=df_show.to_csv(index=False).encode("utf-8-sig"),
+                    file_name="sites_filtered.csv", mime="text/csv")
+            except Exception as e:
+                st.error(f"خطأ: {e}")
+
+    # ============ TAB 9: Monte Carlo ============
+    with tabs[9]:
         st.markdown('<div class="section-header"><h3>🎲 Monte Carlo</h3></div>', unsafe_allow_html=True)
         if "ci" in st.session_state:
             n_iter = st.slider("المحاكاات:", 100, 5000, 1000, 100)
@@ -1058,8 +1258,8 @@ if mode == "🏠 النظام الأساسي":
                 c3.metric("CI 90%", f"{mc['ci_90'][0]}-{mc['ci_90'][1]}")
                 c4.metric("P>140", f"{mc['prob_over_140']}%")
 
-    # ============ TAB 6: التحقق المتقدم ============
-    with tabs[6]:
+    # ============ TAB 10: التحقق المتقدم ============
+    with tabs[10]:
         st.markdown('<div class="section-header"><h3>🔬 التحقق المتقدم</h3></div>', unsafe_allow_html=True)
         st.info("💡 يضيف LOOCV + ROC-AUC + Bootstrap CI")
 
@@ -1162,12 +1362,11 @@ if mode == "🏠 النظام الأساسي":
                             st.markdown("### 📖 تفسير النتائج (Landis & Koch, 1977)")
                             interp_df = pd.DataFrame({
                                 "Kappa": ["0.00 - 0.20", "0.21 - 0.40", "0.41 - 0.60", "0.61 - 0.80", "0.81 - 1.00"],
-                                "التفسير": ["ضعيف (Slight)", "مقبول (Fair)", "متوسط (Moderate)",
-                                            "جيد (Substantial)", "ممتاز (Almost Perfect)"]})
+                                "التفسير": ["ضعيف", "مقبول", "متوسط", "جيد", "ممتاز"]})
                             st.dataframe(interp_df, width="stretch", hide_index=True)
 
-    # ============ TAB 7: تطوير النموذج ============
-    with tabs[7]:
+    # ============ TAB 11: تطوير النموذج ============
+    with tabs[11]:
         st.markdown('<div class="section-header"><h3>🚀 تطوير النموذج</h3></div>', unsafe_allow_html=True)
         st.info("💡 المواقع الرمادية + معايرة α و β + مقارنة النماذج")
 
@@ -1178,7 +1377,6 @@ if mode == "🏠 النظام الأساسي":
         else:
             sub_tabs = st.tabs(["📍 المواقع الرمادية", "⚙️ معايرة α و β", "📊 مقارنة النماذج"])
 
-            # ---------- SUB-TAB 0 ----------
             with sub_tabs[0]:
                 st.markdown("#### 📍 المواقع الرمادية (Gray Zone)")
                 st.warning("⚠️ **تنبيه**: هذه المواقع **افتراضية** لاختبار المنهجية فقط.")
@@ -1196,7 +1394,7 @@ if mode == "🏠 النظام الأساسي":
                 st.markdown("---")
                 st.markdown("#### 🔄 دمج البيانات")
 
-                merge_option = st.radio("اختر مجموعة البيانات:",
+                merge_option = st.radio("اختر:",
                     ["الموثقة فقط (11 موقعاً)", "الموثقة + الرمادية (17 موقعاً)"], key="merge_choice")
                 include_gray = "17" in merge_option
 
@@ -1233,15 +1431,10 @@ if mode == "🏠 النظام الأساسي":
                     c2.metric("موثقة", int(df_saved["verified"].sum()))
                     c3.metric("رمادية", int(df_saved["is_gray_zone"].sum()))
                     c4.metric("ملوثة", int(df_saved["actual_contaminated"].sum()))
-                    st.download_button("📥 تحميل البيانات",
-                        data=df_saved.to_csv(index=False).encode("utf-8-sig"),
-                        file_name="combined_dataset.csv", mime="text/csv")
 
-            # ---------- SUB-TAB 1 ----------
             with sub_tabs[1]:
-                st.markdown("#### ⚙️ معايرة α و β (Grid Search)")
+                st.markdown("#### ⚙️ معايرة α و β")
 
-                # ✅ FIX: استخدام if بدلاً من or
                 df_cal = st.session_state.get("df_combined")
                 if df_cal is None:
                     df_cal = st.session_state.get("df_validation")
@@ -1268,8 +1461,6 @@ if mode == "🏠 النظام الأساسي":
                         st.session_state["df_combined"] = df_cal
 
                     st.write(f"**عدد المواقع:** {len(df_cal)}")
-                    st.write(f"**القيم الحالية:** α = 0.5، β = 0.5")
-
                     c1, c2 = st.columns(2)
                     with c1:
                         a_min = st.slider("α الأدنى:", 0.0, 1.0, 0.1, 0.1, key="cal_a_min")
@@ -1310,19 +1501,12 @@ if mode == "🏠 النظام الأساسي":
                                 fig = px.imshow(pivot, color_continuous_scale="RdYlGn",
                                                 labels=dict(x="β", y="α", color="Kappa"), title="Kappa لـ (α, β)")
                                 st.plotly_chart(fig, use_container_width=True)
-                            except Exception as e:
-                                st.warning(f"تعذر الرسم: {e}")
+                            except Exception:
+                                pass
 
-                            st.download_button("📥 تحميل النتائج",
-                                data=res["results"].to_csv(index=False).encode("utf-8-sig"),
-                                file_name="calibration_results.csv", mime="text/csv")
-
-            # ---------- SUB-TAB 2 ----------
             with sub_tabs[2]:
-                st.markdown("#### 📊 مقارنة النماذج الأربعة")
-                st.info("DRASTIC vs DRASTIC-T vs DRASTIC-Lu vs AHP-DRASTIC")
+                st.markdown("#### 📊 مقارنة النماذج")
 
-                # ✅ FIX: استخدام if بدلاً من or
                 df_cmp = st.session_state.get("df_combined")
                 if df_cmp is None:
                     df_cmp = st.session_state.get("df_validation")
@@ -1351,29 +1535,10 @@ if mode == "🏠 النظام الأساسي":
                         summary_df = pd.DataFrame(summary_rows)
                         st.dataframe(summary_df, width="stretch", hide_index=True)
 
-                        try:
-                            import plotly.graph_objects as go
-                            fig = go.Figure(data=[
-                                go.Bar(name='Kappa', x=summary_df["النموذج"], y=summary_df["Kappa"], marker_color='#5c2c16'),
-                                go.Bar(name='ROC-AUC', x=summary_df["النموذج"], y=summary_df["ROC-AUC"], marker_color='#c19a6b'),
-                            ])
-                            fig.update_layout(barmode='group', height=400, title="مقارنة النماذج")
-                            st.plotly_chart(fig, use_container_width=True)
-                        except Exception:
-                            pass
-
                         valid_models = [(k, v) for k, v in r.items() if "error" not in v]
                         if valid_models:
                             best = max(valid_models, key=lambda x: x[1]["kappa"])
                             st.success(f"🏆 أفضل نموذج: **{best[0]}** — Kappa = {best[1]['kappa']}")
-
-                        with st.expander("📐 أوزان AHP"):
-                            if "AHP-DRASTIC" in r and "weights" in r["AHP-DRASTIC"]:
-                                ahp = r["AHP-DRASTIC"]["weights"]
-                                ahp_df = pd.DataFrame({"المعيار": ["D", "R", "A", "S", "T", "I", "C"],
-                                    "AHP": [ahp["D"], ahp["R"], ahp["A"], ahp["S"], ahp["T"], ahp["I"], ahp["C"]],
-                                    "DRASTIC": [5, 4, 3, 2, 1, 5, 3]})
-                                st.dataframe(ahp_df, width="stretch", hide_index=True)
 
 
 # ============================================================
@@ -1544,7 +1709,121 @@ elif mode == "🚀 نقل الملوثات" and ADV_OK:
 
 
 # ============================================================
-# MODE 5: MODFLOW
+# MODE 5: التحقق المستقل (مُستعاد)
+# ============================================================
+elif mode == "🔬 التحقق المستقل" and ADV_OK:
+    st.markdown('<div class="section-header"><h3>🔬 التحقق المستقل (70/30)</h3></div>', unsafe_allow_html=True)
+    st.info("💡 يقسم البيانات إلى 70% تدريب و30% اختبار")
+
+    df_val = st.session_state.get("df_validation")
+    if df_val is None:
+        st.warning("⚠️ ارفع ملف التحقق أولاً")
+    else:
+        try:
+            required = ["depth_m", "recharge_mm", "slope_pct", "conductivity",
+                        "aquifer", "soil", "vadose", "actual_contaminated"]
+            missing = [c for c in required if c not in df_val.columns]
+
+            if missing:
+                st.error(f"❌ أعمدة مفقودة: {missing}")
+            else:
+                if st.button("🚀 تشغيل التحقق المستقل", type="primary"):
+                    with st.spinner("جاري التحقق..."):
+                        try:
+                            result = independent_validation(
+                                df_val.copy(), "DRASTIC", "actual_contaminated", test_size=0.3)
+                            st.session_state["ind_val_result"] = result
+                        except Exception as e:
+                            st.error(f"❌ {e}")
+
+                if "ind_val_result" in st.session_state:
+                    r = st.session_state["ind_val_result"]
+                    if "error" in r:
+                        st.error(r["error"])
+                    else:
+                        c1, c2, c3, c4 = st.columns(4)
+                        c1.metric("α الأمثل", r.get("best_alpha", "N/A"))
+                        c2.metric("β الأمثل", r.get("best_beta", "N/A"))
+                        c3.metric("Kappa (تدريب)", r.get("train_kappa", "N/A"))
+                        c4.metric("Kappa (اختبار)", r.get("test_kappa", "N/A"))
+        except Exception as e:
+            st.error(f"❌ {e}")
+
+
+# ============================================================
+# MODE 6: الأقمار الصناعية (مُستعاد)
+# ============================================================
+elif mode == "🛰️ الأقمار الصناعية" and ADV_OK:
+    st.markdown('<div class="section-header"><h3>🛰️ بيانات الأقمار الصناعية (ERA5)</h3></div>', unsafe_allow_html=True)
+    st.info("💡 يجلب بيانات الأمطار والحرارة و NDVI من Open-Meteo")
+
+    c1, c2 = st.columns(2)
+    with c1:
+        lat = st.number_input("خط العرض:", -90.0, 90.0, 13.55, 0.01,
+                               format="%.4f", key="sat_lat")
+    with c2:
+        lon = st.number_input("خط الطول:", -180.0, 180.0, 33.60, 0.01,
+                               format="%.4f", key="sat_lon")
+
+    years = st.slider("عدد السنوات:", 1, 10, 3, 1)
+
+    if st.button("🛰️ جلب البيانات", type="primary"):
+        with st.spinner("جاري الجلب..."):
+            try:
+                sat = fetch_satellite_data(lat, lon, years)
+                st.session_state["sat_result"] = sat
+            except Exception as e:
+                st.error(f"❌ {e}")
+
+    if "sat_result" in st.session_state:
+        s = st.session_state["sat_result"]
+        if s.get("rainfall_mm") is not None:
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("الأمطار", f"{s['rainfall_mm']} مم")
+            c2.metric("الحرارة", f"{s['temperature_c']} °C")
+            c3.metric("المناخ", s["aridity"])
+            c4.metric("NDVI", s["ndvi_estimated"])
+            st.caption(f"المصدر: {s['source']}")
+        else:
+            st.error(f"⚠️ فشل: {s.get('source', '')}")
+
+
+# ============================================================
+# MODE 7: الديناميكي (مُستعاد)
+# ============================================================
+elif mode == "⏳ الديناميكي" and ADV_OK:
+    st.markdown('<div class="section-header"><h3>⏳ التقييم الديناميكي</h3></div>', unsafe_allow_html=True)
+
+    if "ci" not in st.session_state:
+        st.warning("⚠️ افتح النظام الأساسي أولاً")
+    else:
+        c1, c2 = st.columns(2)
+        with c1:
+            years = st.slider("السنوات:", 1, 50, 10, 1)
+            mining = st.slider("توسع التعدين:", 0.0, 0.20, 0.05, 0.01)
+        with c2:
+            climate = st.slider("المناخ:", -0.10, 0.05, -0.02, 0.005)
+            pop = st.slider("السكان:", 0.0, 0.10, 0.03, 0.01)
+        cri0 = st.slider("CRI الآن:", 0.0, 10.0, 1.0, 0.1)
+        mri0 = st.slider("MRI الآن:", 0.0, 10.0, 0.5, 0.1)
+
+        if st.button("⏳ تشغيل", type="primary"):
+            try:
+                res = calculate_dynamic_risk(st.session_state["ci"], years, mining,
+                                              climate, pop, cri0, mri0)
+                st.session_state["dyn"] = res
+            except Exception as e:
+                st.error(f"خطأ: {e}")
+
+        if "dyn" in st.session_state:
+            res = st.session_state["dyn"]
+            if isinstance(res, dict) and "combined" in res:
+                df = res["combined"]
+                st.dataframe(df, width="stretch")
+
+
+# ============================================================
+# MODE 8: MODFLOW
 # ============================================================
 elif mode == "🌊 MODFLOW" and MODFLOW_OK:
     st.markdown('<div class="section-header"><h3>🌊 MODFLOW 6</h3></div>', unsafe_allow_html=True)
@@ -1592,7 +1871,7 @@ elif mode == "🌊 MODFLOW" and MODFLOW_OK:
 st.markdown("---")
 st.markdown("""
 <div style="text-align:center; color:#666; padding:10px;">
-<b>نظام التعدين السوداني v56.3</b> — PILOT VERSION<br>
+<b>نظام التعدين السوداني v57.0</b> — PILOT VERSION<br>
 <span style="font-size:0.85em;">⚠️ أداة فرز أولي — لا تُغني عن الفحص المخبري</span>
 </div>
 """, unsafe_allow_html=True)
