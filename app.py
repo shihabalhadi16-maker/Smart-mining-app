@@ -1,14 +1,15 @@
 """
-نظام التعدين السوداني v57.2
+نظام التعدين السوداني v57.3
 =====================================
 جامعة الخرطوم - كلية الهندسة
 
-الميزات:
-- DRASTIC + DRASTIC-Tox مع دعم نمط التعدين (صناعي/تقليدي/مختلط)
-- 12 خريطة تلقائية مع حدود السودان
-- MODFLOW 6 + Monte Carlo + Ogata-Banks
-- القطاع الزراعي (SAR, Na%, EC)
-- التحقق المتقدم (LOOCV, ROC-AUC, Bootstrap)
+v57.3 يضيف على v57.2:
+- إصلاح ValueError (Ambiguous Truth Value of DataFrame)
+- دوال get_loaded_df() و require_df() الآمنة
+- قراءة نمط التعدين تلقائياً من البيانات
+- DATA_SCOPE لاختيار نطاق البيانات
+- دعم industrial_sites.csv
+- تطبيق SF (Source Factor) داخل calc_drastic_t
 
 ⚠️ PILOT VERSION
 """
@@ -35,7 +36,7 @@ except ImportError:
     MAPS_OK = False
 
 st.set_page_config(
-    page_title="نظام التعدين السوداني v57.2",
+    page_title="نظام التعدين السوداني v57.3",
     page_icon="⛏️",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -72,10 +73,10 @@ st.markdown("""
     .about-box h4 { color: #5c2c16; margin: 8px 0 4px 0; font-size: 1em; }
     .about-box ul { margin: 4px 0; padding-right: 20px; }
     .about-box li { margin: 2px 0; }
-    .mining-badge { display: inline-block; padding: 4px 10px; border-radius: 6px; font-size: 0.85em; font-weight: 600; margin: 4px 0; }
-    .mining-industrial { background: #e3f2fd; color: #1565c0; }
-    .mining-traditional { background: #fff3e0; color: #e65100; }
-    .mining-mixed { background: #f3e5f5; color: #6a1b9a; }
+    .mining-badge { display: inline-block; padding: 6px 14px; border-radius: 8px; font-size: 1em; font-weight: 700; margin: 8px 0; }
+    .mining-industrial { background: #e3f2fd; color: #1565c0; border: 2px solid #1565c0; }
+    .mining-traditional { background: #fff3e0; color: #e65100; border: 2px solid #e65100; }
+    .mining-mixed { background: #f3e5f5; color: #6a1b9a; border: 2px solid #6a1b9a; }
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     @media (max-width: 768px) {
@@ -177,6 +178,61 @@ except ImportError:
 
 
 # ============================================================
+# ✅ دوال آمنة لقراءة DataFrames
+# ============================================================
+def get_loaded_df(*keys):
+    """إرجاع أول DataFrame غير فارغ من session_state بأمان."""
+    for key in keys:
+        df = st.session_state.get(key)
+        if df is None:
+            continue
+        if hasattr(df, "empty") and not df.empty:
+            return df
+    return None
+
+
+def require_df(*keys):
+    """مثل get_loaded_df لكن تُوقف التطبيق إن لم تجد بيانات."""
+    df = get_loaded_df(*keys)
+    if df is None:
+        st.warning(
+            "⚠️ لا توجد بيانات محمّلة.\n\n"
+            "اذهب إلى تبويب **🔬 التحقق المتقدم** واضغط "
+            "**📥 تحميل البيانات** أولاً."
+        )
+        st.stop()
+    return df
+
+
+# ============================================================
+# ✅ محمّل industrial_sites.csv
+# ============================================================
+@st.cache_data(show_spinner=False)
+def load_industrial_sites_csv():
+    """قراءة industrial_sites.csv إن وُجد، وإلا قائمة فارغة."""
+    csv_path = Path(__file__).parent / "industrial_sites.csv"
+    if not csv_path.exists():
+        return []
+    try:
+        df = pd.read_csv(csv_path, encoding="utf-8")
+        if "verified" in df.columns:
+            df["verified"] = df["verified"].astype(str).str.lower() == "true"
+        return df.to_dict(orient="records")
+    except Exception:
+        return []
+
+
+# ============================================================
+# ✅ أوزان أنماط التعدين
+# ============================================================
+WEIGHTS = {
+    "industrial":  {"alpha": 0.7, "beta": 0.5, "SF": 1.0, "ar": "🏭 شركات صناعية (سيانيد)"},
+    "traditional": {"alpha": 0.3, "beta": 1.0, "SF": 1.1, "ar": "⛏️ معدنون تقليديون (زئبق)"},
+    "mixed":       {"alpha": 0.5, "beta": 0.9, "SF": 1.3, "ar": "🔀 مختلط (سيانيد + زئبق)"},
+}
+
+
+# ============================================================
 # Dictionaries
 # ============================================================
 AQUIFER_AR = {"massive_shale": "صخر طيني ضخم", "metamorphic_igneous": "صخور متحولة/نارية",
@@ -194,12 +250,6 @@ VADOSE_AR = {"confining_layer": "طبقة كتيمة", "silt_clay": "غرين و
     "sand_gravel_silt_clay": "رمل وحصى وغرين وطين", "sand_gravel": "رمل وحصى",
     "basalt": "بازلت", "karst_limestone": "حجر جيري كارستي"}
 LEVEL_AR = {"منخفض": "🟢 منخفض", "متوسط": "🟡 متوسط", "مرتفع": "🟠 مرتفع", "مرتفع جدا": "🔴 مرتفع جداً"}
-
-MINING_TYPE_AR = {
-    "industrial": "🏭 شركات صناعية (سيانيد)",
-    "traditional": "⛏️ معدنون تقليديون (زئبق)",
-    "mixed": "🔀 مختلط (سيانيد + زئبق)"
-}
 
 
 # ============================================================
@@ -276,26 +326,18 @@ def mitigate(idx, hdpe=False, treat=False, mon=False):
 
 
 # ============================================================
-# DRASTIC-Tox v2 — مع دعم نمط التعدين
+# DRASTIC-Tox v57.3
 # ============================================================
 def calc_drastic_t(base_drastic, cn_water, hg_water,
                     distance_m=100.0, seepage=1.0, bio_acc=1.0,
                     mining_type="traditional"):
     """
-    DRASTIC-Tox — يحسب المؤشر النهائي مع مراعاة نمط التعدين.
+    DRASTIC-Tox = DRASTIC + [min(50, α×CN_score + β×Hg_score) × SF]
 
-    Parameters:
-    -----------
-    base_drastic : float
-        مؤشر DRASTIC الأساسي (23-230)
-    cn_water : float
-        تركيز السيانيد (mg/L)
-    hg_water : float
-        تركيز الزئبق (mg/L)
-    mining_type : str
-        "industrial" — شركات صناعية (سيانيد أساساً)
-        "traditional" — معدنون تقليديون (زئبق أساساً)
-        "mixed" — مختلط (سيانيد + زئبق)
+    mining_type:
+        "industrial"  → α=0.7, β=0.5, SF=1.0
+        "traditional" → α=0.3, β=1.0, SF=1.1
+        "mixed"       → α=0.5, β=0.9, SF=1.3
     """
     CN_LIMIT = 0.05
     HG_LIMIT = 0.0007
@@ -303,15 +345,9 @@ def calc_drastic_t(base_drastic, cn_water, hg_water,
     MAX_HG_SCORE = 30.0
     MAX_TOXICITY_BONUS = 50.0
 
-    # أوزان حسب نمط التعدين
-    if mining_type == "industrial":
-        alpha, beta, source_factor = 0.7, 0.5, 1.0
-    elif mining_type == "traditional":
-        alpha, beta, source_factor = 0.3, 1.0, 1.1
-    else:  # mixed
-        alpha, beta, source_factor = 0.5, 0.9, 1.3
+    w = WEIGHTS.get(mining_type, WEIGHTS["traditional"])
+    alpha, beta, source_factor = w["alpha"], w["beta"], w["SF"]
 
-    # حساب الدرجات
     d_factor = max(0.1, min(1.0, 100.0 / max(1, distance_m)))
     s_factor = max(0.1, min(1.0, seepage))
 
@@ -323,12 +359,10 @@ def calc_drastic_t(base_drastic, cn_water, hg_water,
     mri = hg_ratio * bio_acc
     hg_score = min(MAX_HG_SCORE, mri * 30.0)
 
-    # المكافأة مع معامل المصدر
     base_bonus = min(MAX_TOXICITY_BONUS, alpha * cn_score + beta * hg_score)
     toxicity_bonus = base_bonus * source_factor
     drastic_t = base_drastic + toxicity_bonus
 
-    # التصنيف
     if drastic_t >= 180: level, color = "مرتفع جدا", "red"
     elif drastic_t >= 140: level, color = "مرتفع", "orange"
     elif drastic_t >= 100: level, color = "متوسط", "yellow"
@@ -339,21 +373,16 @@ def calc_drastic_t(base_drastic, cn_water, hg_water,
     return {
         "base_drastic": base_drastic,
         "mining_type": mining_type,
-        "alpha": alpha,
-        "beta": beta,
-        "source_factor": source_factor,
-        "cri": round(cri, 3),
-        "mri": round(mri, 3),
-        "cn_score": round(cn_score, 2),
-        "hg_score": round(hg_score, 2),
+        "alpha": alpha, "beta": beta, "source_factor": source_factor,
+        "cri": round(cri, 3), "mri": round(mri, 3),
+        "cn_score": round(cn_score, 2), "hg_score": round(hg_score, 2),
         "base_bonus": round(base_bonus, 2),
         "toxicity_bonus": round(toxicity_bonus, 2),
         "drastic_t": round(drastic_t, 1),
         "drastic_p": round(drastic_t, 1),
         "modifier": round(1.0 + toxicity_bonus / max(base_drastic, 1), 3),
         "increase_pct": round(increase_pct, 1),
-        "level": level,
-        "color": color,
+        "level": level, "color": color,
     }
 
 
@@ -618,7 +647,7 @@ th {{ background-color: #f5eedc; color: #5c2c16; }}
 <div class="disclaimer"><b>{recommendation}</b></div>
 <div class="footer">
 <p>⚠️ <b>PILOT VERSION</b> — أداة فرز أولي، لا تُغني عن الفحص المخبري</p>
-<p>نظام التعدين السوداني v57.2 — جامعة الخرطوم</p>
+<p>نظام التعدين السوداني v57.3 — جامعة الخرطوم</p>
 </div>
 </body></html>"""
 
@@ -651,8 +680,8 @@ def build_heatmap_verified(show_heat=True, show_markers=True):
                     get_c_rating(site_data.get("conductivity", 5)))
                 cn = site_data.get("cn_water_mg_l", 0.0)
                 hg = site_data.get("hg_water_mg_l", 0.0)
-                drastic_t = calc_drastic_t(drastic, cn, hg,
-                                            mining_type="traditional")["drastic_t"]
+                mt = site_data.get("mining_type", "traditional")
+                drastic_t = calc_drastic_t(drastic, cn, hg, mining_type=mt)["drastic_t"]
             except Exception:
                 continue
 
@@ -674,7 +703,7 @@ def build_heatmap_verified(show_heat=True, show_markers=True):
 <hr style="margin:5px 0;"><b>الولاية:</b> {state_name}<br>
 <b>المصدر:</b> {state_data.get('source', 'N/A')}<br>
 <hr style="margin:5px 0;"><b>DRASTIC:</b> {drastic}<br>
-<b>DRASTIC-T:</b> <span style="color:{color};font-weight:bold;">{drastic_t}</span><br>
+<b>DRASTIC-Tox:</b> <span style="color:{color};font-weight:bold;">{drastic_t}</span><br>
 <b>المستوى:</b> {level}<br>
 <hr style="margin:5px 0;"><b>CN:</b> {cn} mg/L<br><b>Hg:</b> {hg} mg/L</div>"""
 
@@ -687,7 +716,7 @@ def build_heatmap_verified(show_heat=True, show_markers=True):
                 ).add_to(m)
             heat_data.append([lat, lon, min(1.0, drastic_t / 230.0)])
             sites_info.append({"state": state_name, "site": site_data.get("name_ar", site_key),
-                "lat": lat, "lon": lon, "DRASTIC": drastic, "DRASTIC-T": drastic_t,
+                "lat": lat, "lon": lon, "DRASTIC": drastic, "DRASTIC-Tox": drastic_t,
                 "CN": cn, "Hg": hg, "المستوى": level})
 
     if show_heat and heat_data:
@@ -746,6 +775,8 @@ else:
     preset = {}
     n_states = n_sites_total = n_sites_verified = n_agri_states = n_agri_sites = 0
 
+INDUSTRIAL_SITES = load_industrial_sites_csv()
+
 
 # ============================================================
 # SIDEBAR
@@ -802,6 +833,37 @@ if DS_OK:
 
 st.sidebar.markdown("---")
 
+st.sidebar.markdown("### 🎯 نطاق البيانات")
+DATA_SCOPE = st.sidebar.radio(
+    "اختر:",
+    ["⛏️ تقليدي (موثّق)", "🏭 صناعي (تجريبي)", "🔀 الكل"],
+    index=0,
+    key="data_scope",
+    help="النمط يُقرأ تلقائياً من بيانات الموقع"
+)
+
+if DATA_SCOPE.startswith("⛏️"):
+    SCOPE_KEY = "traditional"
+elif DATA_SCOPE.startswith("🏭"):
+    SCOPE_KEY = "industrial"
+else:
+    SCOPE_KEY = "all"
+
+if SCOPE_KEY == "industrial" and not INDUSTRIAL_SITES:
+    st.sidebar.warning("⚠️ لم يُعثر على `industrial_sites.csv`")
+
+active_weights = WEIGHTS.get(SCOPE_KEY if SCOPE_KEY != "all" else "traditional", WEIGHTS["traditional"])
+st.sidebar.markdown(f"""
+<div class="mining-badge mining-{'industrial' if SCOPE_KEY=='industrial' else 'traditional' if SCOPE_KEY=='traditional' else 'mixed'}">
+{active_weights['ar']}
+</div>
+<div style="font-size:0.75em;color:#666;margin-top:4px;">
+α={active_weights['alpha']} | β={active_weights['beta']} | SF={active_weights['SF']}
+</div>
+""", unsafe_allow_html=True)
+
+st.sidebar.markdown("---")
+
 st.sidebar.markdown("## 🎛️ وضع التشغيل")
 mode_options = ["🏠 النظام الأساسي"]
 if ADV_OK:
@@ -825,18 +887,17 @@ st.sidebar.markdown("---")
 with st.sidebar.expander("ℹ️ **حول الأداة**", expanded=False):
     st.markdown("""
 <div class="about-box">
-<h4>⛏️ نظام التعدين السوداني v57.2</h4>
+<h4>⛏️ نظام التعدين السوداني v57.3</h4>
 <p style="font-size:0.85em;">أداة تقييم مخاطر المياه الجوفية.</p>
 <h4>📌 الميزات:</h4>
 <ul style="font-size:0.85em;">
 <li>DRASTIC + DRASTIC-Tox</li>
-<li>دعم نمط التعدين (صناعي/تقليدي/مختلط)</li>
+<li>نمط التعدين التلقائي</li>
 <li>MODFLOW 6</li>
-<li>Ogata-Banks Transport</li>
+<li>Ogata-Banks</li>
 <li>Monte Carlo</li>
 <li>خريطة حرارية + خرائط تلقائية</li>
 <li>LOOCV + ROC-AUC</li>
-<li>القطاع الزراعي</li>
 </ul>
 <h4>⚠️ قيود:</h4>
 <ul style="font-size:0.85em;">
@@ -845,7 +906,7 @@ with st.sidebar.expander("ℹ️ **حول الأداة**", expanded=False):
 <li>لا يُغني عن الفحص المخبري</li>
 </ul>
 <h4>🏛️ الجهة:</h4>
-<p style="font-size:0.85em;">جامعة الخرطوم — كلية الهندسة<br>الإصدار 57.2</p>
+<p style="font-size:0.85em;">جامعة الخرطوم — كلية الهندسة<br>الإصدار 57.3</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -859,7 +920,7 @@ st.markdown(f"""
 <div class="header-title">⛏️ نظام التعدين السوداني</div>
 <div class="header-subtitle">جامعة الخرطوم - كلية الهندسة</div>
 <div class="header-subtitle">DRASTIC + DRASTIC-Tox + MODFLOW 6</div>
-<div class="header-badge">الإصدار 57.2 | التعدين: {n_states} ولاية، {n_sites_total} موقع ({n_sites_verified} موثق) | الزراعة: {n_agri_states} ولاية، {n_agri_sites} موقع</div>
+<div class="header-badge">الإصدار 57.3 | التعدين: {n_states} ولاية، {n_sites_total} موقع ({n_sites_verified} موثق) | الزراعة: {n_agri_states} ولاية، {n_agri_sites} موقع</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -917,12 +978,15 @@ if mode == "🏠 النظام الأساسي":
                     "🎲 Monte Carlo", "🔬 التحقق المتقدم", "🚀 تطوير النموذج",
                     "🗺️ الخرائط التلقائية"])
 
-    # ============ TAB 0: المدخلات ============
+    # TAB 0
     with tabs[0]:
         st.markdown('<div class="section-header"><h3>📍 اختيار الموقع</h3></div>', unsafe_allow_html=True)
         if not DS_OK:
             st.error("❌ `data_sources.py` غير متوفر")
         else:
+            active_label = WEIGHTS[SCOPE_KEY if SCOPE_KEY != "all" else "traditional"]["ar"]
+            st.info(f"🎯 **نمط التعدين النشط:** {active_label} — يُقرأ من نطاق البيانات في الشريط الجانبي")
+
             c1, c2 = st.columns([1, 2])
             with c1:
                 state = st.selectbox("**الولاية:**", get_states_list(), key="state_selector")
@@ -933,32 +997,14 @@ if mode == "🏠 النظام الأساسي":
             site_key = st.selectbox("**الموقع:**", get_sites_list(state), key="site_selector")
             site_data = get_site_data(state, site_key)
 
-            # ✅ اختيار نمط التعدين (جديد)
-            st.markdown("---")
-            st.markdown("#### 🏭 نمط التعدين")
-            mining_type_label = st.radio(
-                "**اختر نمط التعدين:**",
-                ["🏭 شركات صناعية (سيانيد)",
-                 "⛏️ معدنون تقليديون (زئبق)",
-                 "🔀 مختلط (سيانيد + زئبق)"],
-                key="mining_type_selector",
-                horizontal=True
-            )
+            mining_type_key = site_data.get("mining_type", SCOPE_KEY if SCOPE_KEY != "all" else "traditional")
+            mining_type_label = WEIGHTS.get(mining_type_key, WEIGHTS["traditional"])["ar"]
 
-            if "شركات" in mining_type_label:
-                mining_type_key = "industrial"
-                mining_badge_class = "mining-industrial"
-            elif "معدنون" in mining_type_label:
-                mining_type_key = "traditional"
-                mining_badge_class = "mining-traditional"
-            else:
-                mining_type_key = "mixed"
-                mining_badge_class = "mining-mixed"
+            badge_class = "mining-industrial" if mining_type_key == "industrial" else \
+                          "mining-mixed" if mining_type_key == "mixed" else "mining-traditional"
+            st.markdown(f'<div class="mining-badge {badge_class}">{mining_type_label}</div>', unsafe_allow_html=True)
 
             st.session_state["mining_type"] = mining_type_key
-            st.session_state["mining_type_label"] = mining_type_label
-
-            st.markdown(f'<span class="mining-badge {mining_badge_class}">{mining_type_label}</span>', unsafe_allow_html=True)
             st.markdown("---")
 
             c1, c2, c3, c4 = st.columns(4)
@@ -1006,7 +1052,6 @@ if mode == "🏠 النظام الأساسي":
                 elif risk["color"] == "yellow": st.info(f"🟡 {risk['action']}")
                 else: st.success(f"🟢 {risk['action']}")
 
-                # ✅ حساب DRASTIC-Tox حسب نمط التعدين
                 dt_result = calc_drastic_t(
                     idx,
                     site_data['cn_water_mg_l'],
@@ -1062,7 +1107,7 @@ if mode == "🏠 النظام الأساسي":
             except ValueError as e:
                 st.error(f"خطأ: {e}")
 
-    # ============ TAB 1: إدخال يدوي ============
+    # TAB 1
     with tabs[1]:
         st.markdown('<div class="section-header"><h3>➕ إدخال يدوي</h3></div>', unsafe_allow_html=True)
         c1, c2 = st.columns(2)
@@ -1096,14 +1141,12 @@ if mode == "🏠 النظام الأساسي":
             st.success("✅ تم الحفظ")
             st.rerun()
 
-    # ============ TAB 2: التقييم الجماعي ============
+    # TAB 2
     with tabs[2]:
         st.markdown('<div class="section-header"><h3>📊 التقييم الجماعي</h3></div>', unsafe_allow_html=True)
         st.info("💡 ارفع الملف من الشريط الجانبي أو الأعلى")
 
-        df_bulk = st.session_state.get("df_bulk")
-        if df_bulk is None:
-            df_bulk = st.session_state.get("df_validation")
+        df_bulk = get_loaded_df("df_bulk", "df_validation")
 
         if df_bulk is None:
             st.warning("⚠️ لم يتم رفع ملف")
@@ -1116,9 +1159,8 @@ if mode == "🏠 النظام الأساسي":
                 with c1: th_d = st.number_input("عتبة DRASTIC:", 50, 200, 100, 10)
                 with c2: th_dt = st.number_input("عتبة DRASTIC-Tox:", 50, 280, 140, 10)
 
-                # نمط التعدين
                 mt_current = st.session_state.get("mining_type", "traditional")
-                mt_label = MINING_TYPE_AR.get(mt_current, "⛏️ معدنون تقليديون (زئبق)")
+                mt_label = WEIGHTS.get(mt_current, WEIGHTS["traditional"])["ar"]
                 st.markdown(f"**نمط التعدين الحالي:** {mt_label}")
 
                 has_tox = "cn_water_mg_l" in df_bulk.columns and "hg_water_mg_l" in df_bulk.columns
@@ -1171,7 +1213,7 @@ if mode == "🏠 النظام الأساسي":
             except Exception as e:
                 st.error(f"❌ {e}")
 
-    # ============ TAB 3: الحلول ============
+    # TAB 3
     with tabs[3]:
         st.markdown('<div class="section-header"><h3>🛡️ الحلول</h3></div>', unsafe_allow_html=True)
         if "ci" in st.session_state:
@@ -1187,7 +1229,7 @@ if mode == "🏠 النظام الأساسي":
                 c1.metric("قبل", ci); c2.metric("بعد", r["mitigated_index"])
                 c3.metric("التخفيض", f"{r['reduction_pct']}%")
 
-    # ============ TAB 4: التقرير ============
+    # TAB 4
     with tabs[4]:
         st.markdown('<div class="section-header"><h3>📄 التقرير</h3></div>', unsafe_allow_html=True)
         if "ci" not in st.session_state:
@@ -1195,7 +1237,8 @@ if mode == "🏠 النظام الأساسي":
         else:
             cv = st.session_state.get("cv", {})
             mt_key = st.session_state.get("mining_type", "traditional")
-            st.info(f"**الموقع:** مؤشر DRASTIC = {st.session_state['ci']} | نمط: {MINING_TYPE_AR.get(mt_key, '')}")
+            mt_lbl = WEIGHTS.get(mt_key, WEIGHTS["traditional"])["ar"]
+            st.info(f"**الموقع:** مؤشر DRASTIC = {st.session_state['ci']} | نمط: {mt_lbl}")
 
             c1, c2, c3 = st.columns(3)
             c1.metric("DRASTIC", st.session_state["ci"])
@@ -1213,19 +1256,14 @@ if mode == "🏠 النظام الأساسي":
                 "المؤشر": ["DRASTIC الأساسي", "CN_score", "Hg_score", "Bonus الأساسي",
                            "Source Factor", "Bonus النهائي", "DRASTIC-Tox", "المستوى"],
                 "القيمة": [
-                    idx,
-                    dt_res["cn_score"],
-                    dt_res["hg_score"],
-                    dt_res["base_bonus"],
-                    dt_res["source_factor"],
-                    dt_res["toxicity_bonus"],
-                    dt_res["drastic_t"],
+                    idx, dt_res["cn_score"], dt_res["hg_score"], dt_res["base_bonus"],
+                    dt_res["source_factor"], dt_res["toxicity_bonus"], dt_res["drastic_t"],
                     LEVEL_AR.get(dt_res["level"], dt_res["level"])
                 ]
             })
             st.dataframe(summary_df, width="stretch", hide_index=True)
 
-    # ============ TAB 5: الخريطة الحرارية ============
+    # TAB 5
     with tabs[5]:
         st.markdown('<div class="section-header"><h3>🗺️ الخريطة الحرارية</h3></div>', unsafe_allow_html=True)
         st.info(f"✅ **تعرض المواقع الموثقة فقط ({n_sites_verified} موقعاً)** من أصل {n_sites_total}")
@@ -1245,7 +1283,7 @@ if mode == "🏠 النظام الأساسي":
             with st.spinner("جاري البناء..."):
                 mapa, stats, df_sites = build_heatmap_verified(show_heat=show_heat, show_markers=show_markers)
 
-            st_folium(mapa, height=map_height, key="map_v572", use_container_width=True)
+            st_folium(mapa, height=map_height, key="map_v573", use_container_width=True)
 
             st.markdown("---")
             st.markdown("#### 📊 إحصائيات")
@@ -1262,7 +1300,7 @@ if mode == "🏠 النظام الأساسي":
                 data=df_sites.to_csv(index=False).encode("utf-8-sig"),
                 file_name="verified_sites.csv", mime="text/csv", use_container_width=True)
 
-    # ============ TAB 6: الحساسية ============
+    # TAB 6
     with tabs[6]:
         st.markdown('<div class="section-header"><h3>📈 تحليل الحساسية</h3></div>', unsafe_allow_html=True)
         if "cv" not in st.session_state:
@@ -1284,7 +1322,7 @@ if mode == "🏠 النظام الأساسي":
                         "التغير": data["change"], "الحساسية (%)": data["sensitivity"]})
                 st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
 
-    # ============ TAB 7: السمية ============
+    # TAB 7
     with tabs[7]:
         st.markdown('<div class="section-header"><h3>☠️ تحليل السمية</h3></div>', unsafe_allow_html=True)
         if "cv" not in st.session_state:
@@ -1314,7 +1352,7 @@ if mode == "🏠 النظام الأساسي":
                 c2.metric("التصنيف", tox["category"])
                 c3.metric("الإجراء", tox["action"])
 
-    # ============ TAB 8: GIS ============
+    # TAB 8
     with tabs[8]:
         st.markdown('<div class="section-header"><h3>🌍 GIS</h3></div>', unsafe_allow_html=True)
         if not DS_OK:
@@ -1339,7 +1377,7 @@ if mode == "🏠 النظام الأساسي":
             except Exception as e:
                 st.error(f"خطأ: {e}")
 
-    # ============ TAB 9: Monte Carlo ============
+    # TAB 9
     with tabs[9]:
         st.markdown('<div class="section-header"><h3>🎲 Monte Carlo</h3></div>', unsafe_allow_html=True)
         if "ci" in st.session_state:
@@ -1352,7 +1390,7 @@ if mode == "🏠 النظام الأساسي":
                 c3.metric("CI 90%", f"{mc['ci_90'][0]}-{mc['ci_90'][1]}")
                 c4.metric("P>140", f"{mc['prob_over_140']}%")
 
-    # ============ TAB 10: التحقق المتقدم ============
+    # TAB 10
     with tabs[10]:
         st.markdown('<div class="section-header"><h3>🔬 التحقق المتقدم</h3></div>', unsafe_allow_html=True)
         if not SKLEARN_OK:
@@ -1371,7 +1409,7 @@ if mode == "🏠 النظام الأساسي":
                     with c2: th_dt_adv = st.number_input("DRASTIC-Tox:", 50, 280, 140, 10, key="adv_th_dt")
 
                     mt_adv = st.session_state.get("mining_type", "traditional")
-                    st.info(f"نمط التعدين: {MINING_TYPE_AR.get(mt_adv, '')}")
+                    st.info(f"نمط التعدين: {WEIGHTS.get(mt_adv, WEIGHTS['traditional'])['ar']}")
 
                     d_list_adv, dp_list_adv, actual_list_adv = [], [], []
                     for i, row in df_val.iterrows():
@@ -1437,7 +1475,7 @@ if mode == "🏠 النظام الأساسي":
                                     with st.expander("🔄 LOOCV"):
                                         st.write(f"Kappa = {r['l_dt']['kappa']} | Accuracy = {r['l_dt']['accuracy']}%")
 
-    # ============ TAB 11: تطوير النموذج ============
+    # TAB 11
     with tabs[11]:
         st.markdown('<div class="section-header"><h3>🚀 تطوير النموذج</h3></div>', unsafe_allow_html=True)
         if not DEV_OK:
@@ -1592,7 +1630,7 @@ if mode == "🏠 النظام الأساسي":
                                     "Accuracy (%)": metrics["accuracy"], "ROC-AUC": metrics["auc"]})
                         st.dataframe(pd.DataFrame(summary_rows), width="stretch", hide_index=True)
 
-    # ============ TAB 12: الخرائط التلقائية ============
+    # TAB 12
     with tabs[12]:
         st.markdown('<div class="section-header"><h3>🗺️ الخرائط التلقائية</h3></div>', unsafe_allow_html=True)
         st.info("💡 تولّد 12 خريطة تلقائياً مع حدود السودان")
@@ -1600,11 +1638,16 @@ if mode == "🏠 النظام الأساسي":
         if not MAPS_OK:
             st.error("❌ `auto_maps.py` غير متوفر")
         else:
-            df_source = (st.session_state.get("df_combined") or
-                         st.session_state.get("df_validation"))
+            df_source = get_loaded_df("df_combined", "df_validation")
 
             if df_source is None:
-                st.warning("⚠️ ارفع ملف التحقق أولاً")
+                st.warning(
+                    "⚠️ لا توجد بيانات محمّلة.\n\n"
+                    "**الخطوة المطلوبة:** اذهب إلى تبويب "
+                    "**🚀 تطوير النموذج** → **📍 المواقع الرمادية** → اضغط "
+                    "**🔄 تحميل البيانات**"
+                )
+                st.stop()
             else:
                 st.write(f"**عدد المواقع:** {len(df_source)}")
 
@@ -1786,7 +1829,7 @@ elif mode == "✅ التحقق الفعلي" and ADV_OK:
                 with c2: th_dt = st.number_input("DRASTIC-Tox:", 50, 280, 140, 10, key="v_th_dt")
 
                 mt_v = st.session_state.get("mining_type", "traditional")
-                st.info(f"نمط التعدين: {MINING_TYPE_AR.get(mt_v, '')}")
+                st.info(f"نمط التعدين: {WEIGHTS.get(mt_v, WEIGHTS['traditional'])['ar']}")
 
                 d_list, dp_list, actual_list = [], [], []
                 for i, row in df_val.iterrows():
@@ -2020,7 +2063,7 @@ elif mode == "🌊 MODFLOW" and MODFLOW_OK:
 st.markdown("---")
 st.markdown("""
 <div style="text-align:center; color:#666; padding:10px;">
-<b>نظام التعدين السوداني v57.2</b> — PILOT VERSION<br>
+<b>نظام التعدين السوداني v57.3</b> — PILOT VERSION<br>
 <span style="font-size:0.85em;">⚠️ أداة فرز أولي — لا تُغني عن الفحص المخبري</span>
 </div>
 """, unsafe_allow_html=True)
