@@ -1,15 +1,12 @@
 """
-نظام التعدين السوداني v57.3
+نظام التعدين السوداني v57.4
 =====================================
 جامعة الخرطوم - كلية الهندسة
 
-v57.3 يضيف على v57.2:
-- إصلاح ValueError (Ambiguous Truth Value of DataFrame)
-- دوال get_loaded_df() و require_df() الآمنة
-- قراءة نمط التعدين تلقائياً من البيانات
-- DATA_SCOPE لاختيار نطاق البيانات
-- دعم industrial_sites.csv
-- تطبيق SF (Source Factor) داخل calc_drastic_t
+v57.4 يضيف على v57.3:
+- إصلاح KeyError في حقل "verified"
+- حماية شاملة لكل الأعمدة الاختيارية
+- دوال safe_sum() و safe_len()
 
 ⚠️ PILOT VERSION
 """
@@ -36,7 +33,7 @@ except ImportError:
     MAPS_OK = False
 
 st.set_page_config(
-    page_title="نظام التعدين السوداني v57.3",
+    page_title="نظام التعدين السوداني v57.4",
     page_icon="⛏️",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -133,7 +130,7 @@ if os.path.exists(MODFLOW_DIR):
 
 
 # ============================================================
-# Imports from local modules
+# Imports
 # ============================================================
 try:
     from data_sources import (
@@ -178,7 +175,7 @@ except ImportError:
 
 
 # ============================================================
-# ✅ دوال آمنة لقراءة DataFrames
+# ✅ دوال آمنة
 # ============================================================
 def get_loaded_df(*keys):
     """إرجاع أول DataFrame غير فارغ من session_state بأمان."""
@@ -204,12 +201,31 @@ def require_df(*keys):
     return df
 
 
+def safe_sum(df, column, default=0):
+    """جمع آمن لعمود قد لا يوجد."""
+    if df is None or column not in df.columns:
+        return default
+    try:
+        return int(df[column].sum())
+    except Exception:
+        return default
+
+
+def safe_len(df, default=0):
+    """طول آمن."""
+    if df is None:
+        return default
+    try:
+        return len(df)
+    except Exception:
+        return default
+
+
 # ============================================================
 # ✅ محمّل industrial_sites.csv
 # ============================================================
 @st.cache_data(show_spinner=False)
 def load_industrial_sites_csv():
-    """قراءة industrial_sites.csv إن وُجد، وإلا قائمة فارغة."""
     csv_path = Path(__file__).parent / "industrial_sites.csv"
     if not csv_path.exists():
         return []
@@ -326,19 +342,11 @@ def mitigate(idx, hdpe=False, treat=False, mon=False):
 
 
 # ============================================================
-# DRASTIC-Tox v57.3
+# DRASTIC-Tox v57.4
 # ============================================================
 def calc_drastic_t(base_drastic, cn_water, hg_water,
                     distance_m=100.0, seepage=1.0, bio_acc=1.0,
                     mining_type="traditional"):
-    """
-    DRASTIC-Tox = DRASTIC + [min(50, α×CN_score + β×Hg_score) × SF]
-
-    mining_type:
-        "industrial"  → α=0.7, β=0.5, SF=1.0
-        "traditional" → α=0.3, β=1.0, SF=1.1
-        "mixed"       → α=0.5, β=0.9, SF=1.3
-    """
     CN_LIMIT = 0.05
     HG_LIMIT = 0.0007
     MAX_CN_SCORE = 30.0
@@ -647,7 +655,7 @@ th {{ background-color: #f5eedc; color: #5c2c16; }}
 <div class="disclaimer"><b>{recommendation}</b></div>
 <div class="footer">
 <p>⚠️ <b>PILOT VERSION</b> — أداة فرز أولي، لا تُغني عن الفحص المخبري</p>
-<p>نظام التعدين السوداني v57.3 — جامعة الخرطوم</p>
+<p>نظام التعدين السوداني v57.4 — جامعة الخرطوم</p>
 </div>
 </body></html>"""
 
@@ -759,8 +767,8 @@ if DS_OK:
     n_states = summary.get('total_states', 0)
     try:
         _df_all = get_all_sites_as_dataframe_with_flag()
-        n_sites_total = len(_df_all) if _df_all is not None else 0
-        n_sites_verified = int(_df_all["verified"].sum()) if _df_all is not None else 0
+        n_sites_total = safe_len(_df_all, summary.get('total_sites', 0))
+        n_sites_verified = safe_sum(_df_all, "verified", 0)
     except Exception:
         n_sites_total = summary.get('total_sites', 0)
         n_sites_verified = 0
@@ -768,7 +776,7 @@ if DS_OK:
     n_agri_states = agri_summary.get('total_states', 0)
     try:
         _df_agri = get_all_agri_sites_as_dataframe()
-        n_agri_sites = len(_df_agri) if _df_agri is not None else 0
+        n_agri_sites = safe_len(_df_agri, agri_summary.get('total_sites', 0))
     except Exception:
         n_agri_sites = agri_summary.get('total_sites', 0)
 else:
@@ -887,7 +895,7 @@ st.sidebar.markdown("---")
 with st.sidebar.expander("ℹ️ **حول الأداة**", expanded=False):
     st.markdown("""
 <div class="about-box">
-<h4>⛏️ نظام التعدين السوداني v57.3</h4>
+<h4>⛏️ نظام التعدين السوداني v57.4</h4>
 <p style="font-size:0.85em;">أداة تقييم مخاطر المياه الجوفية.</p>
 <h4>📌 الميزات:</h4>
 <ul style="font-size:0.85em;">
@@ -906,7 +914,7 @@ with st.sidebar.expander("ℹ️ **حول الأداة**", expanded=False):
 <li>لا يُغني عن الفحص المخبري</li>
 </ul>
 <h4>🏛️ الجهة:</h4>
-<p style="font-size:0.85em;">جامعة الخرطوم — كلية الهندسة<br>الإصدار 57.3</p>
+<p style="font-size:0.85em;">جامعة الخرطوم — كلية الهندسة<br>الإصدار 57.4</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -920,7 +928,7 @@ st.markdown(f"""
 <div class="header-title">⛏️ نظام التعدين السوداني</div>
 <div class="header-subtitle">جامعة الخرطوم - كلية الهندسة</div>
 <div class="header-subtitle">DRASTIC + DRASTIC-Tox + MODFLOW 6</div>
-<div class="header-badge">الإصدار 57.3 | التعدين: {n_states} ولاية، {n_sites_total} موقع ({n_sites_verified} موثق) | الزراعة: {n_agri_states} ولاية، {n_agri_sites} موقع</div>
+<div class="header-badge">الإصدار 57.4 | التعدين: {n_states} ولاية، {n_sites_total} موقع ({n_sites_verified} موثق) | الزراعة: {n_agri_states} ولاية، {n_agri_sites} موقع</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -1081,7 +1089,7 @@ if mode == "🏠 النظام الأساسي":
                     ```
                     Bonus = ({dt_result['alpha']} × {dt_result['cn_score']}) + ({dt_result['beta']} × {dt_result['hg_score']})
                           = {dt_result['base_bonus']}
-                    
+
                     DRASTIC-Tox = {dt_result['base_drastic']} + ({dt_result['base_bonus']} × {dt_result['source_factor']})
                                 = {dt_result['drastic_t']}
                     ```
@@ -1283,7 +1291,7 @@ if mode == "🏠 النظام الأساسي":
             with st.spinner("جاري البناء..."):
                 mapa, stats, df_sites = build_heatmap_verified(show_heat=show_heat, show_markers=show_markers)
 
-            st_folium(mapa, height=map_height, key="map_v573", use_container_width=True)
+            st_folium(mapa, height=map_height, key="map_v574", use_container_width=True)
 
             st.markdown("---")
             st.markdown("#### 📊 إحصائيات")
@@ -1363,9 +1371,9 @@ if mode == "🏠 النظام الأساسي":
             try:
                 df_all = get_all_sites_as_dataframe_with_flag()
                 if filter_mode == "الموثقة فقط":
-                    df_show = df_all[df_all["verified"] == True]
+                    df_show = df_all[df_all["verified"] == True] if "verified" in df_all.columns else df_all
                 elif filter_mode == "للعرض فقط":
-                    df_show = df_all[df_all["verified"] == False]
+                    df_show = df_all[df_all["verified"] == False] if "verified" in df_all.columns else df_all.head(0)
                 else:
                     df_show = df_all
 
@@ -1533,11 +1541,12 @@ if mode == "🏠 النظام الأساسي":
                     df_saved = st.session_state["df_combined"]
                     st.markdown("---")
                     st.dataframe(df_saved, width="stretch")
+
                     c1, c2, c3, c4 = st.columns(4)
                     c1.metric("إجمالي", len(df_saved))
-                    c2.metric("موثقة", int(df_saved["verified"].sum()))
-                    c3.metric("رمادية", int(df_saved["is_gray_zone"].sum()))
-                    c4.metric("ملوثة", int(df_saved["actual_contaminated"].sum()))
+                    c2.metric("موثقة", safe_sum(df_saved, "verified", 0))
+                    c3.metric("رمادية", safe_sum(df_saved, "is_gray_zone", 0))
+                    c4.metric("ملوثة", safe_sum(df_saved, "actual_contaminated", 0))
 
             with sub_tabs[1]:
                 st.markdown("#### ⚙️ معايرة α و β")
@@ -2063,7 +2072,7 @@ elif mode == "🌊 MODFLOW" and MODFLOW_OK:
 st.markdown("---")
 st.markdown("""
 <div style="text-align:center; color:#666; padding:10px;">
-<b>نظام التعدين السوداني v57.3</b> — PILOT VERSION<br>
+<b>نظام التعدين السوداني v57.4</b> — PILOT VERSION<br>
 <span style="font-size:0.85em;">⚠️ أداة فرز أولي — لا تُغني عن الفحص المخبري</span>
 </div>
 """, unsafe_allow_html=True)
