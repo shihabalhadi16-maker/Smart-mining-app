@@ -1,18 +1,12 @@
 """
-نظام التعدين السوداني v57.0
+نظام التعدين السوداني v57.1
 =====================================
 جامعة الخرطوم - كلية الهندسة
 
-الإصدار 57.0 يستعيد كل ميزات v54.0 ويضيف ميزات v56.3:
-- 12 تبويب في النظام الأساسي
-- 8 أوضاع في الشريط الجانبي
-- DRASTIC + DRASTIC-T
-- التحقق المتقدم (LOOCV + ROC-AUC)
-- تطوير النموذج (Gray Zone + Calibration)
-- نقل الملوثات (Ogata-Banks)
-- الأقمار الصناعية
-- التحقق المستقل
-- التقييم الديناميكي
+الإضافات في v57.1:
+- تبويب "🗺️ الخرائط التلقائية" (12 خريطة)
+- حدود السودان كخلفية
+- Interpolation تلقائي
 """
 import streamlit as st
 import subprocess, os, sys, shutil, stat, zipfile, io
@@ -30,8 +24,14 @@ try:
 except ImportError:
     SKLEARN_OK = False
 
+try:
+    from auto_maps import generate_auto_maps, prepare_df_for_maps
+    MAPS_OK = True
+except ImportError:
+    MAPS_OK = False
+
 st.set_page_config(
-    page_title="نظام التعدين السوداني v57.0",
+    page_title="نظام التعدين السوداني v57.1",
     page_icon="⛏️",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -302,7 +302,7 @@ def calc_drastic_t(base_drastic, cn_water, hg_water,
 
 
 # ============================================================
-# تحليل الحساسية (مُستعاد)
+# Sensitivity
 # ============================================================
 def sensitivity_analysis(pv, variation=0.10):
     D = float(pv.get("depth", 15.0)); R = float(pv.get("recharge", 100.0))
@@ -365,16 +365,12 @@ def monte_carlo_analysis(pv, n_iter=1000, variation=0.15):
     drastic = D_r*5 + R_r*4 + A_s*3 + S_s*2 + T_r*1 + I_s*5 + C_r*3
     results = np.sort(drastic.astype(int))
     def pct(p): return int(np.percentile(results, p))
-
     return {"mean": round(float(np.mean(results)), 1), "std": round(float(np.std(results)), 2),
             "min": int(results[0]), "max": int(results[-1]),
             "ci_90": (pct(5), pct(95)),
             "prob_over_140": round(float(np.mean(results >= 140) * 100), 1)}
 
 
-# ============================================================
-# السمية المُرجّحة (مُستعاد)
-# ============================================================
 def weighted_toxicity(hgw, hgs, cnw, cns):
     w = (hgw/0.006*0.40) + (hgs/1.0*0.20) + (cnw/0.07*0.30) + (cns/10.0*0.10)
     if w <= 1.0: cat, act = "آمن", "لا يتطلب تدخل"
@@ -385,7 +381,7 @@ def weighted_toxicity(hgw, hgs, cnw, cns):
 
 
 # ============================================================
-# نموذج نقل الملوثات (Ogata-Banks)
+# Ogata-Banks Transport
 # ============================================================
 def model_contaminant_transport_fixed(C0, K, porosity, gradient, distance, years,
                                         dispersivity=10.0):
@@ -436,7 +432,7 @@ def model_contaminant_transport_fixed(C0, K, porosity, gradient, distance, years
 
 
 # ============================================================
-# التحقق المتقدم
+# Advanced Validation
 # ============================================================
 def compute_basic_metrics(y_true, y_score, threshold):
     if not SKLEARN_OK:
@@ -515,7 +511,7 @@ def loocv_analysis(y_true, y_score, threshold):
 
 
 # ============================================================
-# تقرير HTML
+# HTML Report
 # ============================================================
 def generate_html_report(site_info, drastic, drastic_t, level, recommendation):
     return f"""<!DOCTYPE html>
@@ -558,20 +554,20 @@ th {{ background-color: #f5eedc; color: #5c2c16; }}
 <h2>🎯 النتائج</h2>
 <table>
 <tr><th>DRASTIC</th><td class="metric">{drastic}/230</td></tr>
-<tr><th>DRASTIC-T</th><td class="metric">{drastic_t}/280</td></tr>
+<tr><th>DRASTIC-Tox</th><td class="metric">{drastic_t}/280</td></tr>
 <tr><th>المستوى</th><td class="metric">{level}</td></tr>
 </table>
 <h2>💡 التوصية</h2>
 <div class="disclaimer"><b>{recommendation}</b></div>
 <div class="footer">
 <p>⚠️ <b>PILOT VERSION</b> — أداة فرز أولي، لا تُغني عن الفحص المخبري</p>
-<p>نظام التعدين السوداني v57.0 — جامعة الخرطوم</p>
+<p>نظام التعدين السوداني v57.1 — جامعة الخرطوم</p>
 </div>
 </body></html>"""
 
 
 # ============================================================
-# الخريطة الحرارية
+# Heatmap
 # ============================================================
 def build_heatmap_verified(show_heat=True, show_markers=True):
     m = folium.Map(location=[15.5, 32.5], zoom_start=6, tiles='OpenStreetMap')
@@ -620,7 +616,7 @@ def build_heatmap_verified(show_heat=True, show_markers=True):
 <hr style="margin:5px 0;"><b>الولاية:</b> {state_name}<br>
 <b>المصدر:</b> {state_data.get('source', 'N/A')}<br>
 <hr style="margin:5px 0;"><b>DRASTIC:</b> {drastic}<br>
-<b>DRASTIC-T:</b> <span style="color:{color};font-weight:bold;">{drastic_t}</span><br>
+<b>DRASTIC-Tox:</b> <span style="color:{color};font-weight:bold;">{drastic_t}</span><br>
 <b>المستوى:</b> {level}<br>
 <hr style="margin:5px 0;"><b>CN:</b> {cn} mg/L<br><b>Hg:</b> {hg} mg/L</div>"""
 
@@ -733,7 +729,7 @@ if uploaded_extra is not None:
         st.sidebar.error(f"❌ {str(e)[:80]}")
 
 if st.sidebar.button("🗑️ مسح جميع الملفات"):
-    for k in ["df_validation", "df_bulk", "df_extra", "df_combined"]:
+    for k in ["df_validation", "df_bulk", "df_extra", "df_combined", "auto_maps_fig"]:
         st.session_state.pop(k, None)
     st.rerun()
 
@@ -752,8 +748,7 @@ st.sidebar.markdown("## 🎛️ وضع التشغيل")
 mode_options = ["🏠 النظام الأساسي"]
 if ADV_OK:
     mode_options += ["🌾 القطاع الزراعي", "✅ التحقق الفعلي", "🚀 نقل الملوثات"]
-    mode_options += ["🔬 التحقق المستقل", "🛰️ الأقمار الصناعية"]
-    mode_options += ["⏳ الديناميكي"]
+    mode_options += ["🔬 التحقق المستقل", "🛰️ الأقمار الصناعية", "⏳ الديناميكي"]
 if MODFLOW_OK:
     mode_options.append("🌊 MODFLOW")
 
@@ -763,6 +758,10 @@ st.sidebar.markdown("---")
 st.sidebar.markdown("### 🔧 الحالة")
 status_icon = "✅" if _modflow_status in ["already_installed", "installed"] else "⚠️"
 st.sidebar.info(f"{status_icon} MODFLOW: {_modflow_status}")
+if MAPS_OK:
+    st.sidebar.success("✅ الخرائط التلقائية: متوفرة")
+else:
+    st.sidebar.warning("⚠️ auto_maps.py غير متوفر")
 
 if "ci" in st.session_state:
     st.sidebar.success(f"✅ مؤشر: {st.session_state['ci']}")
@@ -771,11 +770,11 @@ st.sidebar.markdown("---")
 with st.sidebar.expander("ℹ️ **حول الأداة**", expanded=False):
     st.markdown("""
 <div class="about-box">
-<h4>⛏️ نظام التعدين السوداني v57.0</h4>
+<h4>⛏️ نظام التعدين السوداني v57.1</h4>
 <p style="font-size:0.85em;">أداة تقييم مخاطر المياه الجوفية.</p>
 <h4>📌 الميزات:</h4>
 <ul style="font-size:0.85em;">
-<li>DRASTIC + DRASTIC-T</li>
+<li>DRASTIC + DRASTIC-Tox</li>
 <li>MODFLOW 6</li>
 <li>Ogata-Banks Transport</li>
 <li>Monte Carlo</li>
@@ -787,6 +786,7 @@ with st.sidebar.expander("ℹ️ **حول الأداة**", expanded=False):
 <li>تحليل السمية</li>
 <li>الأقمار الصناعية</li>
 <li>التحقق المستقل</li>
+<li>الخرائط التلقائية (12 خريطة)</li>
 </ul>
 <h4>⚠️ قيود:</h4>
 <ul style="font-size:0.85em;">
@@ -795,7 +795,7 @@ with st.sidebar.expander("ℹ️ **حول الأداة**", expanded=False):
 <li>لا يُغني عن الفحص المخبري</li>
 </ul>
 <h4>🏛️ الجهة:</h4>
-<p style="font-size:0.85em;">جامعة الخرطوم — كلية الهندسة<br>الإصدار 57.0</p>
+<p style="font-size:0.85em;">جامعة الخرطوم — كلية الهندسة<br>الإصدار 57.1</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -808,8 +808,8 @@ st.markdown(f"""
 <div class="header-container">
 <div class="header-title">⛏️ نظام التعدين السوداني</div>
 <div class="header-subtitle">جامعة الخرطوم - كلية الهندسة</div>
-<div class="header-subtitle">DRASTIC + DRASTIC-T + MODFLOW 6</div>
-<div class="header-badge">الإصدار 57.0 | التعدين: {n_states} ولاية، {n_sites_total} موقع ({n_sites_verified} موثق) | الزراعة: {n_agri_states} ولاية، {n_agri_sites} موقع</div>
+<div class="header-subtitle">DRASTIC + DRASTIC-Tox + MODFLOW 6</div>
+<div class="header-badge">الإصدار 57.1 | التعدين: {n_states} ولاية، {n_sites_total} موقع ({n_sites_verified} موثق) | الزراعة: {n_agri_states} ولاية، {n_agri_sites} موقع</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -865,7 +865,8 @@ if mode == "🏠 النظام الأساسي":
         "📍 المدخلات", "➕ إدخال يدوي", "📊 التقييم الجماعي",
         "🛡️ الحلول", "📄 التقرير", "🗺️ الخريطة الحرارية",
         "📈 الحساسية", "☠️ السمية", "🌍 GIS",
-        "🎲 Monte Carlo", "🔬 التحقق المتقدم", "🚀 تطوير النموذج"
+        "🎲 Monte Carlo", "🔬 التحقق المتقدم", "🚀 تطوير النموذج",
+        "🗺️ الخرائط التلقائية"
     ])
 
     # ============ TAB 0: المدخلات ============
@@ -941,7 +942,7 @@ if mode == "🏠 النظام الأساسي":
                     drastic=idx,
                     drastic_t=calc_drastic_t(idx, site_data['cn_water_mg_l'], site_data['hg_water_mg_l'])["drastic_t"],
                     level=risk["level"], recommendation=risk["action"])
-                st.download_button("📄 تحميل التقرير (HTML — اطبعه PDF)",
+                st.download_button("📄 تحميل التقرير (HTML)",
                     data=report_html.encode("utf-8"), file_name=f"report_{site_key}.html",
                     mime="text/html", use_container_width=True)
             except ValueError as e:
@@ -998,7 +999,7 @@ if mode == "🏠 النظام الأساسي":
                 st.markdown("#### ⚙️ العتبات")
                 c1, c2 = st.columns(2)
                 with c1: th_d = st.number_input("عتبة DRASTIC:", 50, 200, 100, 10)
-                with c2: th_dt = st.number_input("عتبة DRASTIC-T:", 50, 230, 140, 10)
+                with c2: th_dt = st.number_input("عتبة DRASTIC-Tox:", 50, 230, 140, 10)
 
                 has_tox = "cn_water_mg_l" in df_bulk.columns and "hg_water_mg_l" in df_bulk.columns
                 results, d_list, dp_list, actual_list = [], [], [], []
@@ -1023,9 +1024,9 @@ if mode == "🏠 النظام الأساسي":
                         if "actual_contaminated" in row:
                             actual_list.append(int(row["actual_contaminated"]))
                         results.append({"الموقع": row.get("name", f"م{i+1}"), "DRASTIC": ix,
-                            "DRASTIC-T": ix_t, "الحالة": "🔴" if ix_t >= th_dt else "🟢"})
+                            "DRASTIC-Tox": ix_t, "الحالة": "🔴" if ix_t >= th_dt else "🟢"})
                     except Exception:
-                        results.append({"الموقع": f"م{i+1}", "DRASTIC": 0, "DRASTIC-T": 0, "الحالة": "❌"})
+                        results.append({"الموقع": f"م{i+1}", "DRASTIC": 0, "DRASTIC-Tox": 0, "الحالة": "❌"})
 
                 df_results = pd.DataFrame(results)
                 st.dataframe(df_results, width="stretch")
@@ -1039,7 +1040,7 @@ if mode == "🏠 النظام الأساسي":
                         md = calculate_confusion_matrix(d_list, actual_list, th_d)
                         st.metric("Kappa", md["kappa"]); st.metric("Recall", f"{md['recall']}%")
                     with c2:
-                        st.markdown("**DRASTIC-T**")
+                        st.markdown("**DRASTIC-Tox**")
                         mp = calculate_confusion_matrix(dp_list, actual_list, th_dt)
                         st.metric("Kappa", mp["kappa"]); st.metric("Recall", f"{mp['recall']}%")
 
@@ -1065,53 +1066,33 @@ if mode == "🏠 النظام الأساسي":
                 c1.metric("قبل", ci); c2.metric("بعد", r["mitigated_index"])
                 c3.metric("التخفيض", f"{r['reduction_pct']}%")
 
-    # ============ TAB 4: التقرير (مُستعاد) ============
+    # ============ TAB 4: التقرير ============
     with tabs[4]:
         st.markdown('<div class="section-header"><h3>📄 التقرير</h3></div>', unsafe_allow_html=True)
         if "ci" not in st.session_state:
-            st.warning("⚠️ اختر موقعاً أولاً من تبويب المدخلات")
+            st.warning("⚠️ اختر موقعاً أولاً")
         else:
             cv = st.session_state.get("cv", {})
-            st.info(f"**الموقع المختار:** مؤشر DRASTIC = {st.session_state['ci']}")
-
             c1, c2, c3 = st.columns(3)
             c1.metric("DRASTIC", st.session_state["ci"])
             c2.metric("CN", f"{cv.get('cn_water_mg_l', 'N/A')} mg/L")
             c3.metric("Hg", f"{cv.get('hg_water_mg_l', 'N/A')} mg/L")
-
-            st.markdown("---")
-            st.markdown("#### 📋 ملخص كامل")
             idx = st.session_state["ci"]
             cn = cv.get('cn_water_mg_l', 0)
             hg = cv.get('hg_water_mg_l', 0)
             dt_res = calc_drastic_t(idx, cn, hg)
-
             summary_df = pd.DataFrame({
-                "المؤشر": ["DRASTIC الأساسي", "CN_score", "Hg_score", "Bonus", "DRASTIC-T", "المستوى"],
-                "القيمة": [
-                    idx,
-                    dt_res["cn_score"],
-                    dt_res["hg_score"],
-                    dt_res["toxicity_bonus"],
-                    dt_res["drastic_t"],
-                    LEVEL_AR.get(dt_res["level"], dt_res["level"])
-                ]
-            })
+                "المؤشر": ["DRASTIC", "CN_score", "Hg_score", "Bonus", "DRASTIC-Tox", "المستوى"],
+                "القيمة": [idx, dt_res["cn_score"], dt_res["hg_score"],
+                    dt_res["toxicity_bonus"], dt_res["drastic_t"],
+                    LEVEL_AR.get(dt_res["level"], dt_res["level"])]})
             st.dataframe(summary_df, width="stretch", hide_index=True)
-
-            st.markdown("---")
-            st.markdown("#### 💡 التوصية")
-            risk = classify(idx)
-            st.info(f"**{risk['action']}**")
 
     # ============ TAB 5: الخريطة الحرارية ============
     with tabs[5]:
         st.markdown('<div class="section-header"><h3>🗺️ الخريطة الحرارية</h3></div>', unsafe_allow_html=True)
-        st.info(f"✅ **تعرض المواقع الموثقة فقط ({n_sites_verified} موقعاً)** من أصل {n_sites_total}")
-
-        if not DS_OK:
-            st.error("❌ `data_sources.py` غير متوفر")
-        else:
+        st.info(f"✅ المواقع الموثقة فقط ({n_sites_verified})")
+        if DS_OK:
             c1, c2 = st.columns(2)
             with c1:
                 map_mode = st.radio("العرض:", ["🎨 كلاهما", "📍 علامات", "🔥 حراري"], key="map_mode", horizontal=True)
@@ -1124,126 +1105,66 @@ if mode == "🏠 النظام الأساسي":
             with st.spinner("جاري البناء..."):
                 mapa, stats, df_sites = build_heatmap_verified(show_heat=show_heat, show_markers=show_markers)
 
-            st_folium(mapa, height=map_height, key="map_v57", use_container_width=True)
+            st_folium(mapa, height=map_height, key="map_v571", use_container_width=True)
 
             st.markdown("---")
-            st.markdown("#### 📊 إحصائيات")
             c1, c2, c3, c4, c5 = st.columns(5)
-            c1.metric("🟢 منخفض", stats["low"])
-            c2.metric("🟡 متوسط", stats["medium"])
-            c3.metric("🟠 مرتفع", stats["high"])
-            c4.metric("🔴 مرتفع جداً", stats["very_high"])
+            c1.metric("🟢 منخفض", stats["low"]); c2.metric("🟡 متوسط", stats["medium"])
+            c3.metric("🟠 مرتفع", stats["high"]); c4.metric("🔴 مرتفع جداً", stats["very_high"])
             c5.metric("📍 الإجمالي", sum(stats.values()))
-
-            st.markdown("---")
             st.dataframe(df_sites, width="stretch")
-            st.download_button("📥 تحميل بيانات المواقع",
-                data=df_sites.to_csv(index=False).encode("utf-8-sig"),
-                file_name="verified_sites.csv", mime="text/csv", use_container_width=True)
 
-    # ============ TAB 6: الحساسية (مُستعاد) ============
+    # ============ TAB 6: الحساسية ============
     with tabs[6]:
         st.markdown('<div class="section-header"><h3>📈 تحليل الحساسية</h3></div>', unsafe_allow_html=True)
-        st.info("💡 يحلل تأثير تغيير كل معيار على المؤشر النهائي")
-
         if "cv" not in st.session_state:
-            st.warning("⚠️ اختر موقعاً أولاً من تبويب المدخلات")
+            st.warning("⚠️ اختر موقعاً أولاً")
         else:
-            var_pct = st.slider("نسبة التغيير (%):", 5, 30, 10, 5, key="sens_var")
-
-            if st.button("🚀 تشغيل التحليل", type="primary", key="run_sens"):
-                with st.spinner("جاري الحساب..."):
-                    sens = sensitivity_analysis(st.session_state["cv"], var_pct / 100.0)
-                    st.session_state["sens_result"] = sens
-
+            var_pct = st.slider("نسبة التغيير (%):", 5, 30, 10, 5)
+            if st.button("🚀 تشغيل", type="primary"):
+                sens = sensitivity_analysis(st.session_state["cv"], var_pct / 100.0)
+                st.session_state["sens_result"] = sens
             if "sens_result" in st.session_state:
                 sens = st.session_state["sens_result"]
-
-                st.markdown("---")
                 st.success(f"🏆 الأكثر تأثيراً: **{sens['most_sensitive']}**")
+                rows = [{"المعيار": k, "الحساسية (%)": v["sensitivity"]}
+                        for k, v in sens["parameters"].items()]
+                st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
 
-                st.markdown("#### 📊 جدول الحساسية")
-                rows = []
-                for param, data in sens["parameters"].items():
-                    rows.append({
-                        "المعيار": param,
-                        "القيمة الأصلية": data["original"],
-                        "القيمة المعدّلة": data["modified"],
-                        "المؤشر الجديد": data["new_index"],
-                        "التغير": data["change"],
-                        "الحساسية (%)": data["sensitivity"]
-                    })
-                df_sens = pd.DataFrame(rows)
-                st.dataframe(df_sens, width="stretch", hide_index=True)
-
-                try:
-                    import plotly.express as px
-                    fig = px.bar(df_sens, x="المعيار", y="الحساسية (%)",
-                                 color="الحساسية (%)", color_continuous_scale="RdYlGn_r",
-                                 title="حساسية المعايير")
-                    st.plotly_chart(fig, use_container_width=True)
-                except Exception:
-                    pass
-
-    # ============ TAB 7: السمية (مُستعاد) ============
+    # ============ TAB 7: السمية ============
     with tabs[7]:
         st.markdown('<div class="section-header"><h3>☠️ تحليل السمية</h3></div>', unsafe_allow_html=True)
-        st.info("💡 تحليل السمية المُرجّحة للملوثات")
-
         if "cv" not in st.session_state:
             st.warning("⚠️ اختر موقعاً أولاً")
         else:
             cv = st.session_state["cv"]
-            hgw = cv.get("hg_water_mg_l", 0.011)
-            cnw = cv.get("cn_water_mg_l", 0.025)
-
+            hgw = cv.get("hg_water_mg_l", 0.011); cnw = cv.get("cn_water_mg_l", 0.025)
             c1, c2 = st.columns(2)
-            c1.metric("CN", f"{cnw} mg/L")
-            c2.metric("Hg", f"{hgw} mg/L")
-
-            st.markdown("#### ⚙️ المدخلات الإضافية")
-            c1, c2 = st.columns(2)
-            with c1: hgs = st.number_input("Hg في التربة (mg/kg):", 0.0, 100.0, 0.5, 0.1)
-            with c2: cns = st.number_input("CN في التربة (mg/kg):", 0.0, 100.0, 5.0, 0.5)
-
-            if st.button("تحليل السمية", type="primary", key="run_tox"):
+            with c1: hgs = st.number_input("Hg في التربة:", 0.0, 100.0, 0.5, 0.1)
+            with c2: cns = st.number_input("CN في التربة:", 0.0, 100.0, 5.0, 0.5)
+            if st.button("تحليل السمية", type="primary"):
                 tox = weighted_toxicity(hgw, hgs, cnw, cns)
-                st.session_state["tox_result"] = tox
-
-            if "tox_result" in st.session_state:
-                tox = st.session_state["tox_result"]
-                st.markdown("---")
                 c1, c2, c3 = st.columns(3)
-                c1.metric("المؤشر", tox["index"])
-                c2.metric("التصنيف", tox["category"])
+                c1.metric("المؤشر", tox["index"]); c2.metric("التصنيف", tox["category"])
                 c3.metric("الإجراء", tox["action"])
 
-    # ============ TAB 8: GIS (مُستعاد) ============
+    # ============ TAB 8: GIS ============
     with tabs[8]:
-        st.markdown('<div class="section-header"><h3>🌍 GIS — قاعدة البيانات</h3></div>', unsafe_allow_html=True)
-        st.warning("⚠️ **تنبيه**: بعض المواقع **مُقدَّرة** ولا تُستخدم في التحليل الإحصائي.")
-
-        if not DS_OK:
-            st.error("❌ `data_sources.py` غير متوفر")
-        else:
+        st.markdown('<div class="section-header"><h3>🌍 GIS</h3></div>', unsafe_allow_html=True)
+        if DS_OK:
             filter_mode = st.radio("عرض:", ["الكل", "الموثقة فقط", "للعرض فقط"],
                                      horizontal=True, key="gis_filter")
-            try:
-                df_all = get_all_sites_as_dataframe_with_flag()
-                if filter_mode == "الموثقة فقط":
-                    df_show = df_all[df_all["verified"] == True]
-                elif filter_mode == "للعرض فقط":
-                    df_show = df_all[df_all["verified"] == False]
-                else:
-                    df_show = df_all
-
-                st.caption(f"📊 **{len(df_show)}** موقع")
-                st.dataframe(df_show, width="stretch")
-                st.download_button("📥 CSV",
-                    data=df_show.to_csv(index=False).encode("utf-8-sig"),
-                    file_name="sites_filtered.csv", mime="text/csv")
-            except Exception as e:
-                st.error(f"خطأ: {e}")
+            df_all = get_all_sites_as_dataframe_with_flag()
+            if filter_mode == "الموثقة فقط":
+                df_show = df_all[df_all["verified"] == True]
+            elif filter_mode == "للعرض فقط":
+                df_show = df_all[df_all["verified"] == False]
+            else:
+                df_show = df_all
+            st.caption(f"📊 **{len(df_show)}** موقع")
+            st.dataframe(df_show, width="stretch")
+            st.download_button("📥 CSV", data=df_show.to_csv(index=False).encode("utf-8-sig"),
+                file_name="sites_filtered.csv", mime="text/csv")
 
     # ============ TAB 9: Monte Carlo ============
     with tabs[9]:
@@ -1261,8 +1182,6 @@ if mode == "🏠 النظام الأساسي":
     # ============ TAB 10: التحقق المتقدم ============
     with tabs[10]:
         st.markdown('<div class="section-header"><h3>🔬 التحقق المتقدم</h3></div>', unsafe_allow_html=True)
-        st.info("💡 يضيف LOOCV + ROC-AUC + Bootstrap CI")
-
         if not SKLEARN_OK:
             st.error("❌ `scikit-learn` غير مثبت")
         else:
@@ -1276,7 +1195,7 @@ if mode == "🏠 النظام الأساسي":
                 else:
                     c1, c2 = st.columns(2)
                     with c1: th_d_adv = st.number_input("DRASTIC:", 50, 200, 100, 10, key="adv_th_d")
-                    with c2: th_dt_adv = st.number_input("DRASTIC-T:", 50, 230, 140, 10, key="adv_th_dt")
+                    with c2: th_dt_adv = st.number_input("DRASTIC-Tox:", 50, 230, 140, 10, key="adv_th_dt")
 
                     d_list_adv, dp_list_adv, actual_list_adv = [], [], []
                     for i, row in df_val.iterrows():
@@ -1296,111 +1215,61 @@ if mode == "🏠 النظام الأساسي":
                         except Exception:
                             pass
 
-                    if not d_list_adv:
-                        st.error("❌ لا توجد بيانات صالحة")
-                    else:
-                        if st.button("🚀 تشغيل التحليل المتقدم", type="primary"):
-                            with st.spinner("جاري الحساب..."):
-                                m_d = compute_basic_metrics(actual_list_adv, d_list_adv, th_d_adv)
-                                b_d = bootstrap_kappa_ci(actual_list_adv, d_list_adv, th_d_adv, n_boot=1000)
-                                l_d = loocv_analysis(actual_list_adv, d_list_adv, th_d_adv)
-                                m_dt = compute_basic_metrics(actual_list_adv, dp_list_adv, th_dt_adv)
-                                b_dt = bootstrap_kappa_ci(actual_list_adv, dp_list_adv, th_dt_adv, n_boot=1000)
-                                l_dt = loocv_analysis(actual_list_adv, dp_list_adv, th_dt_adv)
-                                st.session_state["adv_results"] = {"m_d": m_d, "b_d": b_d, "l_d": l_d,
-                                    "m_dt": m_dt, "b_dt": b_dt, "l_dt": l_dt}
+                    if st.button("🚀 تشغيل", type="primary"):
+                        with st.spinner("جاري الحساب..."):
+                            m_d = compute_basic_metrics(actual_list_adv, d_list_adv, th_d_adv)
+                            b_d = bootstrap_kappa_ci(actual_list_adv, d_list_adv, th_d_adv)
+                            l_d = loocv_analysis(actual_list_adv, d_list_adv, th_d_adv)
+                            m_dt = compute_basic_metrics(actual_list_adv, dp_list_adv, th_dt_adv)
+                            b_dt = bootstrap_kappa_ci(actual_list_adv, dp_list_adv, th_dt_adv)
+                            l_dt = loocv_analysis(actual_list_adv, dp_list_adv, th_dt_adv)
+                            st.session_state["adv_results"] = {"m_d": m_d, "b_d": b_d, "l_d": l_d,
+                                "m_dt": m_dt, "b_dt": b_dt, "l_dt": l_dt}
 
-                        if "adv_results" in st.session_state:
-                            r = st.session_state["adv_results"]
-                            st.markdown("---")
-                            st.markdown("### 📊 المقاييس المتقدمة")
-
-                            c1, c2 = st.columns(2)
-                            with c1:
-                                st.markdown("#### 🔵 DRASTIC")
-                                if "error" not in r["m_d"]:
-                                    st.metric("Kappa", r["m_d"]["kappa"])
-                                    st.metric("ROC-AUC", r["m_d"]["auc"])
-                                    st.metric("F1-Score", r["m_d"]["f1"])
-                                    st.metric("Precision", f"{r['m_d']['precision']}%")
-                                    st.metric("Recall", f"{r['m_d']['recall']}%")
-                                    st.metric("Accuracy", f"{r['m_d']['accuracy']}%")
-                                    with st.expander("📊 Confusion Matrix"):
-                                        st.write(f"TP = {r['m_d']['tp']}"); st.write(f"TN = {r['m_d']['tn']}")
-                                        st.write(f"FP = {r['m_d']['fp']}"); st.write(f"FN = {r['m_d']['fn']}")
-                                    with st.expander("🎲 Bootstrap 95% CI"):
-                                        st.write(f"Mean = {r['b_d']['mean']}"); st.write(f"Std = {r['b_d']['std']}")
-                                        st.write(f"**95% CI**: [{r['b_d']['ci_low']}, {r['b_d']['ci_high']}]")
-                                    with st.expander("🔄 LOOCV"):
-                                        st.write(f"Kappa = {r['l_d']['kappa']}")
-                                        st.write(f"Accuracy = {r['l_d']['accuracy']}%")
-                                        st.write(f"Recall = {r['l_d']['recall']}%")
-                                        st.write(f"صحيح: {r['l_d']['n_correct']}/{r['l_d']['n_total']}")
-
-                            with c2:
-                                st.markdown("#### 🟢 DRASTIC-T")
-                                if "error" not in r["m_dt"]:
-                                    st.metric("Kappa", r["m_dt"]["kappa"])
-                                    st.metric("ROC-AUC", r["m_dt"]["auc"])
-                                    st.metric("F1-Score", r["m_dt"]["f1"])
-                                    st.metric("Precision", f"{r['m_dt']['precision']}%")
-                                    st.metric("Recall", f"{r['m_dt']['recall']}%")
-                                    st.metric("Accuracy", f"{r['m_dt']['accuracy']}%")
-                                    with st.expander("📊 Confusion Matrix"):
-                                        st.write(f"TP = {r['m_dt']['tp']}"); st.write(f"TN = {r['m_dt']['tn']}")
-                                        st.write(f"FP = {r['m_dt']['fp']}"); st.write(f"FN = {r['m_dt']['fn']}")
-                                    with st.expander("🎲 Bootstrap 95% CI"):
-                                        st.write(f"Mean = {r['b_dt']['mean']}"); st.write(f"Std = {r['b_dt']['std']}")
-                                        st.write(f"**95% CI**: [{r['b_dt']['ci_low']}, {r['b_dt']['ci_high']}]")
-                                    with st.expander("🔄 LOOCV"):
-                                        st.write(f"Kappa = {r['l_dt']['kappa']}")
-                                        st.write(f"Accuracy = {r['l_dt']['accuracy']}%")
-                                        st.write(f"Recall = {r['l_dt']['recall']}%")
-                                        st.write(f"صحيح: {r['l_dt']['n_correct']}/{r['l_dt']['n_total']}")
-
-                            st.markdown("---")
-                            st.markdown("### 📖 تفسير النتائج (Landis & Koch, 1977)")
-                            interp_df = pd.DataFrame({
-                                "Kappa": ["0.00 - 0.20", "0.21 - 0.40", "0.41 - 0.60", "0.61 - 0.80", "0.81 - 1.00"],
-                                "التفسير": ["ضعيف", "مقبول", "متوسط", "جيد", "ممتاز"]})
-                            st.dataframe(interp_df, width="stretch", hide_index=True)
+                    if "adv_results" in st.session_state:
+                        r = st.session_state["adv_results"]
+                        st.markdown("---")
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            st.markdown("#### 🔵 DRASTIC")
+                            if "error" not in r["m_d"]:
+                                st.metric("Kappa", r["m_d"]["kappa"])
+                                st.metric("ROC-AUC", r["m_d"]["auc"])
+                                st.metric("F1-Score", r["m_d"]["f1"])
+                                st.metric("Accuracy", f"{r['m_d']['accuracy']}%")
+                        with c2:
+                            st.markdown("#### 🟢 DRASTIC-Tox")
+                            if "error" not in r["m_dt"]:
+                                st.metric("Kappa", r["m_dt"]["kappa"])
+                                st.metric("ROC-AUC", r["m_dt"]["auc"])
+                                st.metric("F1-Score", r["m_dt"]["f1"])
+                                st.metric("Accuracy", f"{r['m_dt']['accuracy']}%")
 
     # ============ TAB 11: تطوير النموذج ============
     with tabs[11]:
         st.markdown('<div class="section-header"><h3>🚀 تطوير النموذج</h3></div>', unsafe_allow_html=True)
-        st.info("💡 المواقع الرمادية + معايرة α و β + مقارنة النماذج")
-
         if not DEV_OK:
             st.error("❌ `model_development.py` غير متوفر")
-        elif not SKLEARN_OK:
-            st.error("❌ `scikit-learn` غير مثبت")
         else:
             sub_tabs = st.tabs(["📍 المواقع الرمادية", "⚙️ معايرة α و β", "📊 مقارنة النماذج"])
 
             with sub_tabs[0]:
                 st.markdown("#### 📍 المواقع الرمادية (Gray Zone)")
-                st.warning("⚠️ **تنبيه**: هذه المواقع **افتراضية** لاختبار المنهجية فقط.")
-
+                st.warning("⚠️ مواقع **افتراضية** لاختبار المنهجية")
                 gray_rows = []
                 for state_name, state_data in GRAY_ZONE_SITES.items():
                     for site_key, site_data in state_data.get("sites", {}).items():
                         gray_rows.append({"الموقع": site_data.get("name_ar", site_key),
                             "D (م)": site_data["depth_m"], "R (مم)": site_data["recharge_mm"],
                             "CN (mg/L)": site_data["cn_water_mg_l"],
-                            "Hg (mg/L)": site_data["hg_water_mg_l"],
-                            "الحالة": "ملوث" if site_data["actual_contaminated"] == 1 else "نظيف"})
-
+                            "Hg (mg/L)": site_data["hg_water_mg_l"]})
                 st.dataframe(pd.DataFrame(gray_rows), width="stretch", hide_index=True)
-                st.markdown("---")
-                st.markdown("#### 🔄 دمج البيانات")
-
                 merge_option = st.radio("اختر:",
-                    ["الموثقة فقط (11 موقعاً)", "الموثقة + الرمادية (17 موقعاً)"], key="merge_choice")
+                    ["الموثقة فقط (11)", "الموثقة + الرمادية (17)"], key="merge_choice")
                 include_gray = "17" in merge_option
-
-                if st.button("🔄 تحميل البيانات", type="primary", key="load_combined"):
+                if st.button("🔄 تحميل", type="primary", key="load_combined"):
                     df_combined = get_combined_dataset(include_gray=include_gray)
-                    drastic_vals, dt_vals = [], []
+                    dv, dtv = [], []
                     for _, row in df_combined.iterrows():
                         try:
                             ix = calc_index(get_d_rating(float(row["depth_m"])),
@@ -1412,55 +1281,24 @@ if mode == "🏠 النظام الأساسي":
                                 get_c_rating(float(row["conductivity"])))
                             dt = calc_drastic_t(ix, float(row["cn_water_mg_l"]),
                                                 float(row["hg_water_mg_l"]))["drastic_t"]
-                            drastic_vals.append(ix); dt_vals.append(dt)
+                            dv.append(ix); dtv.append(dt)
                         except Exception:
-                            drastic_vals.append(0); dt_vals.append(0)
+                            dv.append(0); dtv.append(0)
                     df_combined = df_combined.copy()
-                    df_combined["DRASTIC"] = drastic_vals
-                    df_combined["DRASTIC_T"] = dt_vals
+                    df_combined["DRASTIC"] = dv
+                    df_combined["DRASTIC_Tox"] = dtv
                     st.session_state["df_combined"] = df_combined
-                    st.success(f"✅ تم التحميل: {len(df_combined)} موقع")
+                    st.success(f"✅ {len(df_combined)} موقع")
                     st.rerun()
-
-                if "df_combined" in st.session_state:
-                    df_saved = st.session_state["df_combined"]
-                    st.markdown("---")
-                    st.dataframe(df_saved, width="stretch")
-                    c1, c2, c3, c4 = st.columns(4)
-                    c1.metric("إجمالي", len(df_saved))
-                    c2.metric("موثقة", int(df_saved["verified"].sum()))
-                    c3.metric("رمادية", int(df_saved["is_gray_zone"].sum()))
-                    c4.metric("ملوثة", int(df_saved["actual_contaminated"].sum()))
 
             with sub_tabs[1]:
                 st.markdown("#### ⚙️ معايرة α و β")
-
                 df_cal = st.session_state.get("df_combined")
                 if df_cal is None:
                     df_cal = st.session_state.get("df_validation")
-
                 if df_cal is None:
                     st.warning("⚠️ حمّل البيانات أولاً")
                 else:
-                    if "DRASTIC" not in df_cal.columns:
-                        drastic_vals = []
-                        for _, row in df_cal.iterrows():
-                            try:
-                                drastic_vals.append(calc_index(
-                                    get_d_rating(float(row["depth_m"])),
-                                    get_r_rating(float(row["recharge_mm"])),
-                                    get_a_rating(str(row["aquifer"])),
-                                    get_s_rating(str(row["soil"])),
-                                    get_t_rating(float(row["slope_pct"])),
-                                    get_i_rating(str(row["vadose"])),
-                                    get_c_rating(float(row["conductivity"]))))
-                            except Exception:
-                                drastic_vals.append(0)
-                        df_cal = df_cal.copy()
-                        df_cal["DRASTIC"] = drastic_vals
-                        st.session_state["df_combined"] = df_cal
-
-                    st.write(f"**عدد المواقع:** {len(df_cal)}")
                     c1, c2 = st.columns(2)
                     with c1:
                         a_min = st.slider("α الأدنى:", 0.0, 1.0, 0.1, 0.1, key="cal_a_min")
@@ -1468,77 +1306,169 @@ if mode == "🏠 النظام الأساسي":
                     with c2:
                         b_min = st.slider("β الأدنى:", 0.0, 1.0, 0.1, 0.1, key="cal_b_min")
                         b_max = st.slider("β الأعلى:", 0.0, 1.0, 0.9, 0.1, key="cal_b_max")
-
-                    if st.button("🚀 تشغيل المعايرة", type="primary", key="run_cal"):
+                    if st.button("🚀 تشغيل", type="primary", key="run_cal"):
                         with st.spinner("جاري البحث..."):
                             alpha_range = list(np.arange(a_min, a_max + 0.05, 0.1))
                             beta_range = list(np.arange(b_min, b_max + 0.05, 0.1))
-                            result = calibrate_alpha_beta(df_cal, {"DRASTIC": 100, "DRASTIC-T": 140},
-                                                            alpha_range=alpha_range, beta_range=beta_range)
-                            st.session_state["cal_result"] = result
-
+                            res = calibrate_alpha_beta(df_cal, {"DRASTIC": 100, "DRASTIC-T": 140},
+                                                        alpha_range=alpha_range, beta_range=beta_range)
+                            st.session_state["cal_result"] = res
                     if "cal_result" in st.session_state:
                         res = st.session_state["cal_result"]
-                        if "error" in res:
-                            st.error(res["error"])
-                        else:
-                            st.markdown("---")
+                        if "error" not in res:
                             c1, c2 = st.columns(2)
                             with c1:
-                                st.markdown("#### 🏆 حسب Kappa")
                                 bk = res["best_kappa"]
                                 st.metric("α", bk["alpha"]); st.metric("β", bk["beta"])
-                                st.metric("Kappa", bk["kappa"]); st.metric("Recall", f"{bk['recall']}%")
+                                st.metric("Kappa", bk["kappa"])
                             with c2:
-                                st.markdown("#### ⚖️ متوازن")
                                 bb = res["best_balanced"]
-                                st.metric("α", bb["alpha"]); st.metric("β", bb["beta"])
-                                st.metric("Kappa", bb["kappa"]); st.metric("Recall", f"{bb['recall']}%")
-
-                            try:
-                                import plotly.express as px
-                                pivot = res["results"].pivot(index="alpha", columns="beta", values="kappa")
-                                fig = px.imshow(pivot, color_continuous_scale="RdYlGn",
-                                                labels=dict(x="β", y="α", color="Kappa"), title="Kappa لـ (α, β)")
-                                st.plotly_chart(fig, use_container_width=True)
-                            except Exception:
-                                pass
+                                st.metric("α (متوازن)", bb["alpha"])
+                                st.metric("β (متوازن)", bb["beta"])
+                                st.metric("Kappa (متوازن)", bb["kappa"])
 
             with sub_tabs[2]:
                 st.markdown("#### 📊 مقارنة النماذج")
-
                 df_cmp = st.session_state.get("df_combined")
                 if df_cmp is None:
                     df_cmp = st.session_state.get("df_validation")
-
                 if df_cmp is None:
                     st.warning("⚠️ حمّل البيانات أولاً")
                 else:
-                    if st.button("🚀 تشغيل المقارنة", type="primary", key="run_cmp"):
+                    if st.button("🚀 تشغيل", type="primary", key="run_cmp"):
                         with st.spinner("جاري الحساب..."):
-                            results = compare_models(
-                                df_cmp,
+                            results = compare_models(df_cmp,
                                 (get_d_rating, get_r_rating, get_a_rating,
                                  get_s_rating, get_t_rating, get_i_rating, get_c_rating),
                                 calc_index)
                             st.session_state["cmp_results"] = results
-
                     if "cmp_results" in st.session_state:
                         r = st.session_state["cmp_results"]
-                        summary_rows = []
-                        for model_name, metrics in r.items():
-                            if "error" not in metrics:
-                                summary_rows.append({"النموذج": model_name,
-                                    "Kappa": metrics["kappa"], "Recall (%)": metrics["recall"],
-                                    "Precision (%)": metrics["precision"],
-                                    "Accuracy (%)": metrics["accuracy"], "ROC-AUC": metrics["auc"]})
-                        summary_df = pd.DataFrame(summary_rows)
-                        st.dataframe(summary_df, width="stretch", hide_index=True)
+                        rows = []
+                        for mn, m in r.items():
+                            if "error" not in m:
+                                rows.append({"النموذج": mn, "Kappa": m["kappa"],
+                                    "Recall (%)": m["recall"], "Accuracy (%)": m["accuracy"],
+                                    "ROC-AUC": m["auc"]})
+                        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
 
-                        valid_models = [(k, v) for k, v in r.items() if "error" not in v]
-                        if valid_models:
-                            best = max(valid_models, key=lambda x: x[1]["kappa"])
-                            st.success(f"🏆 أفضل نموذج: **{best[0]}** — Kappa = {best[1]['kappa']}")
+    # ============ TAB 12: الخرائط التلقائية ============
+    with tabs[12]:
+        st.markdown('<div class="section-header"><h3>🗺️ الخرائط التلقائية</h3></div>',
+                    unsafe_allow_html=True)
+        st.info("💡 تولّد 12 خريطة تلقائياً مع حدود السودان")
+
+        if not MAPS_OK:
+            st.error("❌ `auto_maps.py` غير متوفر. أضفه إلى المستودع.")
+        else:
+            df_source = (st.session_state.get("df_combined") or
+                         st.session_state.get("df_validation"))
+
+            if df_source is None:
+                st.warning("⚠️ ارفع ملف التحقق أولاً")
+            else:
+                st.write(f"**عدد المواقع:** {len(df_source)}")
+
+                if st.button("🎨 توليد الخرائط التلقائية", type="primary",
+                             key="gen_auto_maps"):
+                    with st.spinner("جاري توليد 12 خريطة..."):
+                        try:
+                            df_maps = df_source.copy()
+
+                            # إحداثيات
+                            if "coords" in df_maps.columns and "lon" not in df_maps.columns:
+                                df_maps["lat"] = df_maps["coords"].apply(
+                                    lambda c: c[0] if isinstance(c, (tuple, list)) and len(c) >= 2 else None)
+                                df_maps["lon"] = df_maps["coords"].apply(
+                                    lambda c: c[1] if isinstance(c, (tuple, list)) and len(c) >= 2 else None)
+
+                            if "lon" not in df_maps.columns:
+                                st.error("❌ لا توجد إحداثيات في الملف")
+                                st.stop()
+
+                            # DRASTIC
+                            if "DRASTIC" not in df_maps.columns:
+                                dv = []
+                                for _, row in df_maps.iterrows():
+                                    try:
+                                        dv.append(calc_index(
+                                            get_d_rating(float(row["depth_m"])),
+                                            get_r_rating(float(row["recharge_mm"])),
+                                            get_a_rating(str(row["aquifer"])),
+                                            get_s_rating(str(row["soil"])),
+                                            get_t_rating(float(row["slope_pct"])),
+                                            get_i_rating(str(row["vadose"])),
+                                            get_c_rating(float(row["conductivity"]))))
+                                    except Exception:
+                                        dv.append(0)
+                                df_maps["DRASTIC"] = dv
+
+                            # DRASTIC-Tox
+                            if "DRASTIC_Tox" not in df_maps.columns:
+                                dtv = []
+                                for _, row in df_maps.iterrows():
+                                    try:
+                                        ix = calc_index(
+                                            get_d_rating(float(row["depth_m"])),
+                                            get_r_rating(float(row["recharge_mm"])),
+                                            get_a_rating(str(row["aquifer"])),
+                                            get_s_rating(str(row["soil"])),
+                                            get_t_rating(float(row["slope_pct"])),
+                                            get_i_rating(str(row["vadose"])),
+                                            get_c_rating(float(row["conductivity"])))
+                                        dt = calc_drastic_t(
+                                            ix,
+                                            float(row.get("cn_water_mg_l", 0)),
+                                            float(row.get("hg_water_mg_l", 0)))["drastic_t"]
+                                        dtv.append(dt)
+                                    except Exception:
+                                        dtv.append(0)
+                                df_maps["DRASTIC_Tox"] = dtv
+
+                            # إعادة تسمية
+                            rename_map = {}
+                            if "cn_water_mg_l" in df_maps.columns:
+                                rename_map["cn_water_mg_l"] = "CN"
+                            if "hg_water_mg_l" in df_maps.columns:
+                                rename_map["hg_water_mg_l"] = "Hg"
+                            if rename_map:
+                                df_maps = df_maps.rename(columns=rename_map)
+
+                            # تجهيز
+                            df_prepared = prepare_df_for_maps(
+                                df_maps,
+                                (get_d_rating, get_r_rating, get_a_rating,
+                                 get_s_rating, get_t_rating, get_i_rating, get_c_rating)
+                            )
+
+                            # توليد
+                            fig = generate_auto_maps(df_prepared, show_sudan=True)
+                            st.session_state["auto_maps_fig"] = fig
+                            st.success(f"✅ تم التوليد: {len(df_prepared)} موقع")
+
+                        except Exception as e:
+                            st.error(f"❌ {e}")
+                            import traceback
+                            with st.expander("التفاصيل"):
+                                st.code(traceback.format_exc())
+
+                # عرض الخريطة
+                if "auto_maps_fig" in st.session_state:
+                    st.plotly_chart(
+                        st.session_state["auto_maps_fig"],
+                        use_container_width=True,
+                        key="auto_maps_chart"
+                    )
+
+                    html_str = st.session_state["auto_maps_fig"].to_html(
+                        include_plotlyjs='cdn')
+                    st.download_button(
+                        "📥 تحميل الخرائط (HTML تفاعلي)",
+                        data=html_str.encode("utf-8"),
+                        file_name="auto_maps.html",
+                        mime="text/html",
+                        use_container_width=True
+                    )
 
 
 # ============================================================
@@ -1612,7 +1542,7 @@ elif mode == "✅ التحقق الفعلي" and ADV_OK:
                 except Exception as e:
                     st.error(f"❌ {e}")
         with c1:
-            st.info(f"💡 **{n_sites_verified}** موقع موثق جاهز للتحليل")
+            st.info(f"💡 **{n_sites_verified}** موقع موثق")
 
     df_val = st.session_state.get("df_validation")
     if df_val is None:
@@ -1621,14 +1551,12 @@ elif mode == "✅ التحقق الفعلي" and ADV_OK:
         try:
             st.dataframe(df_val.head(10), width="stretch")
             has_tox = "cn_water_mg_l" in df_val.columns and "hg_water_mg_l" in df_val.columns
-
             if not has_tox:
-                st.error("❌ الملف لا يحتوي على أعمدة CN و Hg")
+                st.error("❌ الملف لا يحتوي على CN و Hg")
             else:
-                st.markdown("#### ⚙️ العتبات")
                 c1, c2 = st.columns(2)
                 with c1: th_d = st.number_input("DRASTIC:", 50, 200, 100, 10, key="v_th_d")
-                with c2: th_dt = st.number_input("DRASTIC-T:", 50, 230, 140, 10, key="v_th_dt")
+                with c2: th_dt = st.number_input("DRASTIC-Tox:", 50, 230, 140, 10, key="v_th_dt")
 
                 d_list, dp_list, actual_list = [], [], []
                 for i, row in df_val.iterrows():
@@ -1655,15 +1583,11 @@ elif mode == "✅ التحقق الفعلي" and ADV_OK:
                     md = calculate_confusion_matrix(d_list, actual_list, th_d)
                     st.metric("Kappa", md["kappa"])
                     st.metric("Recall", f"{md['recall']}%")
-                    st.metric("Accuracy", f"{md.get('accuracy', 'N/A')}%")
                 with c2:
-                    st.markdown("#### 🟢 DRASTIC-T")
+                    st.markdown("#### 🟢 DRASTIC-Tox")
                     mp = calculate_confusion_matrix(dp_list, actual_list, th_dt)
                     st.metric("Kappa", mp["kappa"])
                     st.metric("Recall", f"{mp['recall']}%")
-                    st.metric("Accuracy", f"{mp.get('accuracy', 'N/A')}%")
-
-                st.info("💡 للتحقق المتقدم (LOOCV + ROC-AUC)، افتح تبويب **🔬 التحقق المتقدم**")
         except Exception as e:
             st.error(f"❌ {e}")
 
@@ -1680,10 +1604,10 @@ elif mode == "🚀 نقل الملوثات" and ADV_OK:
         cv = st.session_state["cv"]
         c1, c2 = st.columns(2)
         with c1:
-            init_conc = st.number_input("التركيز الأولي:", 0.001, 10.0, 0.10, 0.001, format="%.4f")
+            init_conc = st.number_input("التركيز الأولي:", 0.001, 10.0, 0.10, 0.001)
             distance = st.number_input("المسافة (m):", 10.0, 5000.0, 500.0, 50.0)
         with c2:
-            gradient = st.number_input("التدرج:", 0.0001, 0.5, 0.01, 0.0001, format="%.4f")
+            gradient = st.number_input("التدرج:", 0.0001, 0.5, 0.01, 0.0001)
             years = st.slider("السنوات:", 1, 30, 10, 1)
 
         porosity = st.slider("المسامية:", 0.02, 0.55, 0.25, 0.01)
@@ -1709,61 +1633,47 @@ elif mode == "🚀 نقل الملوثات" and ADV_OK:
 
 
 # ============================================================
-# MODE 5: التحقق المستقل (مُستعاد)
+# MODE 5: التحقق المستقل
 # ============================================================
 elif mode == "🔬 التحقق المستقل" and ADV_OK:
     st.markdown('<div class="section-header"><h3>🔬 التحقق المستقل (70/30)</h3></div>', unsafe_allow_html=True)
-    st.info("💡 يقسم البيانات إلى 70% تدريب و30% اختبار")
 
     df_val = st.session_state.get("df_validation")
     if df_val is None:
         st.warning("⚠️ ارفع ملف التحقق أولاً")
     else:
-        try:
-            required = ["depth_m", "recharge_mm", "slope_pct", "conductivity",
-                        "aquifer", "soil", "vadose", "actual_contaminated"]
-            missing = [c for c in required if c not in df_val.columns]
+        if st.button("🚀 تشغيل", type="primary"):
+            with st.spinner("جاري التحقق..."):
+                try:
+                    result = independent_validation(df_val.copy(), "DRASTIC",
+                                                     "actual_contaminated", test_size=0.3)
+                    st.session_state["ind_val_result"] = result
+                except Exception as e:
+                    st.error(f"❌ {e}")
 
-            if missing:
-                st.error(f"❌ أعمدة مفقودة: {missing}")
+        if "ind_val_result" in st.session_state:
+            r = st.session_state["ind_val_result"]
+            if "error" in r:
+                st.error(r["error"])
             else:
-                if st.button("🚀 تشغيل التحقق المستقل", type="primary"):
-                    with st.spinner("جاري التحقق..."):
-                        try:
-                            result = independent_validation(
-                                df_val.copy(), "DRASTIC", "actual_contaminated", test_size=0.3)
-                            st.session_state["ind_val_result"] = result
-                        except Exception as e:
-                            st.error(f"❌ {e}")
-
-                if "ind_val_result" in st.session_state:
-                    r = st.session_state["ind_val_result"]
-                    if "error" in r:
-                        st.error(r["error"])
-                    else:
-                        c1, c2, c3, c4 = st.columns(4)
-                        c1.metric("α الأمثل", r.get("best_alpha", "N/A"))
-                        c2.metric("β الأمثل", r.get("best_beta", "N/A"))
-                        c3.metric("Kappa (تدريب)", r.get("train_kappa", "N/A"))
-                        c4.metric("Kappa (اختبار)", r.get("test_kappa", "N/A"))
-        except Exception as e:
-            st.error(f"❌ {e}")
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("α الأمثل", r.get("best_alpha", "N/A"))
+                c2.metric("β الأمثل", r.get("best_beta", "N/A"))
+                c3.metric("Kappa (تدريب)", r.get("train_kappa", "N/A"))
+                c4.metric("Kappa (اختبار)", r.get("test_kappa", "N/A"))
 
 
 # ============================================================
-# MODE 6: الأقمار الصناعية (مُستعاد)
+# MODE 6: الأقمار الصناعية
 # ============================================================
 elif mode == "🛰️ الأقمار الصناعية" and ADV_OK:
-    st.markdown('<div class="section-header"><h3>🛰️ بيانات الأقمار الصناعية (ERA5)</h3></div>', unsafe_allow_html=True)
-    st.info("💡 يجلب بيانات الأمطار والحرارة و NDVI من Open-Meteo")
+    st.markdown('<div class="section-header"><h3>🛰️ الأقمار الصناعية (ERA5)</h3></div>', unsafe_allow_html=True)
 
     c1, c2 = st.columns(2)
     with c1:
-        lat = st.number_input("خط العرض:", -90.0, 90.0, 13.55, 0.01,
-                               format="%.4f", key="sat_lat")
+        lat = st.number_input("خط العرض:", -90.0, 90.0, 13.55, 0.01, format="%.4f", key="sat_lat")
     with c2:
-        lon = st.number_input("خط الطول:", -180.0, 180.0, 33.60, 0.01,
-                               format="%.4f", key="sat_lon")
+        lon = st.number_input("خط الطول:", -180.0, 180.0, 33.60, 0.01, format="%.4f", key="sat_lon")
 
     years = st.slider("عدد السنوات:", 1, 10, 3, 1)
 
@@ -1789,7 +1699,7 @@ elif mode == "🛰️ الأقمار الصناعية" and ADV_OK:
 
 
 # ============================================================
-# MODE 7: الديناميكي (مُستعاد)
+# MODE 7: الديناميكي
 # ============================================================
 elif mode == "⏳ الديناميكي" and ADV_OK:
     st.markdown('<div class="section-header"><h3>⏳ التقييم الديناميكي</h3></div>', unsafe_allow_html=True)
@@ -1818,8 +1728,7 @@ elif mode == "⏳ الديناميكي" and ADV_OK:
         if "dyn" in st.session_state:
             res = st.session_state["dyn"]
             if isinstance(res, dict) and "combined" in res:
-                df = res["combined"]
-                st.dataframe(df, width="stretch")
+                st.dataframe(res["combined"], width="stretch")
 
 
 # ============================================================
@@ -1871,7 +1780,7 @@ elif mode == "🌊 MODFLOW" and MODFLOW_OK:
 st.markdown("---")
 st.markdown("""
 <div style="text-align:center; color:#666; padding:10px;">
-<b>نظام التعدين السوداني v57.0</b> — PILOT VERSION<br>
+<b>نظام التعدين السوداني v57.1</b> — PILOT VERSION<br>
 <span style="font-size:0.85em;">⚠️ أداة فرز أولي — لا تُغني عن الفحص المخبري</span>
 </div>
 """, unsafe_allow_html=True)
