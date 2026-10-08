@@ -5,7 +5,6 @@ Bilingual support (Arabic / English)
 
 TEXTS = {
     "ar": {
-        # ===== عام =====
         "app_title": "نظام التعدين السوداني",
         "university": "جامعة الخرطوم - كلية الهندسة",
         "subtitle": "DRASTIC + DRASTIC-Tox + MODFLOW 6",
@@ -13,27 +12,17 @@ TEXTS = {
         "pilot_version": "⚠️ نسخة تجريبية — أداة فرز أولي",
         "screening_only": "أداة فرز أولي — لا تُغني عن الفحص المخبري",
         "language": "🌐 اللغة",
-        "arabic": "🇸🇦 العربية",
-        "english": "🇬🇧 English",
-        
-        # ===== الشريط الجانبي =====
         "upload_files": "📤 منطقة رفع الملفات",
         "validation_file": "🔵 ملف التحقق",
         "bulk_file": "🟢 ملف التقييم الجماعي",
         "extra_file": "🟡 ملف إضافي",
         "clear_all": "🗑️ مسح جميع الملفات",
         "rows": "صف",
-        "uploaded_ok": "تم الرفع",
-        "upload_error": "خطأ في الرفع",
-        
-        # ===== جودة البيانات =====
         "data_quality": "📊 جودة البيانات",
         "verified_sites": "موثق",
         "display_only": "للعرض فقط",
         "site": "موقع",
         "sites": "موقع",
-        
-        # ===== نطاق البيانات =====
         "data_scope": "🎯 نطاق البيانات",
         "select": "اختر:",
         "scope_traditional": "⛏️ تقليدي (موثّق)",
@@ -41,8 +30,6 @@ TEXTS = {
         "scope_all": "🔀 الكل",
         "mining_type": "نمط التعدين",
         "no_industrial_file": "⚠️ لم يُعثر على industrial_sites.csv",
-        
-        # ===== الأوضاع =====
         "mode": "🎛️ وضع التشغيل",
         "mode_system": "🏠 النظام الأساسي",
         "mode_agricultural": "🌾 القطاع الزراعي",
@@ -52,13 +39,8 @@ TEXTS = {
         "mode_satellite": "🛰️ الأقمار الصناعية",
         "mode_dynamic": "⏳ الديناميكي",
         "mode_modflow": "🌊 MODFLOW",
-        
-        # ===== الحالة =====
         "status": "🔧 الحالة",
-        "modflow_status": "MODFLOW",
         "current_index": "مؤشر",
-        
-        # ===== التبويبات =====
         "tab_input": "📍 المدخلات",
         "tab_manual": "➕ إدخال يدوي",
         "tab_bulk": "📊 التقييم الجماعي",
@@ -74,8 +56,6 @@ TEXTS = {
         "tab_auto_maps": "🗺️ الخرائط التلقائية",
         "tab_calibration": "🎯 معايرة الأوزان",
         "tab_threshold": "📐 العتبة المثلى",
-        
-        # ===== المدخلات =====
         "site_selection": "📍 اختيار الموقع",
         "state": "الولاية",
         "activity": "النشاط",
@@ -98,8 +78,6 @@ TEXTS = {
         "m": "م",
         "mm_yr": "مم/سنة",
         "m_day": "م/يوم",
-        
-        # ===== DRASTIC-Tox =====
         "drastic_tox": "DRASTIC-Tox",
         "drastic": "DRASTIC",
         "bonus": "Bonus",
@@ -112,8 +90,6 @@ TEXTS = {
         "calculation_details": "🔬 تفاصيل الحساب",
         "using_calibrated": "✅ يتم استخدام الأوزان المُعايرة",
         "calibrated_weights": "مُعايرة",
-        
-        # ===== الحلول =====
         "solutions": "🛡️ الحلول",
         "hdpe_liner": "بطانة HDPE",
         "cyanide_treatment": "معالجة السيانيد",
@@ -121,19 +97,13 @@ TEXTS = {
         "before": "قبل",
         "after": "بعد",
         "reduction": "التخفيض",
-        
-        # ===== التقييم الجماعي =====
         "bulk_assessment": "📊 التقييم الجماعي",
-        "upload_hint": "💡 ارفع الملف من الشريط الجانبي",
         "no_file": "⚠️ لم يتم رفع ملف",
         "thresholds": "⚙️ العتبات",
         "drastic_threshold": "عتبة DRASTIC",
         "drastic_tox_threshold": "عتبة DRASTIC-Tox",
-        "current_mining_type": "نمط التعدين الحالي",
         "metrics": "📊 المقاييس",
         "download_results": "📥 تحميل النتائج",
-        
-        # ===== الخريطة الحرارية =====
         "heatmap_title": "🗺️ الخريطة الحرارية",
         "shows_verified_only": "✅ تعرض المواقع الموثقة فقط",
         "view_mode": "العرض",
@@ -148,10 +118,8 @@ TEXTS = {
         "very_high": "🔴 مرتفع جداً",
         "total": "📍 الإجمالي",
         "download_sites": "📥 تحميل بيانات المواقع",
-        
-        # ===== الحساسية =====
         "sensitivity_title": "📈 تحليل الحساسية",
-        "sensitivity_hint": "💡 يحلل تأثير تغيير كل معيار",
+        "sensitivity_hint": "💡 حلّل تأثير كل معيار على المؤشر",
         "change_pct": "نسبة التغيير (%)",
         "run": "🚀 تشغيل",
         "calculating": "جاري الحساب...",
@@ -162,8 +130,27 @@ TEXTS = {
         "new_index": "المؤشر الجديد",
         "change": "التغير",
         "sensitivity_pct": "الحساسية (%)",
-        
-        # ===== السمية =====
+        "spsa_tab": "📊 SPSA (معياري)",
+        "variation_tab": "🔄 Variation Method",
+        "spsa_title": "تحليل SPSA — Napolitano & Fabbri (1996)",
+        "spsa_explanation": "يقارن الوزن الفعلي لكل معامل بالوزن النظري. الاختلاف الموجب = المعامل أكثر تأثيراً من المتوقع.",
+        "run_spsa": "تشغيل SPSA",
+        "most_influential": "الأكثر تأثيراً",
+        "least_influential": "الأقل تأثيراً",
+        "base_index": "المؤشر الأساسي",
+        "weight_wi": "الوزن Wi",
+        "rating_ri": "التقييم Ri",
+        "weighted": "Wi × Ri",
+        "theoretical_pct": "نظري %",
+        "effective_pct": "فعلي %",
+        "difference": "الفرق",
+        "interpretation": "التفسير",
+        "more_important": "أكثر تأثيراً من المتوقع",
+        "less_important": "أقل تأثيراً من المتوقع",
+        "variation_title": "Variation Method (10%)",
+        "variation_explanation": "يغيّر كل قيمة فيزيائية بنسبة ±10%. قد لا يُظهر تأثيراً بسبب طبيعة DRASTIC المنفصلة.",
+        "reference": "المرجع",
+        "formula": "المعادلة",
         "toxicity_title": "☠️ تحليل السمية",
         "additional_inputs": "⚙️ المدخلات الإضافية",
         "hg_in_soil": "Hg في التربة (mg/kg)",
@@ -181,22 +168,16 @@ TEXTS = {
         "periodic": "مراقبة دورية",
         "urgent": "تدخل عاجل",
         "stop_activity": "إيقاف النشاط",
-        
-        # ===== GIS =====
         "gis_title": "🌍 GIS",
         "all": "الكل",
         "verified_only": "الموثقة فقط",
         "display_only_filter": "للعرض فقط",
-        
-        # ===== Monte Carlo =====
         "mc_title": "🎲 Monte Carlo",
         "simulations": "المحاكاات",
         "variation": "الاختلاف (%)",
         "mean": "المتوسط",
         "std": "الانحراف",
         "ci_90": "CI 90%",
-        
-        # ===== التحقق المتقدم =====
         "advanced_title": "🔬 التحقق المتقدم",
         "advanced_hint": "💡 LOOCV + ROC-AUC + Bootstrap CI",
         "no_sklearn": "❌ scikit-learn غير مثبت",
@@ -211,8 +192,6 @@ TEXTS = {
         "confusion_matrix": "📊 Confusion Matrix",
         "bootstrap_ci": "🎲 Bootstrap 95% CI",
         "loocv": "🔄 LOOCV",
-        
-        # ===== تطوير النموذج =====
         "development_title": "🚀 تطوير النموذج",
         "no_dev_module": "❌ model_development.py غير متوفر",
         "gray_zone": "📍 المواقع الرمادية",
@@ -234,12 +213,9 @@ TEXTS = {
         "searching": "جاري البحث...",
         "best_kappa": "🏆 حسب Kappa",
         "balanced": "⚖️ متوازن",
-        
-        # ===== المعايرة =====
         "auto_calibration": "🎯 معايرة الأوزان التلقائية",
         "references": "📚 المراجع",
         "file_has": "✅ الملف يحتوي على",
-        "site_lower": "موقع",
         "calibration_settings": "⚙️ إعدادات المعايرة",
         "mining_pattern": "نمط التعدين",
         "search_precision": "دقة البحث",
@@ -257,8 +233,6 @@ TEXTS = {
         "top_10": "📊 أفضل 10 تركيبات",
         "rank": "الترتيب",
         "calibration_warning": "⚠️ الأوزان مُعايرة على بياناتك الحالية.",
-        
-        # ===== العتبة المثلى =====
         "optimal_threshold_title": "📐 العتبة المثلى (Youden Index)",
         "threshold_hint": "💡 1) يحسب DRASTIC-Tox 2) يرسم ROC 3) يجد أعلى J 4) يقترح العتبة",
         "use_calibrated_weights": "استخدام الأوزان المُعايرة",
@@ -277,8 +251,6 @@ TEXTS = {
         "applied_threshold": "🎯 العتبة المُطبّقة",
         "random": "Random",
         "threshold_label": "العتبة",
-        
-        # ===== الأوضاع الأخرى =====
         "agricultural_title": "🌾 القطاع الزراعي",
         "verification_title": "✅ التحقق الفعلي",
         "transport_title": "🚀 نقل الملوثات (Ogata-Banks)",
@@ -286,18 +258,12 @@ TEXTS = {
         "satellite_title": "🛰️ بيانات الأقمار الصناعية (ERA5)",
         "dynamic_title": "⏳ التقييم الديناميكي",
         "modflow_title": "🌊 MODFLOW 6",
-        
-        # ===== عام =====
         "close": "إغلاق",
         "error": "خطأ",
         "warning": "تحذير",
         "info": "معلومة",
         "success": "نجاح",
         "ok": "حسناً",
-        "and": "و",
-        "or": "أو",
-        "of": "من",
-        "refresh": "تحديث",
         "save": "حفظ",
         "cancel": "إلغاء",
         "yes": "نعم",
@@ -306,9 +272,12 @@ TEXTS = {
         "modules": "🧩 الوحدات",
         "constraints": "⚠️ قيود",
         "achievements": "📊 الإنجازات",
+        "action_immediate": "معالجة فورية",
+        "action_urgent": "مراقبة عاجلة",
+        "action_periodic": "مراقبة دورية",
+        "action_routine": "مراقبة روتينية",
     },
     "en": {
-        # ===== General =====
         "app_title": "Sudan Mining System",
         "university": "University of Khartoum — Faculty of Engineering",
         "subtitle": "DRASTIC + DRASTIC-Tox + MODFLOW 6",
@@ -316,27 +285,17 @@ TEXTS = {
         "pilot_version": "⚠️ PILOT VERSION — Screening Tool",
         "screening_only": "Screening tool only — not a substitute for lab testing",
         "language": "🌐 Language",
-        "arabic": "🇸🇦 العربية",
-        "english": "🇬🇧 English",
-        
-        # ===== Sidebar =====
         "upload_files": "📤 File Upload Area",
         "validation_file": "🔵 Validation File",
         "bulk_file": "🟢 Bulk Assessment File",
         "extra_file": "🟡 Extra File",
         "clear_all": "🗑️ Clear All Files",
         "rows": "rows",
-        "uploaded_ok": "Uploaded",
-        "upload_error": "Upload error",
-        
-        # ===== Data Quality =====
         "data_quality": "📊 Data Quality",
         "verified_sites": "Verified",
         "display_only": "Display Only",
         "site": "site",
         "sites": "sites",
-        
-        # ===== Data Scope =====
         "data_scope": "🎯 Data Scope",
         "select": "Select:",
         "scope_traditional": "⛏️ Traditional (Verified)",
@@ -344,8 +303,6 @@ TEXTS = {
         "scope_all": "🔀 All",
         "mining_type": "Mining Type",
         "no_industrial_file": "⚠️ industrial_sites.csv not found",
-        
-        # ===== Modes =====
         "mode": "🎛️ Mode",
         "mode_system": "🏠 System",
         "mode_agricultural": "🌾 Agricultural",
@@ -355,13 +312,8 @@ TEXTS = {
         "mode_satellite": "🛰️ Satellite",
         "mode_dynamic": "⏳ Dynamic",
         "mode_modflow": "🌊 MODFLOW",
-        
-        # ===== Status =====
         "status": "🔧 Status",
-        "modflow_status": "MODFLOW",
         "current_index": "Index",
-        
-        # ===== Tabs =====
         "tab_input": "📍 Input",
         "tab_manual": "➕ Manual",
         "tab_bulk": "📊 Bulk",
@@ -377,8 +329,6 @@ TEXTS = {
         "tab_auto_maps": "🗺️ Auto Maps",
         "tab_calibration": "🎯 Calibration",
         "tab_threshold": "📐 Threshold",
-        
-        # ===== Input Tab =====
         "site_selection": "📍 Site Selection",
         "state": "State",
         "activity": "Activity",
@@ -401,8 +351,6 @@ TEXTS = {
         "m": "m",
         "mm_yr": "mm/yr",
         "m_day": "m/day",
-        
-        # ===== DRASTIC-Tox =====
         "drastic_tox": "DRASTIC-Tox",
         "drastic": "DRASTIC",
         "bonus": "Bonus",
@@ -415,8 +363,6 @@ TEXTS = {
         "calculation_details": "🔬 Calculation Details",
         "using_calibrated": "✅ Using calibrated weights",
         "calibrated_weights": "Calibrated",
-        
-        # ===== Solutions =====
         "solutions": "🛡️ Solutions",
         "hdpe_liner": "HDPE Liner",
         "cyanide_treatment": "Cyanide Treatment",
@@ -424,19 +370,13 @@ TEXTS = {
         "before": "Before",
         "after": "After",
         "reduction": "Reduction",
-        
-        # ===== Bulk =====
         "bulk_assessment": "📊 Bulk Assessment",
-        "upload_hint": "💡 Upload file from sidebar",
         "no_file": "⚠️ No file uploaded",
         "thresholds": "⚙️ Thresholds",
         "drastic_threshold": "DRASTIC Threshold",
         "drastic_tox_threshold": "DRASTIC-Tox Threshold",
-        "current_mining_type": "Current Mining Type",
         "metrics": "📊 Metrics",
         "download_results": "📥 Download Results",
-        
-        # ===== Heatmap =====
         "heatmap_title": "🗺️ Heatmap",
         "shows_verified_only": "✅ Shows verified sites only",
         "view_mode": "View",
@@ -451,10 +391,8 @@ TEXTS = {
         "very_high": "🔴 Very High",
         "total": "📍 Total",
         "download_sites": "📥 Download Sites",
-        
-        # ===== Sensitivity =====
         "sensitivity_title": "📈 Sensitivity Analysis",
-        "sensitivity_hint": "💡 Analyzes the impact of each parameter",
+        "sensitivity_hint": "💡 Analyze the impact of each parameter",
         "change_pct": "Variation (%)",
         "run": "🚀 Run",
         "calculating": "Calculating...",
@@ -465,8 +403,27 @@ TEXTS = {
         "new_index": "New Index",
         "change": "Change",
         "sensitivity_pct": "Sensitivity (%)",
-        
-        # ===== Toxicity =====
+        "spsa_tab": "📊 SPSA (Standard)",
+        "variation_tab": "🔄 Variation Method",
+        "spsa_title": "SPSA — Napolitano & Fabbri (1996)",
+        "spsa_explanation": "Compares effective weight of each parameter with theoretical weight.",
+        "run_spsa": "Run SPSA",
+        "most_influential": "Most Influential",
+        "least_influential": "Least Influential",
+        "base_index": "Base Index",
+        "weight_wi": "Weight Wi",
+        "rating_ri": "Rating Ri",
+        "weighted": "Wi × Ri",
+        "theoretical_pct": "Theoretical %",
+        "effective_pct": "Effective %",
+        "difference": "Difference",
+        "interpretation": "Interpretation",
+        "more_important": "More influential than expected",
+        "less_important": "Less influential than expected",
+        "variation_title": "Variation Method (10%)",
+        "variation_explanation": "Changes each physical value by ±10%. May show no effect due to discrete DRASTIC ratings.",
+        "reference": "Reference",
+        "formula": "Formula",
         "toxicity_title": "☠️ Toxicity Analysis",
         "additional_inputs": "⚙️ Additional Inputs",
         "hg_in_soil": "Hg in Soil (mg/kg)",
@@ -484,22 +441,16 @@ TEXTS = {
         "periodic": "Periodic",
         "urgent": "Urgent",
         "stop_activity": "Stop Activity",
-        
-        # ===== GIS =====
         "gis_title": "🌍 GIS",
         "all": "All",
         "verified_only": "Verified Only",
         "display_only_filter": "Display Only",
-        
-        # ===== Monte Carlo =====
         "mc_title": "🎲 Monte Carlo",
         "simulations": "Simulations",
         "variation": "Variation (%)",
         "mean": "Mean",
         "std": "Std",
         "ci_90": "CI 90%",
-        
-        # ===== Advanced =====
         "advanced_title": "🔬 Advanced Validation",
         "advanced_hint": "💡 LOOCV + ROC-AUC + Bootstrap CI",
         "no_sklearn": "❌ scikit-learn not installed",
@@ -514,14 +465,12 @@ TEXTS = {
         "confusion_matrix": "📊 Confusion Matrix",
         "bootstrap_ci": "🎲 Bootstrap 95% CI",
         "loocv": "🔄 LOOCV",
-        
-        # ===== Development =====
         "development_title": "🚀 Model Development",
         "no_dev_module": "❌ model_development.py not found",
         "gray_zone": "📍 Gray Zone Sites",
         "calibration_ab": "⚙️ Calibrate α & β",
         "model_comparison": "📊 Model Comparison",
-        "gray_warning": "⚠️ These are virtual sites for methodology testing only.",
+        "gray_warning": "⚠️ Virtual sites for methodology testing only.",
         "verified_only_11": "Verified only (11 sites)",
         "with_gray_17": "Verified + Gray (17 sites)",
         "load_data": "🔄 Load Data",
@@ -537,12 +486,9 @@ TEXTS = {
         "searching": "Searching...",
         "best_kappa": "🏆 Best Kappa",
         "balanced": "⚖️ Balanced",
-        
-        # ===== Calibration =====
         "auto_calibration": "🎯 Automatic Weight Calibration",
         "references": "📚 References",
         "file_has": "✅ File contains",
-        "site_lower": "sites",
         "calibration_settings": "⚙️ Calibration Settings",
         "mining_pattern": "Mining Pattern",
         "search_precision": "Search Precision",
@@ -560,8 +506,6 @@ TEXTS = {
         "top_10": "📊 Top 10 Combinations",
         "rank": "Rank",
         "calibration_warning": "⚠️ Weights calibrated on current data only.",
-        
-        # ===== Threshold =====
         "optimal_threshold_title": "📐 Optimal Threshold (Youden Index)",
         "threshold_hint": "💡 1) Compute DRASTIC-Tox 2) Plot ROC 3) Find max J 4) Suggest threshold",
         "use_calibrated_weights": "Use calibrated weights",
@@ -580,8 +524,6 @@ TEXTS = {
         "applied_threshold": "🎯 Applied Threshold",
         "random": "Random",
         "threshold_label": "Threshold",
-        
-        # ===== Other Modes =====
         "agricultural_title": "🌾 Agricultural Sector",
         "verification_title": "✅ Field Verification",
         "transport_title": "🚀 Contaminant Transport (Ogata-Banks)",
@@ -589,18 +531,12 @@ TEXTS = {
         "satellite_title": "🛰️ Satellite Data (ERA5)",
         "dynamic_title": "⏳ Dynamic Assessment",
         "modflow_title": "🌊 MODFLOW 6",
-        
-        # ===== General =====
         "close": "Close",
         "error": "Error",
         "warning": "Warning",
         "info": "Info",
         "success": "Success",
         "ok": "OK",
-        "and": "and",
-        "or": "or",
-        "of": "of",
-        "refresh": "Refresh",
         "save": "Save",
         "cancel": "Cancel",
         "yes": "Yes",
@@ -609,6 +545,10 @@ TEXTS = {
         "modules": "🧩 Modules",
         "constraints": "⚠️ Constraints",
         "achievements": "📊 Achievements",
+        "action_immediate": "Immediate Treatment",
+        "action_urgent": "Urgent Monitoring",
+        "action_periodic": "Periodic Monitoring",
+        "action_routine": "Routine Monitoring",
     }
 }
 
