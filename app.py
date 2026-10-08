@@ -1,5 +1,9 @@
 """
-نظام التعدين السوداني v57.7 — جامعة الخرطوم
+نظام التعدين السوداني v57.8
+=====================================
+جامعة الخرطوم - كلية الهندسة
+
+المراجع: Aller 1987، Konaté 2025، Karan 2018، Landis & Koch 1977، Youden 1950
 """
 import streamlit as st
 import subprocess, os, sys, shutil, stat, zipfile, io
@@ -16,11 +20,13 @@ try:
     SKLEARN_OK = True
 except ImportError:
     SKLEARN_OK = False
+
 try:
     from auto_maps import generate_auto_maps, prepare_df_for_maps
     MAPS_OK = True
 except ImportError:
     MAPS_OK = False
+
 try:
     from auto_calibration import (auto_calibrate_weights, apply_calibration,
         compare_with_defaults, interpret_kappa, find_optimal_threshold)
@@ -28,7 +34,8 @@ try:
 except ImportError:
     AUTOCAL_OK = False
 
-st.set_page_config(page_title="نظام التعدين السوداني v57.7", page_icon="⛏️", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="نظام التعدين السوداني v57.8", page_icon="⛏️",
+                   layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""<style>
 html,body,[class*="css"]{font-family:'Segoe UI','Tahoma',Arial;font-size:15px;}
@@ -48,7 +55,6 @@ div[data-testid="stMetric"]{background:linear-gradient(135deg,#fff,#f9f5ec);bord
 .section-header h3{color:#5c2c16;margin:0;font-size:1.25em;}
 .info-card{background:#faf8f3;border:1px solid #e0d4b8;border-radius:10px;padding:16px;margin:10px 0;}
 .upload-zone{background:linear-gradient(135deg,#fff9ec,#f5e6c8);border:3px dashed #c19a6b;border-radius:14px;padding:22px;margin:12px 0;text-align:center;}
-.upload-zone h4{color:#5c2c16;margin:0 0 6px;}
 .pilot-banner{background:linear-gradient(135deg,#ff9800,#f57c00);color:white;padding:12px 16px;border-radius:10px;margin:8px 0;font-weight:600;text-align:center;}
 .quality-box-ok{background:#e8f5e9;border-left:4px solid #4caf50;padding:10px 12px;border-radius:8px;margin:5px 0;}
 .quality-box-warn{background:#fff3e0;border-left:4px solid #ff9800;padding:10px 12px;border-radius:8px;margin:5px 0;}
@@ -162,6 +168,12 @@ WEIGHTS = {
     "traditional": {"alpha": 0.3, "beta": 1.0, "SF": 1.1, "ar": "⛏️ معدنون تقليديون (زئبق)"},
     "mixed":       {"alpha": 0.5, "beta": 0.9, "SF": 1.3, "ar": "🔀 مختلط (سيانيد + زئبق)"},
 }
+
+OPTIMAL_THRESHOLDS = {"traditional": 106.5, "industrial": 128.0, "mixed": 117.0}
+
+def get_optimal_threshold(mining_type):
+    return OPTIMAL_THRESHOLDS.get(mining_type, 140.0)
+
 AQUIFER_AR = {"massive_shale":"صخر طيني ضخم","metamorphic_igneous":"صخور متحولة/نارية","weathered_metamorphic_igneous":"صخور متحولة/نارية متآكلة","thin_bedded_sequences":"تتابعات رقيقة الطبقات","massive_sandstone":"حجر رملي ضخم","massive_limestone":"حجر جيري ضخم","sand_and_gravel":"رمل وحصى","basalt":"بازلت","karst_limestone":"حجر جيري كارستي"}
 SOIL_AR = {"thin_or_absent":"رقيقة أو معدومة","gravel":"حصى","sand":"رمل","peat":"خث","shrinking_aggregated_clay":"طين متقلص متكتل","sandy_loam":"طين رملي","loam":"طين طميي","silty_loam":"طمي غريني","clay_loam":"طين غريني","muck":"طين عضوي","nonshrinking_clay":"طين غير متقلص"}
 VADOSE_AR = {"confining_layer":"طبقة كتيمة","silt_clay":"غرين وطين","shale":"صخر طيني","metamorphic_igneous":"صخور متحولة/نارية","limestone":"حجر جيري","sandstone":"حجر رملي","sand_gravel_silt_clay":"رمل وحصى وغرين وطين","sand_gravel":"رمل وحصى","basalt":"بازلت","karst_limestone":"حجر جيري كارستي"}
@@ -257,6 +269,26 @@ def calc_drastic_t(base_drastic, cn_water, hg_water, distance_m=100.0, seepage=1
             "drastic_p":round(drastic_t,1),"modifier":round(1.0 + toxicity_bonus / max(base_drastic, 1), 3),
             "increase_pct":round(increase_pct,1),"level":level,"color":color}
 
+def weighted_toxicity(hgw, hgs, cnw, cns, mining_type="traditional"):
+    CN_LIMIT = 0.05; HG_LIMIT = 0.0007
+    cn_score = min(30.0, (cnw / CN_LIMIT) * 30.0)
+    hg_score = min(30.0, (hgw / HG_LIMIT) * 30.0)
+    w = WEIGHTS.get(mining_type, WEIGHTS["traditional"])
+    alpha, beta = w["alpha"], w["beta"]
+    bonus = min(50.0, alpha * cn_score + beta * hg_score)
+    soil_factor = 1.0
+    if hgs > 1.0: soil_factor += 0.3
+    if cns > 10.0: soil_factor += 0.3
+    toxicity_index = bonus * soil_factor
+    if toxicity_index <= 5.0: cat, act = "آمن", "لا يتطلب تدخل"
+    elif toxicity_index <= 15.0: cat, act = "تحت المراقبة", "مراقبة دورية"
+    elif toxicity_index <= 30.0: cat, act = "خطر", "تدخل عاجل"
+    else: cat, act = "خطر داهم", "إيقاف النشاط"
+    return {"index": round(toxicity_index, 2), "cn_score": round(cn_score, 2),
+            "hg_score": round(hg_score, 2), "bonus": round(bonus, 2),
+            "soil_factor": round(soil_factor, 2),
+            "category": cat, "action": act, "mining_type": mining_type}
+
 def sensitivity_analysis(pv, variation=0.10):
     D=float(pv.get("depth",15.0)); R=float(pv.get("recharge",100.0))
     A=str(pv.get("aquifer","massive_sandstone")); S=str(pv.get("soil","sand"))
@@ -296,14 +328,6 @@ def monte_carlo_analysis(pv, n_iter=1000, variation=0.15):
     results = np.sort(drastic.astype(int))
     def pct(p): return int(np.percentile(results, p))
     return {"mean":round(float(np.mean(results)),1),"std":round(float(np.std(results)),2),"min":int(results[0]),"max":int(results[-1]),"ci_90":(pct(5),pct(95)),"prob_over_140":round(float(np.mean(results>=140)*100),1)}
-
-def weighted_toxicity(hgw, hgs, cnw, cns):
-    w = (hgw/0.006*0.40)+(hgs/1.0*0.20)+(cnw/0.07*0.30)+(cns/10.0*0.10)
-    if w <= 1.0: cat, act = "آمن", "لا يتطلب تدخل"
-    elif w <= 3.0: cat, act = "تحت المراقبة", "مراقبة دورية"
-    elif w <= 10.0: cat, act = "خطر", "تدخل عاجل"
-    else: cat, act = "خطر داهم", "إيقاف النشاط"
-    return {"index":round(w,2),"category":cat,"action":act}
 
 def model_contaminant_transport_fixed(C0, K, porosity, gradient, distance, years, dispersivity=10.0):
     try:
@@ -393,7 +417,6 @@ th{{background-color:#f5eedc;color:#5c2c16;}}.metric{{font-size:1.5em;font-weigh
 <tr><th>الإحداثيات</th><td>{site_info.get('coords','N/A')}</td></tr>
 <tr><th>المصدر</th><td>{site_info.get('source','N/A')}</td></tr>
 <tr><th>التوثيق</th><td>{'موثق' if site_info.get('verified', False) else 'للعرض'}</td></tr>
-<tr><th>نمط التعدين</th><td>{site_info.get('mining_type_ar','N/A')}</td></tr>
 </table>
 <h2>📊 المعايير</h2><table>
 <tr><th>العمق (D)</th><td>{site_info.get('depth','N/A')} م</td></tr>
@@ -409,7 +432,7 @@ th{{background-color:#f5eedc;color:#5c2c16;}}.metric{{font-size:1.5em;font-weigh
 <tr><th>المستوى</th><td class="metric">{level}</td></tr>
 </table>
 <h2>💡 التوصية</h2><div class="disclaimer"><b>{recommendation}</b></div>
-<div class="footer"><p>⚠️ PILOT VERSION</p><p>نظام التعدين السوداني v57.7</p></div>
+<div class="footer"><p>⚠️ PILOT VERSION</p><p>نظام التعدين السوداني v57.8</p></div>
 </body></html>"""
 
 def build_heatmap_verified(show_heat=True, show_markers=True):
@@ -467,8 +490,11 @@ else: preset = {}; n_states = n_sites_total = n_sites_verified = n_agri_states =
 INDUSTRIAL_SITES = load_industrial_sites_csv()
 if "calibrated_weights" not in st.session_state: st.session_state["calibrated_weights"] = None
 CALIBRATED_WEIGHTS = st.session_state["calibrated_weights"]
-
+# ============================================================
+# SIDEBAR
+# ============================================================
 st.sidebar.markdown("""<div style="background:linear-gradient(135deg,#5c2c16,#c19a6b);padding:16px;border-radius:12px;color:white;text-align:center;margin-bottom:16px;"><div style="font-size:1.3em;font-weight:700;">📤 منطقة رفع الملفات</div></div>""", unsafe_allow_html=True)
+
 uploaded_val = st.sidebar.file_uploader("🔵 ملف التحقق:", type=["csv","xlsx"], key="uploader_validation")
 uploaded_bulk = st.sidebar.file_uploader("🟢 ملف التقييم الجماعي:", type=["csv","xlsx"], key="uploader_bulk")
 uploaded_extra = st.sidebar.file_uploader("🟡 ملف إضافي:", type=["csv","xlsx"], key="uploader_extra")
@@ -476,23 +502,31 @@ uploaded_extra = st.sidebar.file_uploader("🟡 ملف إضافي:", type=["csv"
 if uploaded_val is not None:
     try:
         df_val_side = pd.read_csv(uploaded_val) if uploaded_val.name.endswith(".csv") else pd.read_excel(uploaded_val)
-        st.session_state["df_validation"] = df_val_side; st.sidebar.success(f"✅ {len(df_val_side)} صف")
+        st.session_state["df_validation"] = df_val_side
+        st.sidebar.success(f"✅ {len(df_val_side)} صف")
     except Exception as e: st.sidebar.error(f"❌ {str(e)[:80]}")
+
 if uploaded_bulk is not None:
     try:
         df_bulk_side = pd.read_csv(uploaded_bulk) if uploaded_bulk.name.endswith(".csv") else pd.read_excel(uploaded_bulk)
-        st.session_state["df_bulk"] = df_bulk_side; st.sidebar.success(f"✅ {len(df_bulk_side)} صف")
+        st.session_state["df_bulk"] = df_bulk_side
+        st.sidebar.success(f"✅ {len(df_bulk_side)} صف")
     except Exception as e: st.sidebar.error(f"❌ {str(e)[:80]}")
+
 if uploaded_extra is not None:
     try:
         df_extra_side = pd.read_csv(uploaded_extra) if uploaded_extra.name.endswith(".csv") else pd.read_excel(uploaded_extra)
-        st.session_state["df_extra"] = df_extra_side; st.sidebar.info(f"ℹ️ {len(df_extra_side)} صف")
+        st.session_state["df_extra"] = df_extra_side
+        st.sidebar.info(f"ℹ️ {len(df_extra_side)} صف")
     except Exception as e: st.sidebar.error(f"❌ {str(e)[:80]}")
+
 if st.sidebar.button("🗑️ مسح جميع الملفات", key="clear_all_files_btn"):
-    for k in ["df_validation","df_bulk","df_extra","df_combined"]: st.session_state.pop(k, None)
+    for k in ["df_validation","df_bulk","df_extra","df_combined"]:
+        st.session_state.pop(k, None)
     st.rerun()
 
 st.sidebar.markdown("---")
+
 if DS_OK:
     st.sidebar.markdown("### 📊 جودة البيانات")
     st.sidebar.markdown(f"""<div class="quality-box-ok"><div style="font-size:0.85em;color:#2e7d32;">✅ <b>موثق:</b> {n_sites_verified} موقع</div></div><div class="quality-box-warn"><div style="font-size:0.85em;color:#e65100;">ℹ️ <b>للعرض فقط:</b> {n_sites_total - n_sites_verified} موقع</div></div>""", unsafe_allow_html=True)
@@ -500,11 +534,13 @@ if DS_OK:
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🎯 نطاق البيانات")
 DATA_SCOPE = st.sidebar.radio("اختر:", ["⛏️ تقليدي (موثّق)","🏭 صناعي (تجريبي)","🔀 الكل"], index=0, key="sidebar_data_scope")
+
 if DATA_SCOPE.startswith("⛏️"): SCOPE_KEY = "traditional"
 elif DATA_SCOPE.startswith("🏭"): SCOPE_KEY = "industrial"
 else: SCOPE_KEY = "all"
 
-if SCOPE_KEY == "industrial" and not INDUSTRIAL_SITES: st.sidebar.warning("⚠️ لم يُعثر على industrial_sites.csv")
+if SCOPE_KEY == "industrial" and not INDUSTRIAL_SITES:
+    st.sidebar.warning("⚠️ لم يُعثر على industrial_sites.csv")
 
 _display_weights = None
 if CALIBRATED_WEIGHTS and CALIBRATED_WEIGHTS.get("mining_type") == SCOPE_KEY:
@@ -519,24 +555,28 @@ st.sidebar.markdown(f"""<div class="mining-badge {_badge_cls}">{_display_weights
 st.sidebar.markdown("---")
 st.sidebar.markdown("## 🎛️ وضع التشغيل")
 mode_options = ["🏠 النظام الأساسي"]
-if ADV_OK: mode_options += ["🌾 القطاع الزراعي","✅ التحقق الفعلي","🚀 نقل الملوثات","🔬 التحقق المستقل","🛰️ الأقمار الصناعية","⏳ الديناميكي"]
-if MODFLOW_OK: mode_options.append("🌊 MODFLOW")
+if ADV_OK:
+    mode_options += ["🌾 القطاع الزراعي","✅ التحقق الفعلي","🚀 نقل الملوثات","🔬 التحقق المستقل","🛰️ الأقمار الصناعية","⏳ الديناميكي"]
+if MODFLOW_OK:
+    mode_options.append("🌊 MODFLOW")
+
 mode = st.sidebar.radio("اختر:", mode_options, key="app_mode_radio")
 st.sidebar.markdown("---")
-
 st.sidebar.markdown("### 🔧 الحالة")
 status_icon = "✅" if _modflow_status in ["already_installed","installed"] else "⚠️"
 st.sidebar.info(f"{status_icon} MODFLOW: {_modflow_status}")
-if "ci" in st.session_state: st.sidebar.success(f"✅ مؤشر: {st.session_state['ci']}")
+
+if "ci" in st.session_state:
+    st.sidebar.success(f"✅ مؤشر: {st.session_state['ci']}")
 
 st.sidebar.markdown("---")
 with st.sidebar.expander("ℹ️ **حول الأداة**", expanded=False):
-    st.markdown(f"""<div class="about-box"><h4>⛏️ نظام التعدين السوداني v57.7</h4>
+    st.markdown(f"""<div class="about-box"><h4>⛏️ نظام التعدين السوداني v57.8</h4>
 <h4>📚 المراجع:</h4><ul style="font-size:0.8em;"><li>Aller et al. (1987)</li><li>Konaté et al. (2025)</li><li>Karan et al. (2018)</li><li>Landis &amp; Koch (1977)</li><li>Youden (1950)</li></ul>
 <h4>🏛️ جامعة الخرطوم</h4>
 <h4>🧩 الوحدات:</h4><p style="font-size:0.8em;">auto_calibration: {'✅' if AUTOCAL_OK else '❌'}<br>auto_maps: {'✅' if MAPS_OK else '❌'}<br>modflow: {'✅' if MODFLOW_OK else '❌'}<br>advanced: {'✅' if ADV_OK else '❌'}<br>model_development: {'✅' if DEV_OK else '❌'}</p></div>""", unsafe_allow_html=True)
 
-st.markdown(f"""<div class="pilot-banner">⚠️ PILOT VERSION</div><div class="header-container"><div class="header-title">⛏️ نظام التعدين السوداني</div><div class="header-subtitle">جامعة الخرطوم - كلية الهندسة</div><div class="header-subtitle">DRASTIC + DRASTIC-Tox + MODFLOW 6</div><div class="header-badge">الإصدار 57.7 | {n_states} ولاية، {n_sites_total} موقع ({n_sites_verified} موثق)</div></div>""", unsafe_allow_html=True)
+st.markdown(f"""<div class="pilot-banner">⚠️ PILOT VERSION</div><div class="header-container"><div class="header-title">⛏️ نظام التعدين السوداني</div><div class="header-subtitle">جامعة الخرطوم - كلية الهندسة</div><div class="header-subtitle">DRASTIC + DRASTIC-Tox + MODFLOW 6</div><div class="header-badge">الإصدار 57.8 | {n_states} ولاية، {n_sites_total} موقع ({n_sites_verified} موثق)</div></div>""", unsafe_allow_html=True)
 
 with st.expander("📤 **منطقة رفع الملفات الرئيسية**", expanded=False):
     st.markdown('<div class="upload-zone"><h4>📂 ارفع ملفات البيانات</h4></div>', unsafe_allow_html=True)
@@ -565,8 +605,12 @@ with st.expander("📤 **منطقة رفع الملفات الرئيسية**", e
     st.markdown("---")
     sample = pd.DataFrame({"site_name":["موقع 1","موقع 2"],"depth_m":[12.0,15.0],"recharge_mm":[20.0,18.0],"slope_pct":[3.0,4.0],"conductivity":[2.5,3.0],"aquifer":["massive_sandstone","sand_and_gravel"],"soil":["sand","sandy_loam"],"vadose":["sand_gravel","sandstone"],"cn_water_mg_l":[0.10,0.09],"hg_water_mg_l":[0.008,0.007],"actual_contaminated":[1,1]})
     st.download_button("📥 تحميل القالب", data=sample.to_csv(index=False).encode("utf-8-sig"), file_name="template.csv", mime="text/csv", use_container_width=True, key="download_template_btn")
+
 st.markdown("---")
 
+# ============================================================
+# MODE 1: النظام الأساسي
+# ============================================================
 if mode == "🏠 النظام الأساسي":
     tabs = st.tabs(["📍 المدخلات","➕ إدخال يدوي","📊 التقييم الجماعي","🛡️ الحلول","📄 التقرير","🗺️ الخريطة الحرارية","📈 الحساسية","☠️ السمية","🌍 GIS","🎲 Monte Carlo","🔬 التحقق المتقدم","🚀 تطوير النموذج","🗺️ الخرائط التلقائية","🎯 معايرة الأوزان","📐 العتبة المثلى"])
 
@@ -628,7 +672,7 @@ if mode == "🏠 النظام الأساسي":
                     d1.metric("CN Score", dt_result['cn_score']); d2.metric("Hg Score", dt_result['hg_score'])
                     d3.metric("Base Bonus", dt_result['base_bonus']); d4.metric("Source Factor", dt_result['source_factor'])
                 st.markdown("---"); st.markdown("#### 📄 تصدير التقرير")
-                report_html = generate_html_report(site_info={"name":site_data.get("name_ar",site_key),"state":state,"coords":f"{site_data['coords'][0]}, {site_data['coords'][1]}","source":state_info["source"],"verified":site_data.get("verified",False),"depth":site_data['depth_m'],"recharge":site_data['recharge_mm'],"slope":site_data['slope_pct'],"conductivity":site_data['conductivity'],"cn":site_data['cn_water_mg_l'],"hg":site_data['hg_water_mg_l'],"mining_type_ar":mining_type_label}, drastic=idx, drastic_t=dt_result["drastic_t"], level=risk["level"], recommendation=risk["action"])
+                report_html = generate_html_report(site_info={"name":site_data.get("name_ar",site_key),"state":state,"coords":f"{site_data['coords'][0]}, {site_data['coords'][1]}","source":state_info["source"],"verified":site_data.get("verified",False),"depth":site_data['depth_m'],"recharge":site_data['recharge_mm'],"slope":site_data['slope_pct'],"conductivity":site_data['conductivity'],"cn":site_data['cn_water_mg_l'],"hg":site_data['hg_water_mg_l']}, drastic=idx, drastic_t=dt_result["drastic_t"], level=risk["level"], recommendation=risk["action"])
                 st.download_button("📄 تحميل التقرير (HTML)", data=report_html.encode("utf-8"), file_name=f"report_{site_key}.html", mime="text/html", use_container_width=True, key="download_report_btn")
             except ValueError as e: st.error(f"خطأ: {e}")
 
@@ -664,9 +708,11 @@ if mode == "🏠 النظام الأساسي":
             try:
                 st.dataframe(df_bulk.head(10), width="stretch")
                 st.markdown("#### ⚙️ العتبات")
+                _mt_bulk = st.session_state.get("mining_type", "traditional")
+                _default_th_dt_bulk = int(get_optimal_threshold(_mt_bulk))
                 c1, c2 = st.columns(2)
                 with c1: th_d = st.number_input("عتبة DRASTIC:", 50, 200, 100, 10, key="bulk_th_d_input")
-                with c2: th_dt = st.number_input("عتبة DRASTIC-Tox:", 50, 280, 140, 10, key="bulk_th_dt_input")
+                with c2: th_dt = st.number_input("عتبة DRASTIC-Tox:", 50, 280, _default_th_dt_bulk, 5, key="bulk_th_dt_input", help=f"العتبة المثلى للنمط الحالي: {_default_th_dt_bulk}")
                 mt_current = st.session_state.get("mining_type", "traditional")
                 st.markdown(f"**نمط التعدين:** {WEIGHTS.get(mt_current, WEIGHTS['traditional'])['ar']}")
                 has_tox = "cn_water_mg_l" in df_bulk.columns and "hg_water_mg_l" in df_bulk.columns
@@ -737,7 +783,7 @@ if mode == "🏠 النظام الأساسي":
             with c2: map_height = st.slider("الارتفاع:", 400, 900, 600, 50, key="map_height_slider")
             show_heat = map_mode in ["🎨 كلاهما","🔥 حراري"]; show_markers = map_mode in ["🎨 كلاهما","📍 علامات"]
             with st.spinner("جاري البناء..."): mapa, stats, df_sites = build_heatmap_verified(show_heat=show_heat, show_markers=show_markers)
-            st_folium(mapa, height=map_height, key="map_folium_v577", use_container_width=True)
+            st_folium(mapa, height=map_height, key="map_folium_v578", use_container_width=True)
             st.markdown("---"); st.markdown("#### 📊 إحصائيات")
             c1, c2, c3, c4, c5 = st.columns(5)
             c1.metric("🟢 منخفض", stats["low"]); c2.metric("🟡 متوسط", stats["medium"]); c3.metric("🟠 مرتفع", stats["high"]); c4.metric("🔴 مرتفع جداً", stats["very_high"]); c5.metric("📍 الإجمالي", sum(stats.values()))
@@ -757,8 +803,7 @@ if mode == "🏠 النظام الأساسي":
                 rows = []
                 for param, data in sens["parameters"].items(): rows.append({"المعيار":param,"القيمة الأصلية":data["original_phys"],"القيمة المعدّلة":data["modified_phys"],"المؤشر الجديد":data["new_index"],"التغير":data["change"],"الحساسية (%)":data["sensitivity"]})
                 st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
-
-    with tabs[7]:
+                    with tabs[7]:
         st.markdown('<div class="section-header"><h3>☠️ تحليل السمية</h3></div>', unsafe_allow_html=True)
         if "cv" not in st.session_state: st.warning("⚠️ اختر موقعاً أولاً")
         else:
@@ -768,10 +813,17 @@ if mode == "🏠 النظام الأساسي":
             c1, c2 = st.columns(2)
             with c1: hgs = st.number_input("Hg في التربة (mg/kg):", 0.0, 100.0, 0.5, 0.1, key="tox_hgs_input")
             with c2: cns = st.number_input("CN في التربة (mg/kg):", 0.0, 100.0, 5.0, 0.5, key="tox_cns_input")
-            if st.button("تحليل السمية", type="primary", key="run_tox_btn"): st.session_state["tox_result"] = weighted_toxicity(hgw, hgs, cnw, cns)
+            if st.button("تحليل السمية", type="primary", key="run_tox_btn"):
+                mt_tox = st.session_state.get("mining_type", "traditional")
+                st.session_state["tox_result"] = weighted_toxicity(hgw, hgs, cnw, cns, mining_type=mt_tox)
             if "tox_result" in st.session_state:
-                tox = st.session_state["tox_result"]; st.markdown("---"); c1, c2, c3 = st.columns(3)
-                c1.metric("المؤشر", tox["index"]); c2.metric("التصنيف", tox["category"]); c3.metric("الإجراء", tox["action"])
+                tox = st.session_state["tox_result"]; st.markdown("---")
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("المؤشر", tox["index"]); c2.metric("CN Score", tox["cn_score"])
+                c3.metric("Hg Score", tox["hg_score"]); c4.metric("Bonus", tox["bonus"])
+                st.markdown("---")
+                c1, c2, c3 = st.columns(3)
+                c1.metric("التصنيف", tox["category"]); c2.metric("الإجراء", tox["action"]); c3.metric("معامل التربة", tox["soil_factor"])
 
     with tabs[8]:
         st.markdown('<div class="section-header"><h3>🌍 GIS</h3></div>', unsafe_allow_html=True)
@@ -807,10 +859,11 @@ if mode == "🏠 النظام الأساسي":
                 has_tox = "cn_water_mg_l" in df_val.columns and "hg_water_mg_l" in df_val.columns
                 if not has_tox: st.error("❌ الملف لا يحتوي على CN و Hg")
                 else:
+                    mt_adv = st.session_state.get("mining_type", "traditional")
+                    _default_th_dt_adv = int(get_optimal_threshold(mt_adv))
                     c1, c2 = st.columns(2)
                     with c1: th_d_adv = st.number_input("DRASTIC:", 50, 200, 100, 10, key="adv_th_d_input")
-                    with c2: th_dt_adv = st.number_input("DRASTIC-Tox:", 50, 280, 140, 10, key="adv_th_dt_input")
-                    mt_adv = st.session_state.get("mining_type", "traditional")
+                    with c2: th_dt_adv = st.number_input("DRASTIC-Tox:", 50, 280, _default_th_dt_adv, 5, key="adv_th_dt_input", help=f"العتبة المثلى: {_default_th_dt_adv}")
                     st.info(f"نمط التعدين: {WEIGHTS.get(mt_adv, WEIGHTS['traditional'])['ar']}")
                     d_list_adv, dp_list_adv, actual_list_adv = [], [], []
                     for i, row in df_val.iterrows():
@@ -835,14 +888,14 @@ if mode == "🏠 النظام الأساسي":
                                 st.markdown("#### 🔵 DRASTIC")
                                 if "error" not in r["m_d"]:
                                     st.metric("Kappa", r["m_d"]["kappa"]); st.metric("ROC-AUC", r["m_d"]["auc"]); st.metric("F1-Score", r["m_d"]["f1"]); st.metric("Recall", f"{r['m_d']['recall']}%")
-                                    with st.expander("📊 CM"): st.write(f"TP={r['m_d']['tp']} | TN={r['m_d']['tn']} | FP={r['m_d']['fp']} | FN={r['m_d']['fn']}")
+                                    with st.expander("📊 Confusion Matrix"): st.write(f"TP={r['m_d']['tp']} | TN={r['m_d']['tn']} | FP={r['m_d']['fp']} | FN={r['m_d']['fn']}")
                                     with st.expander("🎲 Bootstrap"): st.write(f"95% CI: [{r['b_d']['ci_low']}, {r['b_d']['ci_high']}]")
                                     with st.expander("🔄 LOOCV"): st.write(f"Kappa={r['l_d']['kappa']} | Acc={r['l_d']['accuracy']}%")
                             with c2:
                                 st.markdown("#### 🟢 DRASTIC-Tox")
                                 if "error" not in r["m_dt"]:
                                     st.metric("Kappa", r["m_dt"]["kappa"]); st.metric("ROC-AUC", r["m_dt"]["auc"]); st.metric("F1-Score", r["m_dt"]["f1"]); st.metric("Recall", f"{r['m_dt']['recall']}%")
-                                    with st.expander("📊 CM"): st.write(f"TP={r['m_dt']['tp']} | TN={r['m_dt']['tn']} | FP={r['m_dt']['fp']} | FN={r['m_dt']['fn']}")
+                                    with st.expander("📊 Confusion Matrix"): st.write(f"TP={r['m_dt']['tp']} | TN={r['m_dt']['tn']} | FP={r['m_dt']['fp']} | FN={r['m_dt']['fn']}")
                                     with st.expander("🎲 Bootstrap"): st.write(f"95% CI: [{r['b_dt']['ci_low']}, {r['b_dt']['ci_high']}]")
                                     with st.expander("🔄 LOOCV"): st.write(f"Kappa={r['l_dt']['kappa']} | Acc={r['l_dt']['accuracy']}%")
 
@@ -960,7 +1013,7 @@ if mode == "🏠 النظام الأساسي":
                             st.session_state["auto_maps_fig"] = fig; st.success(f"✅ تم التوليد: {len(df_prepared)} موقع")
                         except Exception as e: st.error(f"❌ {e}")
                 if "auto_maps_fig" in st.session_state:
-                    st.plotly_chart(st.session_state["auto_maps_fig"], use_container_width=True, key="auto_maps_chart_v577")
+                    st.plotly_chart(st.session_state["auto_maps_fig"], use_container_width=True, key="auto_maps_chart_v578")
                     html_str = st.session_state["auto_maps_fig"].to_html(include_plotlyjs='cdn')
                     st.download_button("📥 تحميل الخرائط (HTML)", data=html_str.encode("utf-8"), file_name="auto_maps.html", mime="text/html", use_container_width=True, key="download_maps_html_btn")
 
@@ -970,14 +1023,17 @@ if mode == "🏠 النظام الأساسي":
         if not AUTOCAL_OK: st.error("❌ auto_calibration.py غير متوفر")
         elif not SKLEARN_OK: st.error("❌ scikit-learn غير مثبت")
         else:
-            df_cal = get_loaded_df("df_validation","df_bulk","df_combined")
-            if df_cal is None: st.warning("⚠️ ارفع ملف التحقق أولاً")
+            if SCOPE_KEY == "industrial" and INDUSTRIAL_SITES:
+                df_cal_auto = pd.DataFrame(INDUSTRIAL_SITES)
+            else:
+                df_cal_auto = get_loaded_df("df_validation","df_bulk","df_combined")
+            if df_cal_auto is None: st.warning("⚠️ ارفع ملف التحقق أولاً")
             else:
                 required_cols = ["depth_m","recharge_mm","slope_pct","conductivity","aquifer","soil","vadose","cn_water_mg_l","hg_water_mg_l","actual_contaminated"]
-                missing = [c for c in required_cols if c not in df_cal.columns]
+                missing = [c for c in required_cols if c not in df_cal_auto.columns]
                 if missing: st.error(f"❌ أعمدة مفقودة: {missing}")
                 else:
-                    st.success(f"✅ الملف يحتوي على **{len(df_cal)} موقع**")
+                    st.success(f"✅ الملف يحتوي على **{len(df_cal_auto)} موقع**")
                     st.markdown("---"); st.markdown("#### ⚙️ إعدادات المعايرة")
                     c1, c2, c3 = st.columns(3)
                     with c1: mt_choice = st.selectbox("نمط التعدين:", ["traditional","industrial","mixed"], format_func=lambda x: WEIGHTS[x]["ar"], key="cal_mining_type_select")
@@ -993,11 +1049,11 @@ if mode == "🏠 النظام الأساسي":
                         st.session_state["calibrated_weights"] = None; st.session_state.pop("auto_cal_result", None); st.session_state.pop("auto_cal_mining_type", None); st.session_state.pop("comparison_result", None)
                         st.success("✅ تمت إعادة التعيين"); st.rerun()
                     if run_cmp:
-                        with st.spinner("جاري الحساب..."): comparison = compare_with_defaults(df_cal, mt_choice, threshold=threshold)
+                        with st.spinner("جاري الحساب..."): comparison = compare_with_defaults(df_cal_auto, mt_choice, threshold=threshold)
                         if "error" in comparison: st.error(f"❌ {comparison['error']}")
                         else: st.session_state["comparison_result"] = comparison
                     if run_cal:
-                        with st.spinner(f"جاري البحث في {n_combos:,} تركيبة..."): result = auto_calibrate_weights(df_cal, mt_choice, n_steps=n_steps, threshold=threshold)
+                        with st.spinner(f"جاري البحث في {n_combos:,} تركيبة..."): result = auto_calibrate_weights(df_cal_auto, mt_choice, n_steps=n_steps, threshold=threshold)
                         if "error" in result: st.error(f"❌ {result['error']}")
                         else:
                             st.session_state["auto_cal_result"] = result; st.session_state["auto_cal_mining_type"] = mt_choice
@@ -1029,11 +1085,14 @@ if mode == "🏠 النظام الأساسي":
     with tabs[14]:
         st.markdown('<div class="section-header"><h3>📐 العتبة المثلى (Youden Index)</h3></div>', unsafe_allow_html=True)
         st.markdown("""<div class="research-note"><b>📚 المراجع:</b><br>• Youden (1950) — Cancer, 3(1):32-35<br>• Landis &amp; Koch (1977)<br>• Baddeley et al. (2020)</div>""", unsafe_allow_html=True)
-        st.info("""💡 **كيف يعمل؟** 1) يحسب DRASTIC-Tox لكل موقع 2) يرسم منحنى ROC 3) يجد النقطة بأعلى J = Sensitivity + Specificity − 1 4) يقترح العتبة المثالية""")
+        st.info("""💡 **كيف يعمل؟** 1) يحسب DRASTIC-Tox لكل موقع 2) يرسم منحنى ROC 3) يجد النقطة بأعلى J = Sensitivity + Specificity - 1 4) يقترح العتبة المثالية""")
         if not AUTOCAL_OK: st.error("❌ auto_calibration.py غير متوفر")
         elif not SKLEARN_OK: st.error("❌ scikit-learn غير مثبت")
         else:
-            df_opt = get_loaded_df("df_validation","df_combined")
+            if SCOPE_KEY == "industrial" and INDUSTRIAL_SITES:
+                df_opt = pd.DataFrame(INDUSTRIAL_SITES)
+            else:
+                df_opt = get_loaded_df("df_validation","df_combined")
             if df_opt is None: st.warning("⚠️ ارفع ملف التحقق أولاً")
             else:
                 mt_choice_opt = st.selectbox("نمط التعدين:", ["traditional","industrial","mixed"], format_func=lambda x: WEIGHTS[x]["ar"], key="opt_mining_type_select")
@@ -1075,7 +1134,7 @@ if mode == "🏠 النظام الأساسي":
                             fig.add_trace(go.Scatter(x=fprs, y=tprs, mode='lines+markers', line=dict(color='#5c2c16', width=2), marker=dict(size=4), name='DRASTIC-Tox ROC'))
                             fig.add_trace(go.Scatter(x=[1-res["specificity"]], y=[res["sensitivity"]], mode='markers', marker=dict(size=18, color='red', symbol='star'), name=f"العتبة ({res['optimal_threshold']})"))
                             fig.update_layout(title=f"ROC Curve — {WEIGHTS[res['mining_type']]['ar']}", xaxis_title="FPR", yaxis_title="TPR", height=500)
-                            st.plotly_chart(fig, use_container_width=True, key="roc_chart_v577")
+                            st.plotly_chart(fig, use_container_width=True, key="roc_chart_v578")
                         except Exception as e: st.warning(f"⚠️ تعذّر رسم ROC: {e}")
                         st.markdown("---"); st.warning(f"⚠️ **n = {res['n_sites']} موقعاً** | العتبة المُقترحة: **{res['optimal_threshold']}** | المرجع: Youden (1950)")
                         if st.button("✅ تطبيق هذه العتبة", type="primary", key="apply_opt_threshold_btn"):
@@ -1264,4 +1323,4 @@ elif mode == "🌊 MODFLOW" and MODFLOW_OK:
                 c1.metric("أدنى", f"{res['head_min']:.2f} m"); c2.metric("أعلى", f"{res['head_max']:.2f} m"); c3.metric("متوسط", f"{res['head_mean']:.2f} m")
 
 st.markdown("---")
-st.markdown("""<div style="text-align:center;color:#666;padding:10px;"><b>نظام التعدين السوداني v57.7</b> — PILOT VERSION<br><span style="font-size:0.85em;">⚠️ أداة فرز أولي — لا تُغني عن الفحص المخبري</span></div>""", unsafe_allow_html=True)
+st.markdown("""<div style="text-align:center;color:#666;padding:10px;"><b>نظام التعدين السوداني v57.8</b> — PILOT VERSION<br><span style="font-size:0.85em;">⚠️ أداة فرز أولي — لا تُغني عن الفحص المخبري</span></div>""", unsafe_allow_html=True)
