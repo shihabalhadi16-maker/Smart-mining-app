@@ -1,4 +1,4 @@
-"""نظام التعدين السوداني v58.2 — University of Khartoum"""
+"""نظام التعدين السوداني v58.3 — University of Khartoum"""
 import streamlit as st
 import subprocess, os, sys, shutil, stat, zipfile, io
 import folium
@@ -17,6 +17,13 @@ try:
     WM_OK = True
 except ImportError:
     WM_OK = False
+
+try:
+    from external_validation import external_validation_analysis as _ext_val_fn
+    EXT_VAL_OK = True
+except ImportError:
+    EXT_VAL_OK = False
+    _ext_val_fn = None
 
 def t(key, **kwargs):
     lang = st.session_state.get("lang", "ar")
@@ -42,7 +49,7 @@ try:
 except ImportError:
     AUTOCAL_OK = False
 
-st.set_page_config(page_title="Sudan Mining System v58.2", page_icon="⛏️", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Sudan Mining System v58.3", page_icon="⛏️", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""<style>
 html,body,[class*="css"]{font-family:'Segoe UI','Tahoma',Arial;font-size:15px;}
@@ -282,7 +289,6 @@ def calc_drastic_t(base_drastic, cn_water, hg_water, distance_m=100.0, seepage=1
 
 def weighted_toxicity(hgw, hgs, cnw, cns, mining_type="traditional",
                       alpha_override=None, beta_override=None, SF_override=None):
-    """Toxicity assessment — unified with calc_drastic_t logic (v58.2)"""
     CN_LIMIT = 0.05; HG_LIMIT = 0.0007
     cn_score = min(30.0, (cnw / CN_LIMIT) * 30.0)
     hg_score = min(30.0, (hgw / HG_LIMIT) * 30.0)
@@ -311,7 +317,6 @@ def weighted_toxicity(hgw, hgs, cnw, cns, mining_type="traditional",
             "category": cat, "action": act, "mining_type": mining_type}
 
 def spsa_analysis(pv):
-    """SPSA - Single Parameter Sensitivity Analysis (Napolitano & Fabbri 1996)"""
     D_r = get_d_rating(float(pv.get("depth", 15.0)))
     R_r = get_r_rating(float(pv.get("recharge", 100.0)))
     A_r = get_a_rating(str(pv.get("aquifer", "massive_sandstone")))
@@ -357,87 +362,55 @@ def sensitivity_analysis(pv, variation=0.10):
 
 def monte_carlo_analysis(pv, n_iter=1000, variation=0.15, mining_type="traditional",
                           calibrated_weights=None):
-    """
-    Monte Carlo Simulation — v58.2
-    Simulates uncertainty in both DRASTIC and DRASTIC-Tox.
-    """
     np.random.seed(42)
-
-    D = float(pv.get("depth", 15.0))
-    R = float(pv.get("recharge", 100.0))
-    T = float(pv.get("slope", 4.0))
-    C = float(pv.get("conductivity", 5.0))
+    D = float(pv.get("depth", 15.0)); R = float(pv.get("recharge", 100.0))
+    T = float(pv.get("slope", 4.0)); C = float(pv.get("conductivity", 5.0))
     A_b = get_a_rating(str(pv.get("aquifer", "massive_sandstone")))
     S_b = get_s_rating(str(pv.get("soil", "sand")))
     I_b = get_i_rating(str(pv.get("vadose", "sand_gravel")))
     cn_w = float(pv.get("cn_water_mg_l", 0.025))
     hg_w = float(pv.get("hg_water_mg_l", 0.011))
-
     D_s = np.clip(np.random.normal(D, max(0.5, D * variation), n_iter), 0.5, 100.0)
-    R_s = np.clip(np.random.lognormal(np.log(max(1, R)) - 0.5 * variation ** 2,
-                                       variation, n_iter), 0.0, 400.0) if R > 0 else np.zeros(n_iter)
+    R_s = np.clip(np.random.lognormal(np.log(max(1, R)) - 0.5 * variation ** 2, variation, n_iter), 0.0, 400.0) if R > 0 else np.zeros(n_iter)
     A_s = np.random.choice([max(1, A_b - 1), A_b, min(10, A_b + 1)], n_iter, p=[0.15, 0.70, 0.15])
     S_s = np.random.choice([max(1, S_b - 1), S_b, min(10, S_b + 1)], n_iter, p=[0.15, 0.70, 0.15])
     T_s = np.clip(np.random.normal(T, max(0.5, T * variation), n_iter), 0.0, 30.0)
     I_s = np.random.choice([max(1, I_b - 1), I_b, min(10, I_b + 1)], n_iter, p=[0.15, 0.70, 0.15])
-    C_s = np.clip(np.random.lognormal(np.log(max(0.01, C)) - 0.5 * variation ** 2,
-                                       variation, n_iter), 0.01, 100.0)
-
-    D_r = np.select([D_s <= 1.5, D_s <= 4.6, D_s <= 9.1, D_s <= 15.2, D_s <= 22.9, D_s <= 30.5],
-                    [10, 9, 7, 5, 3, 2], default=1)
-    R_r = np.select([R_s <= 50.8, R_s <= 101.6, R_s <= 177.8, R_s <= 254.0],
-                    [1, 3, 6, 8], default=9)
-    T_r = np.select([T_s <= 2.0, T_s <= 6.0, T_s <= 12.0, T_s <= 18.0],
-                    [10, 9, 5, 3], default=1)
-    C_r = np.select([C_s <= 4.074, C_s <= 12.222, C_s <= 28.518, C_s <= 40.740, C_s <= 81.480],
-                    [1, 2, 4, 6, 8], default=10)
-
+    C_s = np.clip(np.random.lognormal(np.log(max(0.01, C)) - 0.5 * variation ** 2, variation, n_iter), 0.01, 100.0)
+    D_r = np.select([D_s <= 1.5, D_s <= 4.6, D_s <= 9.1, D_s <= 15.2, D_s <= 22.9, D_s <= 30.5], [10, 9, 7, 5, 3, 2], default=1)
+    R_r = np.select([R_s <= 50.8, R_s <= 101.6, R_s <= 177.8, R_s <= 254.0], [1, 3, 6, 8], default=9)
+    T_r = np.select([T_s <= 2.0, T_s <= 6.0, T_s <= 12.0, T_s <= 18.0], [10, 9, 5, 3], default=1)
+    C_r = np.select([C_s <= 4.074, C_s <= 12.222, C_s <= 28.518, C_s <= 40.740, C_s <= 81.480], [1, 2, 4, 6, 8], default=10)
     drastic = D_r * 5 + R_r * 4 + A_s * 3 + S_s * 2 + T_r * 1 + I_s * 5 + C_r * 3
-
     if calibrated_weights:
         alpha_mean = calibrated_weights.get("alpha", 0.3)
         beta_mean = calibrated_weights.get("beta", 1.0)
         SF_mean = calibrated_weights.get("SF", 1.1)
     else:
         w = WEIGHTS.get(mining_type, WEIGHTS["traditional"])
-        alpha_mean = w["alpha"]
-        beta_mean = w["beta"]
-        SF_mean = w["SF"]
-
+        alpha_mean, beta_mean, SF_mean = w["alpha"], w["beta"], w["SF"]
     alpha_s = np.clip(np.random.normal(alpha_mean, 0.05, n_iter), 0.0, 1.0)
     beta_s = np.clip(np.random.normal(beta_mean, 0.10, n_iter), 0.0, 1.0)
     SF_s = np.clip(np.random.normal(SF_mean, 0.08, n_iter), 0.5, 2.0)
-
-    CN_LIMIT = 0.05
-    HG_LIMIT = 0.0007
-    cn_s = np.clip(np.random.lognormal(np.log(max(0.001, cn_w)) - 0.5 * 0.2 ** 2, 0.2, n_iter),
-                   0.0, 10.0)
-    hg_s = np.clip(np.random.lognormal(np.log(max(0.0001, hg_w)) - 0.5 * 0.2 ** 2, 0.2, n_iter),
-                   0.0, 10.0)
-
+    CN_LIMIT = 0.05; HG_LIMIT = 0.0007
+    cn_s = np.clip(np.random.lognormal(np.log(max(0.001, cn_w)) - 0.5 * 0.2 ** 2, 0.2, n_iter), 0.0, 10.0)
+    hg_s = np.clip(np.random.lognormal(np.log(max(0.0001, hg_w)) - 0.5 * 0.2 ** 2, 0.2, n_iter), 0.0, 10.0)
     cn_score_s = np.minimum(30.0, (cn_s / CN_LIMIT) * 30.0)
     hg_score_s = np.minimum(30.0, (hg_s / HG_LIMIT) * 30.0)
     base_bonus_s = np.minimum(50.0, alpha_s * cn_score_s + beta_s * hg_score_s)
     toxicity_bonus_s = base_bonus_s * SF_s
     drastic_tox = drastic + toxicity_bonus_s
-
     results = np.sort(drastic.astype(int))
     results_tox = np.sort(drastic_tox)
-
     def pct(arr, p): return float(np.percentile(arr, p))
-
     return {
-        "mean": round(float(np.mean(results)), 1),
-        "std": round(float(np.std(results)), 2),
-        "min": int(results[0]),
-        "max": int(results[-1]),
+        "mean": round(float(np.mean(results)), 1), "std": round(float(np.std(results)), 2),
+        "min": int(results[0]), "max": int(results[-1]),
         "ci_90": (int(pct(results, 5)), int(pct(results, 95))),
         "prob_over_140": round(float(np.mean(results >= 140) * 100), 1),
-
         "tox_mean": round(float(np.mean(results_tox)), 1),
         "tox_std": round(float(np.std(results_tox)), 2),
-        "tox_min": round(float(results_tox[0]), 1),
-        "tox_max": round(float(results_tox[-1]), 1),
+        "tox_min": round(float(results_tox[0]), 1), "tox_max": round(float(results_tox[-1]), 1),
         "tox_ci_90": (round(pct(results_tox, 5), 1), round(pct(results_tox, 95), 1)),
         "tox_prob_over_140": round(float(np.mean(results_tox >= 140) * 100), 1),
         "tox_prob_over_180": round(float(np.mean(results_tox >= 180) * 100), 1),
@@ -532,7 +505,7 @@ th{{background-color:#f5eedc;color:#5c2c16;}}.metric{{font-size:1.5em;font-weigh
 <tr><th>Level</th><td class="metric">{level}</td></tr>
 </table>
 <p><b>{recommendation}</b></p>
-<p style="text-align:center;color:#666;">DRASTIC-Tox v58.2</p>
+<p style="text-align:center;color:#666;">DRASTIC-Tox v58.3</p>
 </body></html>"""
 
 def build_heatmap_verified(show_heat=True, show_markers=True):
@@ -684,7 +657,7 @@ if "ci" in st.session_state: st.sidebar.success(f"{t('current_index')}: {st.sess
 st.sidebar.markdown("---")
 with st.sidebar.expander(t("about"), expanded=False):
     st.markdown(f"""<div class="about-box">
-<h4>{t('app_title')} v58.2</h4>
+<h4>{t('app_title')} v58.3</h4>
 <h4>{t('modules')}:</h4>
 <p style="font-size:0.8em;">
 weight_manager: {'OK' if WM_OK else 'NO'}<br>
@@ -692,7 +665,8 @@ auto_calibration: {'OK' if AUTOCAL_OK else 'NO'}<br>
 auto_maps: {'OK' if MAPS_OK else 'NO'}<br>
 modflow: {'OK' if MODFLOW_OK else 'NO'}<br>
 advanced: {'OK' if ADV_OK else 'NO'}<br>
-model_development: {'OK' if DEV_OK else 'NO'}
+model_development: {'OK' if DEV_OK else 'NO'}<br>
+external_validation: {'OK' if EXT_VAL_OK else 'NO'}
 </p>
 <h4>{t('constraints')}:</h4>
 <ul style="font-size:0.85em;">
@@ -702,7 +676,7 @@ model_development: {'OK' if DEV_OK else 'NO'}
 </ul>
 </div>""", unsafe_allow_html=True)
 
-st.markdown(f"""<div class="pilot-banner">{t("pilot_version")}</div><div class="header-container"><div class="header-title">{t("app_title")}</div><div class="header-subtitle">{t("university")}</div><div class="header-subtitle">{t("subtitle")}</div><div class="header-badge">{t("version")} 58.2 | {n_states} | {n_sites_total} {t("sites")} ({n_sites_verified} {t("verified_sites")})</div></div>""", unsafe_allow_html=True)
+st.markdown(f"""<div class="pilot-banner">{t("pilot_version")}</div><div class="header-container"><div class="header-title">{t("app_title")}</div><div class="header-subtitle">{t("university")}</div><div class="header-subtitle">{t("subtitle")}</div><div class="header-badge">{t("version")} 58.3 | {n_states} | {n_sites_total} {t("sites")} ({n_sites_verified} {t("verified_sites")})</div></div>""", unsafe_allow_html=True)
 
 with st.expander(f"📤 {t('upload_files')}", expanded=False):
     c1, c2, c3 = st.columns(3)
@@ -739,7 +713,7 @@ if MODE_KEY == "system":
         t("tab_sensitivity"), t("tab_toxicity"), t("tab_gis"),
         t("tab_monte_carlo"), t("tab_advanced"), t("tab_development"),
         t("tab_auto_maps"), t("tab_calibration"), t("tab_threshold"),
-        "⚙️ Profiles"
+        "⚙️ Profiles", "🔬 External Validation"
     ])
 
     with tabs[0]:
@@ -971,7 +945,7 @@ if MODE_KEY == "system":
             sm = mm in [t("both"), t("markers")]
             with st.spinner(t("calculating")):
                 mapa, stats, df_sites = build_heatmap_verified(show_heat=sh, show_markers=sm)
-            st_folium(mapa, height=mh, key="map_folium_v582", use_container_width=True)
+            st_folium(mapa, height=mh, key="map_folium_v583", use_container_width=True)
             st.markdown("---")
             st.markdown(f"#### {t('statistics')}")
             c1, c2, c3, c4, c5 = st.columns(5)
@@ -1003,21 +977,17 @@ if MODE_KEY == "system":
                 if "spsa_result" in st.session_state:
                     spsa = st.session_state["spsa_result"]
                     st.success(f"🏆 {t('most_influential')}: **{spsa['most_influential']}** | {t('base_index')}: **{spsa['base_index']}**")
-
                     st.markdown("---")
                     rows = []
                     for p in spsa["parameters"]:
                         rows.append({
-                            t("parameter"): p["param"],
-                            t("weight_wi"): p["weight"],
-                            t("rating_ri"): p["rating"],
-                            t("weighted"): p["weighted_score"],
+                            t("parameter"): p["param"], t("weight_wi"): p["weight"],
+                            t("rating_ri"): p["rating"], t("weighted"): p["weighted_score"],
                             t("theoretical_pct"): f"{p['theoretical_pct']}%",
                             t("effective_pct"): f"{p['effective_pct']}%",
                             t("difference"): f"{p['difference']:+.2f}%",
                         })
                     st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
-
                     st.markdown("---")
                     st.markdown(f"#### {t('interpretation')}")
                     for p in spsa["parameters"][:3]:
@@ -1025,7 +995,6 @@ if MODE_KEY == "system":
                             st.info(f"**{p['param']}**: {t('more_important')} (+{p['difference']:.2f}%)")
                         elif p["difference"] < 0:
                             st.warning(f"**{p['param']}**: {t('less_important')} ({p['difference']:.2f}%)")
-
                     try:
                         import plotly.graph_objects as go
                         fig = go.Figure()
@@ -1148,15 +1117,13 @@ if MODE_KEY == "system":
                 st.markdown("---")
                 st.markdown(f"#### DRASTIC")
                 c1, c2, c3, c4 = st.columns(4)
-                c1.metric(t("mean"), mc["mean"])
-                c2.metric(t("std"), mc["std"])
+                c1.metric(t("mean"), mc["mean"]); c2.metric(t("std"), mc["std"])
                 c3.metric(t("ci_90"), f"{mc['ci_90'][0]}-{mc['ci_90'][1]}")
                 c4.metric("P>140", f"{mc['prob_over_140']}%")
                 st.markdown("---")
                 st.markdown(f"#### DRASTIC-Tox (مع Bonus)")
                 c1, c2, c3, c4 = st.columns(4)
-                c1.metric(t("mean"), mc["tox_mean"])
-                c2.metric(t("std"), mc["tox_std"])
+                c1.metric(t("mean"), mc["tox_mean"]); c2.metric(t("std"), mc["tox_std"])
                 c3.metric(t("ci_90"), f"{mc['tox_ci_90'][0]}-{mc['tox_ci_90'][1]}")
                 c4.metric("P>140", f"{mc['tox_prob_over_140']}%")
                 c1, c2 = st.columns(2)
@@ -1389,7 +1356,7 @@ if MODE_KEY == "system":
                             st.success(f"{len(df_p)} {t('sites')}")
                         except Exception as e: st.error(str(e))
                 if "auto_maps_fig" in st.session_state:
-                    st.plotly_chart(st.session_state["auto_maps_fig"], use_container_width=True, key="auto_maps_chart_v582")
+                    st.plotly_chart(st.session_state["auto_maps_fig"], use_container_width=True, key="auto_maps_chart_v583")
                     html = st.session_state["auto_maps_fig"].to_html(include_plotlyjs='cdn')
                     st.download_button("📥 HTML", data=html.encode("utf-8"),
                         file_name="auto_maps.html", mime="text/html", key="download_maps_html_btn")
@@ -1541,7 +1508,7 @@ if MODE_KEY == "system":
                             fig.add_trace(go.Scatter(x=fprs, y=tprs, mode='lines+markers', line=dict(color='#5c2c16', width=2), marker=dict(size=4), name='DRASTIC-Tox'))
                             fig.add_trace(go.Scatter(x=[1-res["specificity"]], y=[res["sensitivity"]], mode='markers', marker=dict(size=18, color='red', symbol='star'), name=f"{t('threshold_label')} ({res['optimal_threshold']})"))
                             fig.update_layout(xaxis_title="FPR", yaxis_title="TPR", height=500)
-                            st.plotly_chart(fig, use_container_width=True, key="roc_chart_v582")
+                            st.plotly_chart(fig, use_container_width=True, key="roc_chart_v583")
                         except Exception as e: st.warning(str(e))
                         st.markdown("---")
                         st.warning(f"n = {res['n_sites']} | {t('threshold_label')}: {res['optimal_threshold']}")
@@ -1605,6 +1572,157 @@ if MODE_KEY == "system":
             st.markdown("---")
             st.markdown("#### Active Profile (JSON)")
             if active: st.json(active)
+
+    with tabs[16]:
+        st.markdown(f'<div class="section-header"><h3>🔬 External Validation</h3></div>', unsafe_allow_html=True)
+        st.markdown(f"""<div class="research-note">
+        <b>Purpose:</b> Proper external validation using train/test split + K-Fold CV.<br>
+        <b>References:</b> Efron (1979) · Kohavi (1995) · Landis &amp; Koch (1977)
+        </div>""", unsafe_allow_html=True)
+
+        if not EXT_VAL_OK:
+            st.error("external_validation.py not installed")
+            st.info("Create a file named `external_validation.py` in the same folder as `app.py`")
+        elif not SKLEARN_OK:
+            st.error("scikit-learn required")
+        else:
+            df_ext = get_loaded_df("df_validation", "df_combined", "df_bulk")
+            if df_ext is None:
+                st.warning("Upload validation file first (Tab 11 → Load Data)")
+            else:
+                req_cols = ["depth_m","recharge_mm","slope_pct","conductivity",
+                            "aquifer","soil","vadose","cn_water_mg_l","hg_water_mg_l",
+                            "actual_contaminated"]
+                miss = [c for c in req_cols if c not in df_ext.columns]
+                if miss:
+                    st.error(f"Missing columns: {miss}")
+                else:
+                    st.success(f"Data loaded: {len(df_ext)} sites")
+                    st.markdown("---")
+                    c1, c2, c3 = st.columns(3)
+                    with c1:
+                        mt_ext = st.selectbox("Mining Type",
+                            ["traditional","industrial","mixed"], key="ext_mining_type")
+                    with c2:
+                        test_pct = st.slider("Test Size (%)", 20, 50, 30, 5, key="ext_test_size")
+                    with c3:
+                        n_folds = st.slider("K-Folds", 3, 10, 5, 1, key="ext_k_folds")
+
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        th_d_ext = st.number_input("DRASTIC threshold", 50, 200, 100, 5, key="ext_th_d")
+                    with c2:
+                        th_dt_ext = st.number_input("DRASTIC-Tox threshold", 50, 280,
+                            int(get_optimal_threshold(mt_ext)), 5, key="ext_th_dt")
+
+                    if st.button("🚀 Run External Validation", type="primary", key="run_ext_val_btn"):
+                        with st.spinner("Running train/test split + K-Fold CV..."):
+                            cal_w = CALIBRATED_WEIGHTS if (CALIBRATED_WEIGHTS and
+                                CALIBRATED_WEIGHTS.get("mining_type") == mt_ext) else None
+                            st.session_state["ext_val_result"] = _ext_val_fn(
+                                df_ext, mining_type=mt_ext,
+                                threshold_d=th_d_ext, threshold_dt=th_dt_ext,
+                                test_size=test_pct/100.0, n_folds=n_folds,
+                                calc_index_fn=calc_index,
+                                calc_drastic_t_fn=calc_drastic_t,
+                                get_d_rating_fn=get_d_rating, get_r_rating_fn=get_r_rating,
+                                get_a_rating_fn=get_a_rating, get_s_rating_fn=get_s_rating,
+                                get_t_rating_fn=get_t_rating, get_i_rating_fn=get_i_rating,
+                                get_c_rating_fn=get_c_rating,
+                                calibrated_weights=cal_w,
+                                sklearn_ok=SKLEARN_OK)
+
+                    if "ext_val_result" in st.session_state:
+                        r = st.session_state["ext_val_result"]
+                        if "error" in r:
+                            st.error(r["error"])
+                        else:
+                            st.markdown("---")
+                            st.markdown("#### Dataset Summary")
+                            c1, c2, c3 = st.columns(3)
+                            c1.metric("Total Sites", r["n_total"])
+                            c2.metric("Contaminated", r["n_contaminated"])
+                            c3.metric("Clean", r["n_clean"])
+
+                            if "n_train" in r:
+                                st.markdown("---")
+                                st.markdown(f"#### Train/Test Split ({100-r['test_size_pct']}/{r['test_size_pct']})")
+                                c1, c2 = st.columns(2)
+                                c1.metric("Training Set", r["n_train"])
+                                c2.metric("Test Set", r["n_test"])
+                                st.markdown("##### Held-out Test Set Performance")
+                                c1, c2 = st.columns(2)
+                                with c1:
+                                    st.markdown("**DRASTIC**")
+                                    st.metric("Kappa", r.get("test_kappa_drastic", "N/A"))
+                                    st.metric("ROC-AUC", r.get("test_auc_drastic", "N/A"))
+                                with c2:
+                                    st.markdown("**DRASTIC-Tox**")
+                                    kd = None
+                                    if r.get("test_kappa_drastic") is not None and r.get("test_kappa_drastic_tox") is not None:
+                                        kd = r["test_kappa_drastic_tox"] - r["test_kappa_drastic"]
+                                    st.metric("Kappa", r.get("test_kappa_drastic_tox", "N/A"),
+                                              delta=f"{kd:+.3f}" if kd is not None else None)
+                                    st.metric("ROC-AUC", r.get("test_auc_drastic_tox", "N/A"))
+
+                            if "cv_n_folds" in r and r["cv_n_folds"] > 0:
+                                st.markdown("---")
+                                st.markdown(f"#### Stratified {r['cv_n_folds']}-Fold Cross-Validation")
+                                c1, c2 = st.columns(2)
+                                with c1:
+                                    st.markdown("**DRASTIC**")
+                                    st.metric("Kappa (mean ± std)",
+                                              f"{r['cv_kappa_drastic_mean']} ± {r['cv_kappa_drastic_std']}")
+                                    st.metric("ROC-AUC (mean)", r['cv_auc_drastic_mean'])
+                                with c2:
+                                    st.markdown("**DRASTIC-Tox**")
+                                    st.metric("Kappa (mean ± std)",
+                                              f"{r['cv_kappa_drastic_tox_mean']} ± {r['cv_kappa_drastic_tox_std']}")
+                                    st.metric("ROC-AUC (mean)", r['cv_auc_drastic_tox_mean'])
+                                with st.expander("📊 Fold-by-fold Kappa"):
+                                    fold_df = pd.DataFrame({
+                                        "Fold": list(range(1, len(r["fold_kappas_drastic"]) + 1)),
+                                        "DRASTIC Kappa": r["fold_kappas_drastic"],
+                                        "DRASTIC-Tox Kappa": r["fold_kappas_drastic_tox"],
+                                    })
+                                    st.dataframe(fold_df, width="stretch", hide_index=True)
+
+                            if "baseline_logreg_kappa" in r:
+                                st.markdown("---")
+                                st.markdown("#### Baseline ML Models")
+                                st.caption("Trained on DRASTIC-Tox as sole feature (fair comparison)")
+                                baseline_df = pd.DataFrame({
+                                    "Model": ["DRASTIC-Tox (fixed threshold)",
+                                              "Logistic Regression", "Random Forest"],
+                                    "Kappa": [r.get("test_kappa_drastic_tox", "N/A"),
+                                              r["baseline_logreg_kappa"],
+                                              r["baseline_rf_kappa"]],
+                                    "ROC-AUC": [r.get("test_auc_drastic_tox", "N/A"),
+                                                r["baseline_logreg_auc"],
+                                                r["baseline_rf_auc"]],
+                                })
+                                st.dataframe(baseline_df, width="stretch", hide_index=True)
+
+                            if "pr_auc_drastic" in r:
+                                st.markdown("---")
+                                st.markdown("#### Enhanced Metrics (Test Set)")
+                                enhanced_df = pd.DataFrame({
+                                    "Metric": ["PR-AUC", "Brier Score"],
+                                    "DRASTIC": [r["pr_auc_drastic"], r["brier_drastic"]],
+                                    "DRASTIC-Tox": [r["pr_auc_drastic_tox"], r["brier_drastic_tox"]],
+                                })
+                                st.dataframe(enhanced_df, width="stretch", hide_index=True)
+                                st.caption("PR-AUC: higher is better · Brier: lower is better")
+
+                            st.markdown("---")
+                            export_df = pd.DataFrame([r])
+                            st.download_button("📥 Download Results (CSV)",
+                                data=export_df.to_csv(index=False).encode("utf-8-sig"),
+                                file_name="external_validation.csv",
+                                mime="text/csv", key="download_ext_val_btn")
+
+                            st.warning("⚠️ With n=11 sites, test set is small (3-4 sites). "
+                                       "Interpret with caution and report CI.")
 
 elif MODE_KEY == "agricultural" and ADV_OK:
     st.markdown(f"""<div class="header-container header-agri"><div class="header-title">{t("agricultural_title")}</div><div class="header-subtitle">DRASTIC-Agri + SAR + Na% + EC</div></div>""", unsafe_allow_html=True)
@@ -1847,4 +1965,4 @@ elif MODE_KEY == "modflow" and MODFLOW_OK:
                 c3.metric("Mean", f"{res['head_mean']:.2f} m")
 
 st.markdown("---")
-st.markdown(f"""<div style="text-align:center;color:#666;padding:10px;"><b>{t("app_title")} v58.2</b> - PILOT VERSION<br><span style="font-size:0.85em;">{t("screening_only")}</span></div>""", unsafe_allow_html=True)
+st.markdown(f"""<div style="text-align:center;color:#666;padding:10px;"><b>{t("app_title")} v58.3</b> - PILOT VERSION<br><span style="font-size:0.85em;">{t("screening_only")}</span></div>""", unsafe_allow_html=True)
