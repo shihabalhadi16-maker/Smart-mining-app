@@ -1,4 +1,4 @@
-"""نظام التعدين السوداني v58.7.1 — University of Khartoum"""
+"""نظام التعدين السوداني v58.8 — University of Khartoum"""
 import streamlit as st
 import subprocess, os, sys, shutil, stat, zipfile, io
 import folium
@@ -57,6 +57,19 @@ except ImportError:
     export_geotiff = create_raster_plotly = None
     compute_raster_statistics = classify_raster = None
 
+try:
+    from live_apis import (fetch_nasa_power, fetch_open_meteo_precipitation,
+                            fetch_elevation, fetch_elevation_grid,
+                            fetch_soilgrids, classify_aquifer_from_soil,
+                            classify_soil_from_texture, estimate_recharge_from_rainfall)
+    LIVE_API_OK = True
+except ImportError:
+    LIVE_API_OK = False
+    fetch_nasa_power = fetch_open_meteo_precipitation = None
+    fetch_elevation = fetch_elevation_grid = None
+    fetch_soilgrids = classify_aquifer_from_soil = None
+    classify_soil_from_texture = estimate_recharge_from_rainfall = None
+
 def t(key, **kwargs):
     lang = st.session_state.get("lang", "ar")
     return _t(key, lang)
@@ -81,7 +94,7 @@ try:
 except ImportError:
     AUTOCAL_OK = False
 
-st.set_page_config(page_title="Sudan Mining System v58.7.1", page_icon="⛏️", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Sudan Mining System v58.8", page_icon="⛏️", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""<style>
 html,body,[class*="css"]{font-family:'Segoe UI','Tahoma',Arial;font-size:15px;}
@@ -539,7 +552,7 @@ th{{background-color:#f5eedc;color:#5c2c16;}}.metric{{font-size:1.5em;font-weigh
 <tr><th>Level</th><td class="metric">{level}</td></tr>
 </table>
 <p><b>{recommendation}</b></p>
-<p style="text-align:center;color:#666;">DRASTIC-Tox v58.7.1</p>
+<p style="text-align:center;color:#666;">DRASTIC-Tox v58.8</p>
 </body></html>"""
 
 def build_heatmap_verified(show_heat=True, show_markers=True):
@@ -691,7 +704,7 @@ if "ci" in st.session_state: st.sidebar.success(f"{t('current_index')}: {st.sess
 st.sidebar.markdown("---")
 with st.sidebar.expander(t("about"), expanded=False):
     st.markdown(f"""<div class="about-box">
-<h4>{t('app_title')} v58.7.1</h4>
+<h4>{t('app_title')} v58.8</h4>
 <h4>{t('modules')}:</h4>
 <p style="font-size:0.8em;">
 weight_manager: {'OK' if WM_OK else 'NO'}<br>
@@ -704,7 +717,8 @@ external_validation: {'OK' if EXT_VAL_OK else 'NO'}<br>
 data_validator: {'OK' if VALIDATOR_OK else 'NO'}<br>
 pdf_generator: {'OK' if PDF_OK else 'NO'}<br>
 excel_exporter: {'OK' if EXCEL_OK else 'NO'}<br>
-gis_raster: {'OK' if RASTER_OK else 'NO'}
+gis_raster: {'OK' if RASTER_OK else 'NO'}<br>
+live_apis: {'OK' if LIVE_API_OK else 'NO'}
 </p>
 <h4>{t('constraints')}:</h4>
 <ul style="font-size:0.85em;">
@@ -714,7 +728,7 @@ gis_raster: {'OK' if RASTER_OK else 'NO'}
 </ul>
 </div>""", unsafe_allow_html=True)
 
-st.markdown(f"""<div class="pilot-banner">{t("pilot_version")}</div><div class="header-container"><div class="header-title">{t("app_title")}</div><div class="header-subtitle">{t("university")}</div><div class="header-subtitle">{t("subtitle")}</div><div class="header-badge">{t("version")} 58.7.1 | {n_states} | {n_sites_total} {t("sites")} ({n_sites_verified} {t("verified_sites")})</div></div>""", unsafe_allow_html=True)
+st.markdown(f"""<div class="pilot-banner">{t("pilot_version")}</div><div class="header-container"><div class="header-title">{t("app_title")}</div><div class="header-subtitle">{t("university")}</div><div class="header-subtitle">{t("subtitle")}</div><div class="header-badge">{t("version")} 58.8 | {n_states} | {n_sites_total} {t("sites")} ({n_sites_verified} {t("verified_sites")})</div></div>""", unsafe_allow_html=True)
 
 with st.expander(f"📤 {t('upload_files')}", expanded=False):
     c1, c2, c3 = st.columns(3)
@@ -826,7 +840,7 @@ if MODE_KEY == "system":
         t("tab_sensitivity"), t("tab_toxicity"), t("tab_gis"),
         t("tab_monte_carlo"), t("tab_advanced"), t("tab_development"),
         t("tab_auto_maps"), t("tab_calibration"), t("tab_threshold"),
-        "⚙️ Profiles", "🔬 External Validation", "🗺️ GIS Raster"
+        "⚙️ Profiles", "🔬 External Validation", "🗺️ GIS Raster", "🌐 Live Data"
     ])
 
     with tabs[0]:
@@ -1149,7 +1163,7 @@ if MODE_KEY == "system":
             sm = mm in [t("both"), t("markers")]
             with st.spinner(t("calculating")):
                 mapa, stats, df_sites = build_heatmap_verified(show_heat=sh, show_markers=sm)
-            st_folium(mapa, height=mh, key="map_folium_v5871", use_container_width=True)
+            st_folium(mapa, height=mh, key="map_folium_v588", use_container_width=True)
             st.markdown("---")
             st.markdown(f"#### {t('statistics')}")
             c1, c2, c3, c4, c5 = st.columns(5)
@@ -1560,7 +1574,7 @@ if MODE_KEY == "system":
                             st.success(f"{len(df_p)} {t('sites')}")
                         except Exception as e: st.error(str(e))
                 if "auto_maps_fig" in st.session_state:
-                    st.plotly_chart(st.session_state["auto_maps_fig"], use_container_width=True, key="auto_maps_chart_v5871")
+                    st.plotly_chart(st.session_state["auto_maps_fig"], use_container_width=True, key="auto_maps_chart_v588")
                     html = st.session_state["auto_maps_fig"].to_html(include_plotlyjs='cdn')
                     st.download_button("📥 HTML", data=html.encode("utf-8"),
                         file_name="auto_maps.html", mime="text/html", key="download_maps_html_btn")
@@ -1712,7 +1726,7 @@ if MODE_KEY == "system":
                             fig.add_trace(go.Scatter(x=fprs, y=tprs, mode='lines+markers', line=dict(color='#5c2c16', width=2), marker=dict(size=4), name='DRASTIC-Tox'))
                             fig.add_trace(go.Scatter(x=[1-res["specificity"]], y=[res["sensitivity"]], mode='markers', marker=dict(size=18, color='red', symbol='star'), name=f"{t('threshold_label')} ({res['optimal_threshold']})"))
                             fig.update_layout(xaxis_title="FPR", yaxis_title="TPR", height=500)
-                            st.plotly_chart(fig, use_container_width=True, key="roc_chart_v5871")
+                            st.plotly_chart(fig, use_container_width=True, key="roc_chart_v588")
                         except Exception as e: st.warning(str(e))
                         st.markdown("---")
                         st.warning(f"n = {res['n_sites']} | {t('threshold_label')}: {res['optimal_threshold']}")
@@ -1941,7 +1955,6 @@ if MODE_KEY == "system":
         else:
             df_raster = get_loaded_df("df_combined", "df_validation", "df_bulk")
 
-            # If user's data lacks coords, build from STATES_DATABASE
             if df_raster is None or ("coords" not in df_raster.columns and "lat" not in df_raster.columns):
                 if DS_OK:
                     try:
@@ -1975,7 +1988,6 @@ if MODE_KEY == "system":
                         st.error(f"Failed to load built-in sites: {_e}")
                         df_raster = None
 
-            # If user data has coords column, extract lat/lon from it
             if df_raster is not None and not df_raster.empty:
                 if "coords" in df_raster.columns and ("lat" not in df_raster.columns or "lon" not in df_raster.columns):
                     df_raster = df_raster.copy()
@@ -2192,6 +2204,181 @@ if MODE_KEY == "system":
                                             file_name=f"raster_{param_col}.html",
                                             mime="text/html",
                                             key="download_raster_html_btn")
+
+    with tabs[18]:
+        st.markdown(f'<div class="section-header"><h3>🌐 Live API Data</h3></div>', unsafe_allow_html=True)
+        st.markdown(f"""<div class="research-note">
+        <b>Purpose:</b> Fetch real-time and historical environmental data from public APIs.<br>
+        <b>Sources:</b> NASA POWER · Open-Meteo · Open-Elevation · ISRIC SoilGrids<br>
+        <b>All APIs are free and require NO keys.</b>
+        </div>""", unsafe_allow_html=True)
+
+        if not LIVE_API_OK:
+            st.error("live_apis.py not installed")
+            st.info("Create a file named `live_apis.py` in the same folder as `app.py`")
+        else:
+            c1, c2 = st.columns(2)
+            with c1:
+                use_current = st.checkbox("Use current site coordinates",
+                    value=True, key="live_use_current_chk")
+            with c2:
+                st.caption("Or enter coordinates manually below")
+
+            if use_current and "current_site_data" in st.session_state:
+                _sd = st.session_state["current_site_data"]
+                _coords = _sd.get("coords", (15.5, 32.5))
+                live_lat = float(_coords[0])
+                live_lon = float(_coords[1])
+                st.success(f"Using: **{_sd.get('name_ar', 'Current Site')}** ({live_lat:.4f}, {live_lon:.4f})")
+            else:
+                c1, c2 = st.columns(2)
+                with c1:
+                    live_lat = st.number_input("Latitude", -90.0, 90.0, 15.6, 0.01,
+                        format="%.4f", key="live_lat_input")
+                with c2:
+                    live_lon = st.number_input("Longitude", -180.0, 180.0, 32.5, 0.01,
+                        format="%.4f", key="live_lon_input")
+
+            st.markdown("---")
+
+            c1, c2, c3, c4 = st.columns(4)
+            with c1:
+                if st.button("☁️ NASA POWER", type="primary", key="fetch_nasa_btn"):
+                    with st.spinner("Fetching climate data..."):
+                        st.session_state["live_nasa"] = fetch_nasa_power(live_lat, live_lon, years=3)
+            with c2:
+                if st.button("🌧️ Open-Meteo", type="primary", key="fetch_meteo_btn"):
+                    with st.spinner("Fetching precipitation..."):
+                        st.session_state["live_meteo"] = fetch_open_meteo_precipitation(live_lat, live_lon, years=5)
+            with c3:
+                if st.button("⛰️ Elevation", type="primary", key="fetch_elev_btn"):
+                    with st.spinner("Fetching elevation grid..."):
+                        st.session_state["live_elev"] = fetch_elevation_grid(live_lat, live_lon, radius_km=5)
+            with c4:
+                if st.button("🪨 Soil", type="primary", key="fetch_soil_btn"):
+                    with st.spinner("Fetching soil properties..."):
+                        st.session_state["live_soil"] = fetch_soilgrids(live_lat, live_lon)
+
+            st.markdown("---")
+
+            if "live_nasa" in st.session_state:
+                r = st.session_state["live_nasa"]
+                if "error" in r:
+                    st.error(f"NASA POWER: {r['error']}")
+                else:
+                    st.markdown("#### ☁️ NASA POWER — Climate Data")
+                    c1, c2, c3, c4 = st.columns(4)
+                    c1.metric("Annual Rainfall", f"{r.get('rainfall_mm_annual', 'N/A')} mm")
+                    c2.metric("Temperature", f"{r.get('temperature_c', 'N/A')} °C")
+                    c3.metric("Humidity", f"{r.get('humidity_pct', 'N/A')} %")
+                    c4.metric("Wind Speed", f"{r.get('wind_speed_ms', 'N/A')} m/s")
+                    c1, c2 = st.columns(2)
+                    c1.metric("Temp Max", f"{r.get('temperature_max_c', 'N/A')} °C")
+                    c2.metric("Temp Min", f"{r.get('temperature_min_c', 'N/A')} °C")
+                    st.caption(f"Source: {r.get('source')} | Averaged over {r.get('n_years')} years")
+
+            if "live_meteo" in st.session_state:
+                r = st.session_state["live_meteo"]
+                if "error" in r:
+                    st.error(f"Open-Meteo: {r['error']}")
+                else:
+                    st.markdown("#### 🌧️ Open-Meteo — Historical Precipitation")
+                    c1, c2, c3 = st.columns(3)
+                    c1.metric("Annual Rainfall", f"{r.get('annual_rainfall_mm', 'N/A')} mm")
+                    c2.metric("Dry Months", f"{r.get('n_dry_months', 'N/A')} / 12")
+                    c3.metric("Mean Temp", f"{r.get('temperature_mean_c', 'N/A')} °C")
+                    if "monthly_avg_mm" in r:
+                        with st.expander("📊 Monthly Breakdown"):
+                            month_names = ["Jan","Feb","Mar","Apr","May","Jun",
+                                           "Jul","Aug","Sep","Oct","Nov","Dec"]
+                            monthly_df = pd.DataFrame({
+                                "Month": month_names,
+                                "Avg (mm)": [r["monthly_avg_mm"].get(str(i), 0) for i in range(1, 13)]
+                            })
+                            st.dataframe(monthly_df, width="stretch", hide_index=True)
+                    st.caption(f"Source: {r.get('source')} | Averaged over {r.get('n_years')} years")
+
+            if "live_elev" in st.session_state:
+                r = st.session_state["live_elev"]
+                if "error" in r:
+                    st.error(f"Elevation: {r['error']}")
+                else:
+                    st.markdown("#### ⛰️ Open-Elevation — Terrain")
+                    c1, c2, c3 = st.columns(3)
+                    c1.metric("Elevation", f"{r.get('elevation_m', 'N/A')} m")
+                    c2.metric("Estimated Slope", f"{r.get('slope_pct', 'N/A')} %")
+                    c3.metric("Relief (5km radius)", f"{r.get('elevation_range_m', 'N/A')} m")
+                    st.caption(f"Source: {r.get('source')}")
+
+            if "live_soil" in st.session_state:
+                r = st.session_state["live_soil"]
+                if "error" in r:
+                    st.error(f"SoilGrids: {r['error']}")
+                else:
+                    st.markdown("#### 🪨 ISRIC SoilGrids — Soil Properties")
+                    c1, c2, c3 = st.columns(3)
+                    c1.metric("Sand", f"{r.get('sand_pct', 'N/A')} %")
+                    c2.metric("Clay", f"{r.get('clay_pct', 'N/A')} %")
+                    c3.metric("Silt", f"{r.get('silt_pct', 'N/A')} %")
+                    c1, c2 = st.columns(2)
+                    c1.metric("Organic Carbon", f"{r.get('soc_g_kg', 'N/A')} g/kg")
+                    c2.metric("Bulk Density", f"{r.get('bulk_density_kg_m3', 'N/A')} kg/m³")
+                    st.caption(f"Source: {r.get('source')}")
+
+            has_data = ("live_nasa" in st.session_state and "error" not in st.session_state.get("live_nasa", {})) or \
+                       ("live_meteo" in st.session_state and "error" not in st.session_state.get("live_meteo", {}))
+
+            if has_data:
+                st.markdown("---")
+                st.markdown("#### 🔄 Auto-fill DRASTIC Parameters")
+                st.caption("Uses fetched data to suggest recharge, slope, aquifer, and soil values.")
+
+                if st.button("🎯 Generate Suggested Values", type="primary", key="autofill_btn"):
+                    suggestions = {}
+
+                    rain = None
+                    if "live_meteo" in st.session_state and "annual_rainfall_mm" in st.session_state["live_meteo"]:
+                        rain = st.session_state["live_meteo"]["annual_rainfall_mm"]
+                    elif "live_nasa" in st.session_state and "rainfall_mm_annual" in st.session_state["live_nasa"]:
+                        rain = st.session_state["live_nasa"]["rainfall_mm_annual"]
+
+                    slope = None
+                    if "live_elev" in st.session_state and "slope_pct" in st.session_state["live_elev"]:
+                        slope = st.session_state["live_elev"]["slope_pct"]
+
+                    soil_type = "sandy_loam"
+                    if "live_soil" in st.session_state:
+                        soil_r = st.session_state["live_soil"]
+                        soil_type = classify_soil_from_texture(
+                            soil_r.get("sand_pct"),
+                            soil_r.get("clay_pct"),
+                            soil_r.get("silt_pct"))
+                        suggestions["aquifer"] = classify_aquifer_from_soil(
+                            soil_r.get("sand_pct"),
+                            soil_r.get("clay_pct"))
+
+                    suggestions["soil"] = soil_type
+
+                    if rain and slope is not None:
+                        suggestions["recharge_mm"] = estimate_recharge_from_rainfall(rain, soil_type, slope)
+                    elif rain:
+                        suggestions["recharge_mm"] = estimate_recharge_from_rainfall(rain, soil_type, 5.0)
+
+                    if slope is not None:
+                        suggestions["slope_pct"] = slope
+
+                    st.session_state["live_suggestions"] = suggestions
+
+                if "live_suggestions" in st.session_state:
+                    s = st.session_state["live_suggestions"]
+                    st.markdown("##### Suggested DRASTIC Parameters")
+                    c1, c2, c3, c4 = st.columns(4)
+                    c1.metric("R — Recharge", f"{s.get('recharge_mm', '—')} mm/yr")
+                    c2.metric("T — Slope", f"{s.get('slope_pct', '—')} %")
+                    c3.metric("A — Aquifer", str(s.get("aquifer", "—"))[:20])
+                    c4.metric("S — Soil", str(s.get("soil", "—"))[:20])
+
+                    st.info("💡 Copy these values to the **Manual Entry** tab to create a new site with real data.")
 
 elif MODE_KEY == "agricultural" and ADV_OK:
     st.markdown(f"""<div class="header-container header-agri"><div class="header-title">{t("agricultural_title")}</div><div class="header-subtitle">DRASTIC-Agri + SAR + Na% + EC</div></div>""", unsafe_allow_html=True)
@@ -2434,4 +2621,4 @@ elif MODE_KEY == "modflow" and MODFLOW_OK:
                 c3.metric("Mean", f"{res['head_mean']:.2f} m")
 
 st.markdown("---")
-st.markdown(f"""<div style="text-align:center;color:#666;padding:10px;"><b>{t("app_title")} v58.7.1</b> - PILOT VERSION<br><span style="font-size:0.85em;">{t("screening_only")}</span></div>""", unsafe_allow_html=True)
+st.markdown(f"""<div style="text-align:center;color:#666;padding:10px;"><b>{t("app_title")} v58.8</b> - PILOT VERSION<br><span style="font-size:0.85em;">{t("screening_only")}</span></div>""", unsafe_allow_html=True)
