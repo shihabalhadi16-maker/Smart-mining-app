@@ -1,0 +1,320 @@
+"""
+GIS Raster Support — DRASTIC-Tox v58.7
+Author: Shihab Alhadi + Sarah Akasha
+University of Khartoum, Faculty of Engineering
+
+Converts point-based risk data into continuous raster surfaces via:
+    - IDW (Inverse Distance Weighting) — always available
+    - Kriging — requires pykrige (optional)
+    - GeoTIFF export — requires rasterio (optional)
+
+Provides:
+    - idw_interpolation(points, resolution, power)
+    - kriging_interpolation(points, resolution)
+    - export_geotiff(raster, bounds, path)
+    - create_raster_plotly(raster, bounds, title)
+    - compute_raster_statistics(raster)
+"""
+import numpy as np
+
+
+def _has_pykrige():
+    try:
+        from pykrige.ok import OrdinaryKriging
+        return True
+    except ImportError:
+        return False
+
+
+def _has_rasterio():
+    try:
+        import rasterio
+        return True
+    except ImportError:
+        return False
+
+
+def idw_interpolation(points, resolution=100, power=2.0, padding=0.05):
+    """
+    Inverse Distance Weighting interpolation.
+
+    Parameters
+    ----------
+    points : list of tuples
+        [(lat, lon, value), ...]
+    resolution : int
+        Grid size (resolution × resolution)
+    power : float
+        IDW power parameter (default 2.0)
+    padding : float
+        Fractional padding around data bounds (default 0.05 = 5%)
+
+    Returns
+    -------
+    dict with keys:
+        - raster: 2D numpy array (resolution × resolution)
+        - extent: [lon_min, lon_max, lat_min, lat_max]
+        - lons: 1D array of longitudes
+        - lats: 1D array of latitudes
+        - method: "IDW"
+        - n_points: number of input points
+    """
+    pts = np.array([(p[0], p[1], p[2]) for p in points if len(p) >= 3], dtype=float)
+    if len(pts) == 0:
+        return {"error": "No valid points provided"}
+
+    lats, lons, vals = pts[:, 0], pts[:, 1], pts[:, 2]
+
+    lat_min, lat_max = lats.min(), lats.max()
+    lon_min, lon_max = lons.min(), lons.max()
+
+    # Add padding
+    lat_range = max(lat_max - lat_min, 0.1)
+    lon_range = max(lon_max - lon_min, 0.1)
+    lat_min -= lat_range * padding
+    lat_max += lat_range * padding
+    lon_min -= lon_range * padding
+    lon_max += lon_range * padding
+
+    # Create grid
+    grid_lons = np.linspace(lon_min, lon_max, resolution)
+    grid_lats = np.linspace(lat_min, lat_max, resolution)
+    glon, glat = np.meshgrid(grid_lons, grid_lats)
+
+    # IDW calculation
+    raster = np.zeros((resolution, resolution), dtype=float)
+
+    for i in range(resolution):
+        for j in range(resolution):
+            d = np.sqrt((glat[i, j] - lats) ** 2 + (glon[i, j] - lons) ** 2)
+            # Avoid division by zero
+            zero_mask = d < 1e-10
+            if np.any(zero_mask):
+                raster[i, j] = vals[zero_mask].mean()
+            else:
+                w = 1.0 / (d ** power)
+                w_sum = w.sum()
+                raster[i, j] = (w * vals).sum() / w_sum if w_sum > 0 else 0.0
+
+    return {
+        "raster": raster,
+        "extent": [lon_min, lon_max, lat_min, lat_max],
+        "lons": grid_lons,
+        "lats": grid_lats,
+        "method": "IDW",
+        "n_points": len(pts),
+        "min_val": float(raster.min()),
+        "max_val": float(raster.max()),
+        "mean_val": float(raster.mean()),
+        "std_val": float(raster.std()),
+    }
+
+
+def kriging_interpolation(points, resolution=100, variogram_model="linear", padding=0.05):
+    """
+    Kriging interpolation. Requires pykrige.
+
+    Returns same structure as idw_interpolation, or {"error": ...}.
+    """
+    if not _has_pykrige():
+        return {"error": "pykrige not installed — falling back to IDW"}
+
+    from pykrige.ok import OrdinaryKriging
+
+    pts = np.array([(p[0], p[1], p[2]) for p in points if len(p) >= 3], dtype=float)
+    if len(pts) < 4:
+        return {"error": "Kriging requires at least 4 points"}
+
+    lats, lons, vals = pts[:, 0], pts[:, 1], pts[:, 2]
+
+    lat_min, lat_max = lats.min(), lats.max()
+    lon_min, lon_max = lons.min(), lons.max()
+
+    lat_range = max(lat_max - lat_min, 0.1)
+    lon_range = max(lon_max - lon_min, 0.1)
+    lat_min -= lat_range * padding
+    lat_max += lat_range * padding
+    lon_min -= lon_range * padding
+    lon_max += lon_range * padding
+
+    grid_lons = np.linspace(lon_min, lon_max, resolution)
+    grid_lats = np.linspace(lat_min, lat_max, resolution)
+
+    try:
+        OK = OrdinaryKriging(
+            lons, lats, vals,
+            variogram_model=variogram_model,
+            verbose=False,
+            enable_plotting=False,
+        )
+        z, ss = OK.execute("grid", grid_lons, grid_lats)
+        raster = np.array(z)
+
+        return {
+            "raster": raster,
+            "extent": [lon_min, lon_max, lat_min, lat_max],
+            "lons": grid_lons,
+            "lats": grid_lats,
+            "method": f"Kriging ({variogram_model})",
+            "n_points": len(pts),
+            "min_val": float(raster.min()),
+            "max_val": float(raster.max()),
+            "mean_val": float(raster.mean()),
+            "std_val": float(raster.std()),
+        }
+    except Exception as e:
+        return {"error": f"Kriging failed: {str(e)[:100]}"}
+
+
+def export_geotiff(raster_result, output_path, crs="EPSG:4326"):
+    """
+    Export raster to GeoTIFF. Requires rasterio.
+
+    Parameters
+    ----------
+    raster_result : dict
+        Output from idw_interpolation or kriging_interpolation
+    output_path : str
+        Path to save GeoTIFF (e.g., "/tmp/output.tif")
+    crs : str
+        Coordinate reference system
+
+    Returns
+    -------
+    dict with success, path, message
+    """
+    if not _has_rasterio():
+        return {"success": False, "message": "rasterio not installed"}
+
+    import rasterio
+    from rasterio.transform import from_bounds
+
+    try:
+        raster = raster_result["raster"]
+        lon_min, lon_max, lat_min, lat_max = raster_result["extent"]
+        height, width = raster.shape
+
+        transform = from_bounds(lon_min, lat_min, lon_max, lat_max, width, height)
+
+        with rasterio.open(
+            output_path, "w",
+            driver="GTiff",
+            height=height,
+            width=width,
+            count=1,
+            dtype=raster.dtype,
+            crs=crs,
+            transform=transform,
+        ) as dst:
+            dst.write(raster, 1)
+
+        return {"success": True, "path": output_path,
+                "message": f"GeoTIFF saved ({width}×{height})"}
+    except Exception as e:
+        return {"success": False, "message": f"Export failed: {str(e)[:100]}"}
+
+
+def create_raster_plotly(raster_result, title="Raster Surface", colorscale="RdYlGn_r"):
+    """
+    Create Plotly heatmap + contour overlay for the raster.
+
+    Returns a plotly Figure object.
+    """
+    try:
+        import plotly.graph_objects as go
+    except ImportError:
+        return None
+
+    raster = raster_result["raster"]
+    lon_min, lon_max, lat_min, lat_max = raster_result["extent"]
+
+    fig = go.Figure()
+
+    # Heatmap
+    fig.add_trace(go.Heatmap(
+        z=raster,
+        x=np.linspace(lon_min, lon_max, raster.shape[1]),
+        y=np.linspace(lat_min, lat_max, raster.shape[0]),
+        colorscale=colorscale,
+        colorbar=dict(title="Index"),
+        hovertemplate="Lon: %{x:.3f}<br>Lat: %{y:.3f}<br>Value: %{z:.1f}<extra></extra>",
+    ))
+
+    # Contour lines
+    fig.add_trace(go.Contour(
+        z=raster,
+        x=np.linspace(lon_min, lon_max, raster.shape[1]),
+        y=np.linspace(lat_min, lat_max, raster.shape[0]),
+        contours=dict(
+            showlabels=True,
+            labelfont=dict(size=10, color="white"),
+        ),
+        line=dict(width=1, color="rgba(255,255,255,0.6)"),
+        showscale=False,
+        hoverinfo="skip",
+    ))
+
+    fig.update_layout(
+        title=title,
+        xaxis_title="Longitude",
+        yaxis_title="Latitude",
+        height=600,
+        margin=dict(l=40, r=40, t=60, b=40),
+    )
+
+    return fig
+
+
+def compute_raster_statistics(raster_result):
+    """Compute extended statistics for raster."""
+    raster = raster_result["raster"]
+    flat = raster.flatten()
+
+    def pct(p):
+        return float(np.percentile(flat, p))
+
+    return {
+        "min": float(flat.min()),
+        "max": float(flat.max()),
+        "mean": float(flat.mean()),
+        "std": float(flat.std()),
+        "median": float(np.median(flat)),
+        "p10": pct(10),
+        "p25": pct(25),
+        "p75": pct(75),
+        "p90": pct(90),
+        "n_cells": int(flat.size),
+        "coverage_km2": round(
+            (raster_result["extent"][1] - raster_result["extent"][0]) *
+            (raster_result["extent"][3] - raster_result["extent"][2]) * 111.0 * 111.0,
+            2
+        ),
+    }
+
+
+def classify_raster(raster_result, thresholds=None):
+    """
+    Classify raster cells into risk levels.
+
+    Default thresholds: [100, 140, 180] (Medium/High/Very High).
+    Returns dict with counts and percentages.
+    """
+    if thresholds is None:
+        thresholds = [100, 140, 180]
+
+    raster = raster_result["raster"]
+    flat = raster.flatten()
+    total = flat.size
+
+    low = int((flat < thresholds[0]).sum())
+    medium = int(((flat >= thresholds[0]) & (flat < thresholds[1])).sum())
+    high = int(((flat >= thresholds[1]) & (flat < thresholds[2])).sum())
+    very_high = int((flat >= thresholds[2]).sum())
+
+    return {
+        "low": {"count": low, "percent": round(low / total * 100, 1)},
+        "medium": {"count": medium, "percent": round(medium / total * 100, 1)},
+        "high": {"count": high, "percent": round(high / total * 100, 1)},
+        "very_high": {"count": very_high, "percent": round(very_high / total * 100, 1)},
+        "total": total,
+    }
