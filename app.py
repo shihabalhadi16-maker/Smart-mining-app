@@ -1,4 +1,4 @@
-"""نظام التعدين السوداني v58.1 — University of Khartoum"""
+"""نظام التعدين السوداني v58.2 — University of Khartoum"""
 import streamlit as st
 import subprocess, os, sys, shutil, stat, zipfile, io
 import folium
@@ -42,7 +42,7 @@ try:
 except ImportError:
     AUTOCAL_OK = False
 
-st.set_page_config(page_title="Sudan Mining System v58.1", page_icon="⛏️", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Sudan Mining System v58.2", page_icon="⛏️", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""<style>
 html,body,[class*="css"]{font-family:'Segoe UI','Tahoma',Arial;font-size:15px;}
@@ -280,24 +280,34 @@ def calc_drastic_t(base_drastic, cn_water, hg_water, distance_m=100.0, seepage=1
             "drastic_p":round(drastic_t,1),"modifier":round(1.0 + toxicity_bonus / max(base_drastic, 1), 3),
             "increase_pct":round(increase_pct,1),"level":level,"color":color}
 
-def weighted_toxicity(hgw, hgs, cnw, cns, mining_type="traditional"):
+def weighted_toxicity(hgw, hgs, cnw, cns, mining_type="traditional",
+                      alpha_override=None, beta_override=None, SF_override=None):
+    """Toxicity assessment — unified with calc_drastic_t logic (v58.2)"""
     CN_LIMIT = 0.05; HG_LIMIT = 0.0007
     cn_score = min(30.0, (cnw / CN_LIMIT) * 30.0)
     hg_score = min(30.0, (hgw / HG_LIMIT) * 30.0)
-    w = WEIGHTS.get(mining_type, WEIGHTS["traditional"])
-    alpha, beta = w["alpha"], w["beta"]
-    bonus = min(50.0, alpha * cn_score + beta * hg_score)
+    if alpha_override is not None:
+        alpha = alpha_override
+        beta = beta_override if beta_override is not None else 0.5
+        SF = SF_override if SF_override is not None else 1.0
+    else:
+        w = WEIGHTS.get(mining_type, WEIGHTS["traditional"])
+        alpha, beta, SF = w["alpha"], w["beta"], w["SF"]
+    base_bonus = min(50.0, alpha * cn_score + beta * hg_score)
     soil_factor = 1.0
     if hgs > 1.0: soil_factor += 0.3
     if cns > 10.0: soil_factor += 0.3
-    toxicity_index = bonus * soil_factor
+    drastic_tox_bonus = base_bonus * SF
+    toxicity_index = drastic_tox_bonus * soil_factor
     if toxicity_index <= 5.0: cat, act = "safe", "no_action"
     elif toxicity_index <= 15.0: cat, act = "under_monitoring", "periodic"
     elif toxicity_index <= 30.0: cat, act = "hazardous", "urgent"
     else: cat, act = "critical", "stop_activity"
-    return {"index": round(toxicity_index, 2), "cn_score": round(cn_score, 2),
-            "hg_score": round(hg_score, 2), "bonus": round(bonus, 2),
-            "soil_factor": round(soil_factor, 2),
+    return {"index": round(toxicity_index, 2),
+            "drastic_tox_bonus": round(drastic_tox_bonus, 2),
+            "cn_score": round(cn_score, 2), "hg_score": round(hg_score, 2),
+            "base_bonus": round(base_bonus, 2),
+            "source_factor": round(SF, 2), "soil_factor": round(soil_factor, 2),
             "category": cat, "action": act, "mining_type": mining_type}
 
 def spsa_analysis(pv):
@@ -455,7 +465,7 @@ th{{background-color:#f5eedc;color:#5c2c16;}}.metric{{font-size:1.5em;font-weigh
 <tr><th>Level</th><td class="metric">{level}</td></tr>
 </table>
 <p><b>{recommendation}</b></p>
-<p style="text-align:center;color:#666;">DRASTIC-Tox v58.1</p>
+<p style="text-align:center;color:#666;">DRASTIC-Tox v58.2</p>
 </body></html>"""
 
 def build_heatmap_verified(show_heat=True, show_markers=True):
@@ -607,7 +617,7 @@ if "ci" in st.session_state: st.sidebar.success(f"{t('current_index')}: {st.sess
 st.sidebar.markdown("---")
 with st.sidebar.expander(t("about"), expanded=False):
     st.markdown(f"""<div class="about-box">
-<h4>{t('app_title')} v58.1</h4>
+<h4>{t('app_title')} v58.2</h4>
 <h4>{t('modules')}:</h4>
 <p style="font-size:0.8em;">
 weight_manager: {'OK' if WM_OK else 'NO'}<br>
@@ -625,7 +635,7 @@ model_development: {'OK' if DEV_OK else 'NO'}
 </ul>
 </div>""", unsafe_allow_html=True)
 
-st.markdown(f"""<div class="pilot-banner">{t("pilot_version")}</div><div class="header-container"><div class="header-title">{t("app_title")}</div><div class="header-subtitle">{t("university")}</div><div class="header-subtitle">{t("subtitle")}</div><div class="header-badge">{t("version")} 58.1 | {n_states} | {n_sites_total} {t("sites")} ({n_sites_verified} {t("verified_sites")})</div></div>""", unsafe_allow_html=True)
+st.markdown(f"""<div class="pilot-banner">{t("pilot_version")}</div><div class="header-container"><div class="header-title">{t("app_title")}</div><div class="header-subtitle">{t("university")}</div><div class="header-subtitle">{t("subtitle")}</div><div class="header-badge">{t("version")} 58.2 | {n_states} | {n_sites_total} {t("sites")} ({n_sites_verified} {t("verified_sites")})</div></div>""", unsafe_allow_html=True)
 
 with st.expander(f"📤 {t('upload_files')}", expanded=False):
     c1, c2, c3 = st.columns(3)
@@ -654,6 +664,7 @@ with st.expander(f"📤 {t('upload_files')}", expanded=False):
     st.download_button("📥 Template / القالب", data=sample.to_csv(index=False).encode("utf-8-sig"), file_name="template.csv", mime="text/csv", key="download_template_btn")
 
 st.markdown("---")
+
 if MODE_KEY == "system":
     tabs = st.tabs([
         t("tab_input"), t("tab_manual"), t("tab_bulk"),
@@ -893,7 +904,7 @@ if MODE_KEY == "system":
             sm = mm in [t("both"), t("markers")]
             with st.spinner(t("calculating")):
                 mapa, stats, df_sites = build_heatmap_verified(show_heat=sh, show_markers=sm)
-            st_folium(mapa, height=mh, key="map_folium_v581", use_container_width=True)
+            st_folium(mapa, height=mh, key="map_folium_v582", use_container_width=True)
             st.markdown("---")
             st.markdown(f"#### {t('statistics')}")
             c1, c2, c3, c4, c5 = st.columns(5)
@@ -992,20 +1003,47 @@ if MODE_KEY == "system":
             with c2: cns = st.number_input(t("cn_in_soil"), 0.0, 100.0, 5.0, 0.5, key="tox_cns_input")
             if st.button(t("analyze"), type="primary", key="run_tox_btn"):
                 mt_tox = st.session_state.get("mining_type", "traditional")
-                st.session_state["tox_result"] = weighted_toxicity(hgw, hgs, cnw, cns, mining_type=mt_tox)
+                if CALIBRATED_WEIGHTS and CALIBRATED_WEIGHTS.get("mining_type") == mt_tox:
+                    st.session_state["tox_result"] = weighted_toxicity(hgw, hgs, cnw, cns, mining_type=mt_tox,
+                        alpha_override=CALIBRATED_WEIGHTS["alpha"],
+                        beta_override=CALIBRATED_WEIGHTS["beta"],
+                        SF_override=CALIBRATED_WEIGHTS["SF"])
+                else:
+                    st.session_state["tox_result"] = weighted_toxicity(hgw, hgs, cnw, cns, mining_type=mt_tox)
             if "tox_result" in st.session_state:
                 tox = st.session_state["tox_result"]
                 st.markdown("---")
-                c1, c2, c3, c4 = st.columns(4)
-                c1.metric(t("index"), tox["index"])
-                c2.metric(t("cn_score"), tox["cn_score"])
-                c3.metric(t("hg_score"), tox["hg_score"])
-                c4.metric(t("bonus"), tox["bonus"])
-                st.markdown("---")
+                st.markdown(f"#### {t('toxicity_metrics')}")
                 c1, c2, c3 = st.columns(3)
+                c1.metric(t("cn_score"), tox["cn_score"])
+                c2.metric(t("hg_score"), tox["hg_score"])
+                c3.metric(t("base_bonus"), tox["base_bonus"])
+                c1, c2 = st.columns(2)
+                c1.metric(t("source_factor") + " (SF)", tox["source_factor"])
+                c2.metric(t("soil_factor"), tox["soil_factor"])
+                st.markdown("---")
+                st.markdown(f"#### {t('two_metrics_explained')}")
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.markdown(f"""<div class="cal-result-card" style="background:linear-gradient(135deg,#e3f2fd,#bbdefb);">
+                        <div class="cal-result-label">{t('drastic_tox_bonus')}</div>
+                        <div class="cal-result-value">{tox['drastic_tox_bonus']}</div>
+                        <div style="font-size:0.8em;color:#0d47a1;margin-top:8px;">
+                            {t('used_in_report')} (Base × SF)
+                        </div>
+                    </div>""", unsafe_allow_html=True)
+                with c2:
+                    st.markdown(f"""<div class="cal-result-card" style="background:linear-gradient(135deg,#fff3e0,#ffe0b2);">
+                        <div class="cal-result-label">{t('toxicity_index')}</div>
+                        <div class="cal-result-value">{tox['index']}</div>
+                        <div style="font-size:0.8em;color:#e65100;margin-top:8px;">
+                            Bonus × Soil Factor
+                        </div>
+                    </div>""", unsafe_allow_html=True)
+                st.markdown("---")
+                c1, c2 = st.columns(2)
                 c1.metric(t("category"), t(tox["category"]))
                 c2.metric(t("action"), t(tox["action"]))
-                c3.metric(t("soil_factor"), tox["soil_factor"])
 
     with tabs[8]:
         st.markdown(f'<div class="section-header"><h3>{t("gis_title")}</h3></div>', unsafe_allow_html=True)
@@ -1263,7 +1301,7 @@ if MODE_KEY == "system":
                             st.success(f"{len(df_p)} {t('sites')}")
                         except Exception as e: st.error(str(e))
                 if "auto_maps_fig" in st.session_state:
-                    st.plotly_chart(st.session_state["auto_maps_fig"], use_container_width=True, key="auto_maps_chart_v581")
+                    st.plotly_chart(st.session_state["auto_maps_fig"], use_container_width=True, key="auto_maps_chart_v582")
                     html = st.session_state["auto_maps_fig"].to_html(include_plotlyjs='cdn')
                     st.download_button("📥 HTML", data=html.encode("utf-8"),
                         file_name="auto_maps.html", mime="text/html", key="download_maps_html_btn")
@@ -1415,7 +1453,7 @@ if MODE_KEY == "system":
                             fig.add_trace(go.Scatter(x=fprs, y=tprs, mode='lines+markers', line=dict(color='#5c2c16', width=2), marker=dict(size=4), name='DRASTIC-Tox'))
                             fig.add_trace(go.Scatter(x=[1-res["specificity"]], y=[res["sensitivity"]], mode='markers', marker=dict(size=18, color='red', symbol='star'), name=f"{t('threshold_label')} ({res['optimal_threshold']})"))
                             fig.update_layout(xaxis_title="FPR", yaxis_title="TPR", height=500)
-                            st.plotly_chart(fig, use_container_width=True, key="roc_chart_v581")
+                            st.plotly_chart(fig, use_container_width=True, key="roc_chart_v582")
                         except Exception as e: st.warning(str(e))
                         st.markdown("---")
                         st.warning(f"n = {res['n_sites']} | {t('threshold_label')}: {res['optimal_threshold']}")
@@ -1721,4 +1759,4 @@ elif MODE_KEY == "modflow" and MODFLOW_OK:
                 c3.metric("Mean", f"{res['head_mean']:.2f} m")
 
 st.markdown("---")
-st.markdown(f"""<div style="text-align:center;color:#666;padding:10px;"><b>{t("app_title")} v58.1</b> - PILOT VERSION<br><span style="font-size:0.85em;">{t("screening_only")}</span></div>""", unsafe_allow_html=True)
+st.markdown(f"""<div style="text-align:center;color:#666;padding:10px;"><b>{t("app_title")} v58.2</b> - PILOT VERSION<br><span style="font-size:0.85em;">{t("screening_only")}</span></div>""", unsafe_allow_html=True)
