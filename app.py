@@ -1,4 +1,4 @@
-"""نظام التعدين السوداني v58.5 — University of Khartoum"""
+"""نظام التعدين السوداني v58.6 — University of Khartoum"""
 import streamlit as st
 import subprocess, os, sys, shutil, stat, zipfile, io
 import folium
@@ -39,6 +39,13 @@ except ImportError:
     PDF_OK = False
     generate_pdf_report = None
 
+try:
+    from excel_exporter import generate_excel_report
+    EXCEL_OK = True
+except ImportError:
+    EXCEL_OK = False
+    generate_excel_report = None
+
 def t(key, **kwargs):
     lang = st.session_state.get("lang", "ar")
     return _t(key, lang)
@@ -63,7 +70,7 @@ try:
 except ImportError:
     AUTOCAL_OK = False
 
-st.set_page_config(page_title="Sudan Mining System v58.5", page_icon="⛏️", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Sudan Mining System v58.6", page_icon="⛏️", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""<style>
 html,body,[class*="css"]{font-family:'Segoe UI','Tahoma',Arial;font-size:15px;}
@@ -428,6 +435,8 @@ def monte_carlo_analysis(pv, n_iter=1000, variation=0.15, mining_type="tradition
         "tox_ci_90": (round(pct(results_tox, 5), 1), round(pct(results_tox, 95), 1)),
         "tox_prob_over_140": round(float(np.mean(results_tox >= 140) * 100), 1),
         "tox_prob_over_180": round(float(np.mean(results_tox >= 180) * 100), 1),
+        "n_iter": n_iter,
+        "variation_pct": int(variation * 100),
     }
 
 def model_contaminant_transport_fixed(C0, K, porosity, gradient, distance, years, dispersivity=10.0):
@@ -519,7 +528,7 @@ th{{background-color:#f5eedc;color:#5c2c16;}}.metric{{font-size:1.5em;font-weigh
 <tr><th>Level</th><td class="metric">{level}</td></tr>
 </table>
 <p><b>{recommendation}</b></p>
-<p style="text-align:center;color:#666;">DRASTIC-Tox v58.5</p>
+<p style="text-align:center;color:#666;">DRASTIC-Tox v58.6</p>
 </body></html>"""
 
 def build_heatmap_verified(show_heat=True, show_markers=True):
@@ -671,7 +680,7 @@ if "ci" in st.session_state: st.sidebar.success(f"{t('current_index')}: {st.sess
 st.sidebar.markdown("---")
 with st.sidebar.expander(t("about"), expanded=False):
     st.markdown(f"""<div class="about-box">
-<h4>{t('app_title')} v58.5</h4>
+<h4>{t('app_title')} v58.6</h4>
 <h4>{t('modules')}:</h4>
 <p style="font-size:0.8em;">
 weight_manager: {'OK' if WM_OK else 'NO'}<br>
@@ -682,7 +691,8 @@ advanced: {'OK' if ADV_OK else 'NO'}<br>
 model_development: {'OK' if DEV_OK else 'NO'}<br>
 external_validation: {'OK' if EXT_VAL_OK else 'NO'}<br>
 data_validator: {'OK' if VALIDATOR_OK else 'NO'}<br>
-pdf_generator: {'OK' if PDF_OK else 'NO'}
+pdf_generator: {'OK' if PDF_OK else 'NO'}<br>
+excel_exporter: {'OK' if EXCEL_OK else 'NO'}
 </p>
 <h4>{t('constraints')}:</h4>
 <ul style="font-size:0.85em;">
@@ -692,7 +702,7 @@ pdf_generator: {'OK' if PDF_OK else 'NO'}
 </ul>
 </div>""", unsafe_allow_html=True)
 
-st.markdown(f"""<div class="pilot-banner">{t("pilot_version")}</div><div class="header-container"><div class="header-title">{t("app_title")}</div><div class="header-subtitle">{t("university")}</div><div class="header-subtitle">{t("subtitle")}</div><div class="header-badge">{t("version")} 58.5 | {n_states} | {n_sites_total} {t("sites")} ({n_sites_verified} {t("verified_sites")})</div></div>""", unsafe_allow_html=True)
+st.markdown(f"""<div class="pilot-banner">{t("pilot_version")}</div><div class="header-container"><div class="header-title">{t("app_title")}</div><div class="header-subtitle">{t("university")}</div><div class="header-subtitle">{t("subtitle")}</div><div class="header-badge">{t("version")} 58.6 | {n_states} | {n_sites_total} {t("sites")} ({n_sites_verified} {t("verified_sites")})</div></div>""", unsafe_allow_html=True)
 
 with st.expander(f"📤 {t('upload_files')}", expanded=False):
     c1, c2, c3 = st.columns(3)
@@ -824,6 +834,8 @@ if MODE_KEY == "system":
             st.markdown(f'<div class="mining-badge {badge_class}">{mt_label}</div>', unsafe_allow_html=True)
             st.session_state["mining_type"] = mt_key
             st.session_state["current_site_key"] = site_key
+            st.session_state["current_site_data"] = site_data
+            st.session_state["current_state"] = state
             st.markdown("---")
             c1, c2, c3, c4 = st.columns(4)
             c1.metric(t("activity"), site_data.get("activity","N/A"))
@@ -1068,7 +1080,50 @@ if MODE_KEY == "system":
                 else:
                     st.info("📄 PDF: يتطلب تثبيت fpdf2 و pdf_generator.py")
             with c2:
-                st.caption("PDF يحتوي على ملخص كامل + التوصيات + شعار الجامعة")
+                if EXCEL_OK:
+                    try:
+                        spsa_data = st.session_state.get("spsa_result", None)
+                        mc_data = st.session_state.get("mc_result", None)
+                        excel_bytes = generate_excel_report(
+                            site_info={
+                                "name": site_key_current,
+                                "state": mt_key,
+                                "coords": "Sudan",
+                                "depth": cv.get("depth", "N/A"),
+                                "recharge": cv.get("recharge", "N/A"),
+                                "slope": cv.get("slope", "N/A"),
+                                "conductivity": cv.get("conductivity", "N/A"),
+                                "cn": cn, "hg": hg,
+                                "aquifer": cv.get("aquifer", "—"),
+                                "soil": cv.get("soil", "—"),
+                                "vadose": cv.get("vadose", "—"),
+                                "D_rating": get_d_rating(cv.get("depth", 15)),
+                                "R_rating": get_r_rating(cv.get("recharge", 100)),
+                                "A_rating": get_a_rating(cv.get("aquifer", "massive_sandstone")),
+                                "S_rating": get_s_rating(cv.get("soil", "sand")),
+                                "T_rating": get_t_rating(cv.get("slope", 4)),
+                                "I_rating": get_i_rating(cv.get("vadose", "sand_gravel")),
+                                "C_rating": get_c_rating(cv.get("conductivity", 5)),
+                            },
+                            drastic_result=dt_res,
+                            risk_info=current_risk if current_risk else classify(idx),
+                            mining_type=mt_key,
+                            spsa_result=spsa_data,
+                            mc_result=mc_data,
+                        )
+                        if excel_bytes:
+                            st.download_button("📊 تحميل Excel",
+                                data=excel_bytes,
+                                file_name=f"report_{site_key_current}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                key="download_excel_btn")
+                        else:
+                            st.info("openpyxl مطلوب لتوليد Excel")
+                    except Exception as e:
+                        st.warning(f"تعذر توليد Excel: {str(e)[:80]}")
+                else:
+                    st.info("📊 Excel: يتطلب excel_exporter.py")
+            st.caption("PDF و Excel يحتويان على ملخص كامل + التوصيات")
 
     with tabs[5]:
         st.markdown(f'<div class="section-header"><h3>{t("heatmap_title")}</h3></div>', unsafe_allow_html=True)
@@ -1082,7 +1137,7 @@ if MODE_KEY == "system":
             sm = mm in [t("both"), t("markers")]
             with st.spinner(t("calculating")):
                 mapa, stats, df_sites = build_heatmap_verified(show_heat=sh, show_markers=sm)
-            st_folium(mapa, height=mh, key="map_folium_v585", use_container_width=True)
+            st_folium(mapa, height=mh, key="map_folium_v586", use_container_width=True)
             st.markdown("---")
             st.markdown(f"#### {t('statistics')}")
             c1, c2, c3, c4, c5 = st.columns(5)
@@ -1493,7 +1548,7 @@ if MODE_KEY == "system":
                             st.success(f"{len(df_p)} {t('sites')}")
                         except Exception as e: st.error(str(e))
                 if "auto_maps_fig" in st.session_state:
-                    st.plotly_chart(st.session_state["auto_maps_fig"], use_container_width=True, key="auto_maps_chart_v585")
+                    st.plotly_chart(st.session_state["auto_maps_fig"], use_container_width=True, key="auto_maps_chart_v586")
                     html = st.session_state["auto_maps_fig"].to_html(include_plotlyjs='cdn')
                     st.download_button("📥 HTML", data=html.encode("utf-8"),
                         file_name="auto_maps.html", mime="text/html", key="download_maps_html_btn")
@@ -1645,7 +1700,7 @@ if MODE_KEY == "system":
                             fig.add_trace(go.Scatter(x=fprs, y=tprs, mode='lines+markers', line=dict(color='#5c2c16', width=2), marker=dict(size=4), name='DRASTIC-Tox'))
                             fig.add_trace(go.Scatter(x=[1-res["specificity"]], y=[res["sensitivity"]], mode='markers', marker=dict(size=18, color='red', symbol='star'), name=f"{t('threshold_label')} ({res['optimal_threshold']})"))
                             fig.update_layout(xaxis_title="FPR", yaxis_title="TPR", height=500)
-                            st.plotly_chart(fig, use_container_width=True, key="roc_chart_v585")
+                            st.plotly_chart(fig, use_container_width=True, key="roc_chart_v586")
                         except Exception as e: st.warning(str(e))
                         st.markdown("---")
                         st.warning(f"n = {res['n_sites']} | {t('threshold_label')}: {res['optimal_threshold']}")
@@ -2102,4 +2157,4 @@ elif MODE_KEY == "modflow" and MODFLOW_OK:
                 c3.metric("Mean", f"{res['head_mean']:.2f} m")
 
 st.markdown("---")
-st.markdown(f"""<div style="text-align:center;color:#666;padding:10px;"><b>{t("app_title")} v58.5</b> - PILOT VERSION<br><span style="font-size:0.85em;">{t("screening_only")}</span></div>""", unsafe_allow_html=True)
+st.markdown(f"""<div style="text-align:center;color:#666;padding:10px;"><b>{t("app_title")} v58.6</b> - PILOT VERSION<br><span style="font-size:0.85em;">{t("screening_only")}</span></div>""", unsafe_allow_html=True)
