@@ -1,4 +1,4 @@
-"""نظام التعدين السوداني v58.6 — University of Khartoum"""
+"""نظام التعدين السوداني v58.7 — University of Khartoum"""
 import streamlit as st
 import subprocess, os, sys, shutil, stat, zipfile, io
 import folium
@@ -46,6 +46,17 @@ except ImportError:
     EXCEL_OK = False
     generate_excel_report = None
 
+try:
+    from gis_raster import (idw_interpolation, kriging_interpolation,
+                             export_geotiff, create_raster_plotly,
+                             compute_raster_statistics, classify_raster)
+    RASTER_OK = True
+except ImportError:
+    RASTER_OK = False
+    idw_interpolation = kriging_interpolation = None
+    export_geotiff = create_raster_plotly = None
+    compute_raster_statistics = classify_raster = None
+
 def t(key, **kwargs):
     lang = st.session_state.get("lang", "ar")
     return _t(key, lang)
@@ -70,7 +81,7 @@ try:
 except ImportError:
     AUTOCAL_OK = False
 
-st.set_page_config(page_title="Sudan Mining System v58.6", page_icon="⛏️", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Sudan Mining System v58.7", page_icon="⛏️", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""<style>
 html,body,[class*="css"]{font-family:'Segoe UI','Tahoma',Arial;font-size:15px;}
@@ -528,7 +539,7 @@ th{{background-color:#f5eedc;color:#5c2c16;}}.metric{{font-size:1.5em;font-weigh
 <tr><th>Level</th><td class="metric">{level}</td></tr>
 </table>
 <p><b>{recommendation}</b></p>
-<p style="text-align:center;color:#666;">DRASTIC-Tox v58.6</p>
+<p style="text-align:center;color:#666;">DRASTIC-Tox v58.7</p>
 </body></html>"""
 
 def build_heatmap_verified(show_heat=True, show_markers=True):
@@ -680,7 +691,7 @@ if "ci" in st.session_state: st.sidebar.success(f"{t('current_index')}: {st.sess
 st.sidebar.markdown("---")
 with st.sidebar.expander(t("about"), expanded=False):
     st.markdown(f"""<div class="about-box">
-<h4>{t('app_title')} v58.6</h4>
+<h4>{t('app_title')} v58.7</h4>
 <h4>{t('modules')}:</h4>
 <p style="font-size:0.8em;">
 weight_manager: {'OK' if WM_OK else 'NO'}<br>
@@ -692,7 +703,8 @@ model_development: {'OK' if DEV_OK else 'NO'}<br>
 external_validation: {'OK' if EXT_VAL_OK else 'NO'}<br>
 data_validator: {'OK' if VALIDATOR_OK else 'NO'}<br>
 pdf_generator: {'OK' if PDF_OK else 'NO'}<br>
-excel_exporter: {'OK' if EXCEL_OK else 'NO'}
+excel_exporter: {'OK' if EXCEL_OK else 'NO'}<br>
+gis_raster: {'OK' if RASTER_OK else 'NO'}
 </p>
 <h4>{t('constraints')}:</h4>
 <ul style="font-size:0.85em;">
@@ -702,7 +714,7 @@ excel_exporter: {'OK' if EXCEL_OK else 'NO'}
 </ul>
 </div>""", unsafe_allow_html=True)
 
-st.markdown(f"""<div class="pilot-banner">{t("pilot_version")}</div><div class="header-container"><div class="header-title">{t("app_title")}</div><div class="header-subtitle">{t("university")}</div><div class="header-subtitle">{t("subtitle")}</div><div class="header-badge">{t("version")} 58.6 | {n_states} | {n_sites_total} {t("sites")} ({n_sites_verified} {t("verified_sites")})</div></div>""", unsafe_allow_html=True)
+st.markdown(f"""<div class="pilot-banner">{t("pilot_version")}</div><div class="header-container"><div class="header-title">{t("app_title")}</div><div class="header-subtitle">{t("university")}</div><div class="header-subtitle">{t("subtitle")}</div><div class="header-badge">{t("version")} 58.7 | {n_states} | {n_sites_total} {t("sites")} ({n_sites_verified} {t("verified_sites")})</div></div>""", unsafe_allow_html=True)
 
 with st.expander(f"📤 {t('upload_files')}", expanded=False):
     c1, c2, c3 = st.columns(3)
@@ -814,7 +826,7 @@ if MODE_KEY == "system":
         t("tab_sensitivity"), t("tab_toxicity"), t("tab_gis"),
         t("tab_monte_carlo"), t("tab_advanced"), t("tab_development"),
         t("tab_auto_maps"), t("tab_calibration"), t("tab_threshold"),
-        "⚙️ Profiles", "🔬 External Validation"
+        "⚙️ Profiles", "🔬 External Validation", "🗺️ GIS Raster"
     ])
 
     with tabs[0]:
@@ -1137,7 +1149,7 @@ if MODE_KEY == "system":
             sm = mm in [t("both"), t("markers")]
             with st.spinner(t("calculating")):
                 mapa, stats, df_sites = build_heatmap_verified(show_heat=sh, show_markers=sm)
-            st_folium(mapa, height=mh, key="map_folium_v586", use_container_width=True)
+            st_folium(mapa, height=mh, key="map_folium_v587", use_container_width=True)
             st.markdown("---")
             st.markdown(f"#### {t('statistics')}")
             c1, c2, c3, c4, c5 = st.columns(5)
@@ -1548,7 +1560,7 @@ if MODE_KEY == "system":
                             st.success(f"{len(df_p)} {t('sites')}")
                         except Exception as e: st.error(str(e))
                 if "auto_maps_fig" in st.session_state:
-                    st.plotly_chart(st.session_state["auto_maps_fig"], use_container_width=True, key="auto_maps_chart_v586")
+                    st.plotly_chart(st.session_state["auto_maps_fig"], use_container_width=True, key="auto_maps_chart_v587")
                     html = st.session_state["auto_maps_fig"].to_html(include_plotlyjs='cdn')
                     st.download_button("📥 HTML", data=html.encode("utf-8"),
                         file_name="auto_maps.html", mime="text/html", key="download_maps_html_btn")
@@ -1700,7 +1712,7 @@ if MODE_KEY == "system":
                             fig.add_trace(go.Scatter(x=fprs, y=tprs, mode='lines+markers', line=dict(color='#5c2c16', width=2), marker=dict(size=4), name='DRASTIC-Tox'))
                             fig.add_trace(go.Scatter(x=[1-res["specificity"]], y=[res["sensitivity"]], mode='markers', marker=dict(size=18, color='red', symbol='star'), name=f"{t('threshold_label')} ({res['optimal_threshold']})"))
                             fig.update_layout(xaxis_title="FPR", yaxis_title="TPR", height=500)
-                            st.plotly_chart(fig, use_container_width=True, key="roc_chart_v586")
+                            st.plotly_chart(fig, use_container_width=True, key="roc_chart_v587")
                         except Exception as e: st.warning(str(e))
                         st.markdown("---")
                         st.warning(f"n = {res['n_sites']} | {t('threshold_label')}: {res['optimal_threshold']}")
@@ -1915,6 +1927,230 @@ if MODE_KEY == "system":
 
                             st.warning("⚠️ With n=11 sites, test set is small (3-4 sites). "
                                        "Interpret with caution and report CI.")
+
+    with tabs[17]:
+        st.markdown(f'<div class="section-header"><h3>🗺️ GIS Raster Interpolation</h3></div>', unsafe_allow_html=True)
+        st.markdown(f"""<div class="research-note">
+        <b>Purpose:</b> Convert point risk data into continuous raster surfaces.<br>
+        <b>Methods:</b> IDW (always available) · Kriging (requires pykrige) · GeoTIFF (requires rasterio)
+        </div>""", unsafe_allow_html=True)
+
+        if not RASTER_OK:
+            st.error("gis_raster.py not installed")
+            st.info("Create a file named `gis_raster.py` in the same folder as `app.py`")
+        else:
+            df_raster = get_loaded_df("df_combined", "df_validation", "df_bulk")
+            if df_raster is None:
+                if DS_OK:
+                    try:
+                        df_raster = get_all_sites_as_dataframe_with_flag()
+                        df_raster = df_raster[df_raster["verified"] == True] if "verified" in df_raster.columns else df_raster
+                    except Exception:
+                        df_raster = None
+
+            if df_raster is None or df_raster.empty:
+                st.warning("No data available. Upload a file or load verified sites.")
+            else:
+                if "coords" in df_raster.columns and "lat" not in df_raster.columns:
+                    df_raster = df_raster.copy()
+                    df_raster["lat"] = df_raster["coords"].apply(
+                        lambda c: c[0] if isinstance(c, (tuple, list)) and len(c) >= 2 else None)
+                    df_raster["lon"] = df_raster["coords"].apply(
+                        lambda c: c[1] if isinstance(c, (tuple, list)) and len(c) >= 2 else None)
+
+                if "lat" not in df_raster.columns or "lon" not in df_raster.columns:
+                    st.error("Coordinates (lat/lon) not found in data")
+                else:
+                    st.success(f"Data loaded: {len(df_raster)} sites")
+
+                    st.markdown("---")
+                    c1, c2, c3 = st.columns(3)
+
+                    with c1:
+                        param_choices = {
+                            "DRASTIC-Tox": "DRASTIC_Tox",
+                            "DRASTIC": "DRASTIC",
+                            "CN (mg/L)": "cn_water_mg_l",
+                            "Hg (mg/L)": "hg_water_mg_l",
+                            "Depth (m)": "depth_m",
+                            "Recharge (mm/yr)": "recharge_mm",
+                            "Conductivity (m/day)": "conductivity",
+                        }
+                        param_label = st.selectbox("Parameter", list(param_choices.keys()),
+                            key="raster_param_select")
+                        param_col = param_choices[param_label]
+
+                    with c2:
+                        method = st.selectbox("Interpolation Method",
+                            ["IDW", "Kriging"], key="raster_method_select")
+
+                    with c3:
+                        resolution = st.slider("Grid Resolution", 30, 200, 80, 10,
+                            key="raster_resolution_slider")
+
+                    if method == "IDW":
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            power = st.slider("IDW Power", 1.0, 5.0, 2.0, 0.5,
+                                key="raster_idw_power_slider")
+                        with c2:
+                            st.caption("Higher power → more localized influence")
+                        variogram = "linear"
+                    else:
+                        power = 2.0
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            variogram = st.selectbox("Variogram Model",
+                                ["linear", "power", "gaussian", "spherical", "exponential"],
+                                key="raster_variogram_select")
+                        with c2:
+                            st.caption("Requires pykrige")
+
+                    points = []
+                    for _, row in df_raster.iterrows():
+                        try:
+                            lat = float(row["lat"])
+                            lon = float(row["lon"])
+
+                            if param_col == "DRASTIC_Tox":
+                                if "DRASTIC_Tox" not in df_raster.columns:
+                                    ix = calc_index(
+                                        get_d_rating(float(row["depth_m"])),
+                                        get_r_rating(float(row["recharge_mm"])),
+                                        get_a_rating(str(row["aquifer"])),
+                                        get_s_rating(str(row["soil"])),
+                                        get_t_rating(float(row["slope_pct"])),
+                                        get_i_rating(str(row["vadose"])),
+                                        get_c_rating(float(row["conductivity"])))
+                                    val = calc_drastic_t(
+                                        ix,
+                                        float(row.get("cn_water_mg_l", 0.0)),
+                                        float(row.get("hg_water_mg_l", 0.0)),
+                                        mining_type=st.session_state.get("mining_type", "traditional"))["drastic_t"]
+                                else:
+                                    val = float(row["DRASTIC_Tox"])
+                            elif param_col == "DRASTIC":
+                                if "DRASTIC" not in df_raster.columns:
+                                    val = calc_index(
+                                        get_d_rating(float(row["depth_m"])),
+                                        get_r_rating(float(row["recharge_mm"])),
+                                        get_a_rating(str(row["aquifer"])),
+                                        get_s_rating(str(row["soil"])),
+                                        get_t_rating(float(row["slope_pct"])),
+                                        get_i_rating(str(row["vadose"])),
+                                        get_c_rating(float(row["conductivity"])))
+                                else:
+                                    val = float(row["DRASTIC"])
+                            else:
+                                val = float(row[param_col])
+
+                            points.append((lat, lon, val))
+                        except Exception:
+                            continue
+
+                    if len(points) < 3:
+                        st.warning(f"Need at least 3 valid points, got {len(points)}")
+                    else:
+                        st.caption(f"Valid points: {len(points)}")
+
+                        if st.button("🎨 Generate Raster", type="primary", key="gen_raster_btn"):
+                            with st.spinner(f"Interpolating via {method}..."):
+                                if method == "Kriging":
+                                    result = kriging_interpolation(points, resolution=resolution,
+                                        variogram_model=variogram)
+                                    if "error" in result:
+                                        st.warning(f"Kriging failed, using IDW instead: {result['error']}")
+                                        result = idw_interpolation(points, resolution=resolution, power=power)
+                                else:
+                                    result = idw_interpolation(points, resolution=resolution, power=power)
+                                st.session_state["raster_result"] = result
+
+                        if "raster_result" in st.session_state:
+                            result = st.session_state["raster_result"]
+                            if "error" in result:
+                                st.error(result["error"])
+                            else:
+                                st.markdown("---")
+                                st.markdown(f"#### {param_label} — {result['method']} Raster")
+
+                                stats = compute_raster_statistics(result)
+                                c1, c2, c3, c4 = st.columns(4)
+                                c1.metric("Min", round(stats["min"], 1))
+                                c2.metric("Mean", round(stats["mean"], 1))
+                                c3.metric("Max", round(stats["max"], 1))
+                                c4.metric("Std Dev", round(stats["std"], 2))
+
+                                c1, c2, c3, c4 = st.columns(4)
+                                c1.metric("Median", round(stats["median"], 1))
+                                c2.metric("P25", round(stats["p25"], 1))
+                                c3.metric("P75", round(stats["p75"], 1))
+                                c4.metric("Coverage (km²)", stats["coverage_km2"])
+
+                                st.markdown("---")
+                                st.markdown("#### Risk Classification")
+                                classes = classify_raster(result,
+                                    thresholds=[100, 140, 180] if "DRASTIC" in param_col else None)
+                                c1, c2, c3, c4 = st.columns(4)
+                                c1.metric("🟢 Low", f"{classes['low']['percent']}%",
+                                    help=f"{classes['low']['count']} cells")
+                                c2.metric("🟡 Medium", f"{classes['medium']['percent']}%",
+                                    help=f"{classes['medium']['count']} cells")
+                                c3.metric("🟠 High", f"{classes['high']['percent']}%",
+                                    help=f"{classes['high']['count']} cells")
+                                c4.metric("🔴 Very High", f"{classes['very_high']['percent']}%",
+                                    help=f"{classes['very_high']['count']} cells")
+
+                                st.markdown("---")
+                                st.markdown("#### Interactive Raster Map")
+                                colorscale = "RdYlGn_r" if "DRASTIC" in param_col else "Viridis"
+                                fig = create_raster_plotly(result,
+                                    title=f"{param_label} — {result['method']}",
+                                    colorscale=colorscale)
+                                if fig:
+                                    st.plotly_chart(fig, use_container_width=True,
+                                        key="raster_plotly_chart")
+                                else:
+                                    st.warning("Plotly not available")
+
+                                st.markdown("---")
+                                c1, c2 = st.columns(2)
+
+                                with c1:
+                                    try:
+                                        geotiff_bytes = None
+                                        import tempfile
+                                        with tempfile.NamedTemporaryFile(suffix=".tif", delete=False) as tmp:
+                                            tmp_path = tmp.name
+
+                                        gt_result = export_geotiff(result, tmp_path)
+                                        if gt_result["success"]:
+                                            with open(tmp_path, "rb") as f:
+                                                geotiff_bytes = f.read()
+                                            try:
+                                                os.unlink(tmp_path)
+                                            except Exception:
+                                                pass
+
+                                            st.download_button(
+                                                "🗺️ تحميل GeoTIFF",
+                                                data=geotiff_bytes,
+                                                file_name=f"raster_{param_col}.tif",
+                                                mime="image/tiff",
+                                                key="download_geotiff_btn")
+                                        else:
+                                            st.info(f"GeoTIFF: {gt_result['message']}")
+                                    except Exception as e:
+                                        st.info(f"GeoTIFF: {str(e)[:80]}")
+
+                                with c2:
+                                    if fig:
+                                        html = fig.to_html(include_plotlyjs='cdn')
+                                        st.download_button(
+                                            "📥 تحميل HTML",
+                                            data=html.encode("utf-8"),
+                                            file_name=f"raster_{param_col}.html",
+                                            mime="text/html",
+                                            key="download_raster_html_btn")
 
 elif MODE_KEY == "agricultural" and ADV_OK:
     st.markdown(f"""<div class="header-container header-agri"><div class="header-title">{t("agricultural_title")}</div><div class="header-subtitle">DRASTIC-Agri + SAR + Na% + EC</div></div>""", unsafe_allow_html=True)
@@ -2157,4 +2393,4 @@ elif MODE_KEY == "modflow" and MODFLOW_OK:
                 c3.metric("Mean", f"{res['head_mean']:.2f} m")
 
 st.markdown("---")
-st.markdown(f"""<div style="text-align:center;color:#666;padding:10px;"><b>{t("app_title")} v58.6</b> - PILOT VERSION<br><span style="font-size:0.85em;">{t("screening_only")}</span></div>""", unsafe_allow_html=True)
+st.markdown(f"""<div style="text-align:center;color:#666;padding:10px;"><b>{t("app_title")} v58.7</b> - PILOT VERSION<br><span style="font-size:0.85em;">{t("screening_only")}</span></div>""", unsafe_allow_html=True)
