@@ -1,5 +1,5 @@
 """
-نظام التعدين السوداني v57.6 — جامعة الخرطوم
+نظام التعدين السوداني v57.7 — جامعة الخرطوم
 """
 import streamlit as st
 import subprocess, os, sys, shutil, stat, zipfile, io
@@ -28,7 +28,7 @@ try:
 except ImportError:
     AUTOCAL_OK = False
 
-st.set_page_config(page_title="نظام التعدين السوداني v57.6", page_icon="⛏️", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="نظام التعدين السوداني v57.7", page_icon="⛏️", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""<style>
 html,body,[class*="css"]{font-family:'Segoe UI','Tahoma',Arial;font-size:15px;}
@@ -49,13 +49,10 @@ div[data-testid="stMetric"]{background:linear-gradient(135deg,#fff,#f9f5ec);bord
 .info-card{background:#faf8f3;border:1px solid #e0d4b8;border-radius:10px;padding:16px;margin:10px 0;}
 .upload-zone{background:linear-gradient(135deg,#fff9ec,#f5e6c8);border:3px dashed #c19a6b;border-radius:14px;padding:22px;margin:12px 0;text-align:center;}
 .upload-zone h4{color:#5c2c16;margin:0 0 6px;}
-.upload-zone p{color:#777;margin:0;font-size:.85em;}
 .pilot-banner{background:linear-gradient(135deg,#ff9800,#f57c00);color:white;padding:12px 16px;border-radius:10px;margin:8px 0;font-weight:600;text-align:center;}
 .quality-box-ok{background:#e8f5e9;border-left:4px solid #4caf50;padding:10px 12px;border-radius:8px;margin:5px 0;}
 .quality-box-warn{background:#fff3e0;border-left:4px solid #ff9800;padding:10px 12px;border-radius:8px;margin:5px 0;}
 .about-box{background:#faf8f3;border:1px solid #e0d4b8;border-radius:10px;padding:16px;margin:10px 0;font-size:.9em;}
-.about-box h4{color:#5c2c16;margin:8px 0 4px;font-size:1em;}
-.about-box ul{margin:4px 0;padding-right:20px;}
 .mining-badge{display:inline-block;padding:6px 14px;border-radius:8px;font-size:1em;font-weight:700;margin:8px 0;}
 .mining-industrial{background:#e3f2fd;color:#1565c0;border:2px solid #1565c0;}
 .mining-traditional{background:#fff3e0;color:#e65100;border:2px solid #e65100;}
@@ -71,7 +68,7 @@ div[data-testid="stMetric"]{background:linear-gradient(135deg,#fff,#f9f5ec);bord
 .cal-result-value{font-size:2em;font-weight:700;color:#5c2c16;margin:4px 0;}
 .cal-result-label{font-size:.85em;color:#777;}
 #MainMenu{visibility:hidden;} footer{visibility:hidden;}
-@media(max-width:768px){.header-title{font-size:1.5em!important;}.header-container{padding:18px 14px!important;}[data-testid="stHorizontalBlock"]{flex-direction:column!important;}[data-testid="stHorizontalBlock"]>div{width:100%!important;}.stTabs [data-baseweb="tab"]{padding:8px 12px;font-size:.8em;}}
+@media(max-width:768px){.header-title{font-size:1.5em!important;}.header-container{padding:18px 14px!important;}[data-testid="stHorizontalBlock"]{flex-direction:column!important;}[data-testid="stHorizontalBlock"]>div{width:100%!important;}}
 </style>""", unsafe_allow_html=True)
 
 MODFLOW_URL = "https://github.com/MODFLOW-ORG/modflow6/releases/download/6.4.4/mf6.4.4_linux.zip"
@@ -412,7 +409,7 @@ th{{background-color:#f5eedc;color:#5c2c16;}}.metric{{font-size:1.5em;font-weigh
 <tr><th>المستوى</th><td class="metric">{level}</td></tr>
 </table>
 <h2>💡 التوصية</h2><div class="disclaimer"><b>{recommendation}</b></div>
-<div class="footer"><p>⚠️ PILOT VERSION</p><p>نظام التعدين السوداني v57.6</p></div>
+<div class="footer"><p>⚠️ PILOT VERSION</p><p>نظام التعدين السوداني v57.7</p></div>
 </body></html>"""
 
 def build_heatmap_verified(show_heat=True, show_markers=True):
@@ -491,7 +488,7 @@ if uploaded_extra is not None:
         df_extra_side = pd.read_csv(uploaded_extra) if uploaded_extra.name.endswith(".csv") else pd.read_excel(uploaded_extra)
         st.session_state["df_extra"] = df_extra_side; st.sidebar.info(f"ℹ️ {len(df_extra_side)} صف")
     except Exception as e: st.sidebar.error(f"❌ {str(e)[:80]}")
-if st.sidebar.button("🗑️ مسح جميع الملفات"):
+if st.sidebar.button("🗑️ مسح جميع الملفات", key="clear_all_files_btn"):
     for k in ["df_validation","df_bulk","df_extra","df_combined"]: st.session_state.pop(k, None)
     st.rerun()
 
@@ -502,7 +499,7 @@ if DS_OK:
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🎯 نطاق البيانات")
-DATA_SCOPE = st.sidebar.radio("اختر:", ["⛏️ تقليدي (موثّق)","🏭 صناعي (تجريبي)","🔀 الكل"], index=0, key="data_scope")
+DATA_SCOPE = st.sidebar.radio("اختر:", ["⛏️ تقليدي (موثّق)","🏭 صناعي (تجريبي)","🔀 الكل"], index=0, key="sidebar_data_scope")
 if DATA_SCOPE.startswith("⛏️"): SCOPE_KEY = "traditional"
 elif DATA_SCOPE.startswith("🏭"): SCOPE_KEY = "industrial"
 else: SCOPE_KEY = "all"
@@ -524,7 +521,7 @@ st.sidebar.markdown("## 🎛️ وضع التشغيل")
 mode_options = ["🏠 النظام الأساسي"]
 if ADV_OK: mode_options += ["🌾 القطاع الزراعي","✅ التحقق الفعلي","🚀 نقل الملوثات","🔬 التحقق المستقل","🛰️ الأقمار الصناعية","⏳ الديناميكي"]
 if MODFLOW_OK: mode_options.append("🌊 MODFLOW")
-mode = st.sidebar.radio("اختر:", mode_options, key="app_mode")
+mode = st.sidebar.radio("اختر:", mode_options, key="app_mode_radio")
 st.sidebar.markdown("---")
 
 st.sidebar.markdown("### 🔧 الحالة")
@@ -534,32 +531,32 @@ if "ci" in st.session_state: st.sidebar.success(f"✅ مؤشر: {st.session_stat
 
 st.sidebar.markdown("---")
 with st.sidebar.expander("ℹ️ **حول الأداة**", expanded=False):
-    st.markdown(f"""<div class="about-box"><h4>⛏️ نظام التعدين السوداني v57.6</h4>
+    st.markdown(f"""<div class="about-box"><h4>⛏️ نظام التعدين السوداني v57.7</h4>
 <h4>📚 المراجع:</h4><ul style="font-size:0.8em;"><li>Aller et al. (1987)</li><li>Konaté et al. (2025)</li><li>Karan et al. (2018)</li><li>Landis &amp; Koch (1977)</li><li>Youden (1950)</li></ul>
 <h4>🏛️ جامعة الخرطوم</h4>
 <h4>🧩 الوحدات:</h4><p style="font-size:0.8em;">auto_calibration: {'✅' if AUTOCAL_OK else '❌'}<br>auto_maps: {'✅' if MAPS_OK else '❌'}<br>modflow: {'✅' if MODFLOW_OK else '❌'}<br>advanced: {'✅' if ADV_OK else '❌'}<br>model_development: {'✅' if DEV_OK else '❌'}</p></div>""", unsafe_allow_html=True)
 
-st.markdown(f"""<div class="pilot-banner">⚠️ PILOT VERSION</div><div class="header-container"><div class="header-title">⛏️ نظام التعدين السوداني</div><div class="header-subtitle">جامعة الخرطوم - كلية الهندسة</div><div class="header-subtitle">DRASTIC + DRASTIC-Tox + MODFLOW 6</div><div class="header-badge">الإصدار 57.6 | {n_states} ولاية، {n_sites_total} موقع ({n_sites_verified} موثق)</div></div>""", unsafe_allow_html=True)
+st.markdown(f"""<div class="pilot-banner">⚠️ PILOT VERSION</div><div class="header-container"><div class="header-title">⛏️ نظام التعدين السوداني</div><div class="header-subtitle">جامعة الخرطوم - كلية الهندسة</div><div class="header-subtitle">DRASTIC + DRASTIC-Tox + MODFLOW 6</div><div class="header-badge">الإصدار 57.7 | {n_states} ولاية، {n_sites_total} موقع ({n_sites_verified} موثق)</div></div>""", unsafe_allow_html=True)
 
 with st.expander("📤 **منطقة رفع الملفات الرئيسية**", expanded=False):
     st.markdown('<div class="upload-zone"><h4>📂 ارفع ملفات البيانات</h4></div>', unsafe_allow_html=True)
     col1, col2, col3 = st.columns(3)
     with col1:
-        main_val = st.file_uploader("🔵 ملف التحقق:", type=["csv","xlsx"], key="main_val")
+        main_val = st.file_uploader("🔵 ملف التحقق:", type=["csv","xlsx"], key="main_val_uploader")
         if main_val:
             try:
                 st.session_state["df_validation"] = pd.read_csv(main_val) if main_val.name.endswith(".csv") else pd.read_excel(main_val)
                 st.success(f"✅ {len(st.session_state['df_validation'])} صف")
             except Exception as e: st.error(f"❌ {str(e)[:60]}")
     with col2:
-        main_bulk = st.file_uploader("🟢 ملف التقييم:", type=["csv","xlsx"], key="main_bulk")
+        main_bulk = st.file_uploader("🟢 ملف التقييم:", type=["csv","xlsx"], key="main_bulk_uploader")
         if main_bulk:
             try:
                 st.session_state["df_bulk"] = pd.read_csv(main_bulk) if main_bulk.name.endswith(".csv") else pd.read_excel(main_bulk)
                 st.success(f"✅ {len(st.session_state['df_bulk'])} صف")
             except Exception as e: st.error(f"❌ {str(e)[:60]}")
     with col3:
-        main_extra = st.file_uploader("🟡 ملف إضافي:", type=["csv","xlsx"], key="main_extra")
+        main_extra = st.file_uploader("🟡 ملف إضافي:", type=["csv","xlsx"], key="main_extra_uploader")
         if main_extra:
             try:
                 st.session_state["df_extra"] = pd.read_csv(main_extra) if main_extra.name.endswith(".csv") else pd.read_excel(main_extra)
@@ -567,10 +564,9 @@ with st.expander("📤 **منطقة رفع الملفات الرئيسية**", e
             except Exception as e: st.error(f"❌ {str(e)[:60]}")
     st.markdown("---")
     sample = pd.DataFrame({"site_name":["موقع 1","موقع 2"],"depth_m":[12.0,15.0],"recharge_mm":[20.0,18.0],"slope_pct":[3.0,4.0],"conductivity":[2.5,3.0],"aquifer":["massive_sandstone","sand_and_gravel"],"soil":["sand","sandy_loam"],"vadose":["sand_gravel","sandstone"],"cn_water_mg_l":[0.10,0.09],"hg_water_mg_l":[0.008,0.007],"actual_contaminated":[1,1]})
-    st.download_button("📥 تحميل القالب", data=sample.to_csv(index=False).encode("utf-8-sig"), file_name="template.csv", mime="text/csv", use_container_width=True)
+    st.download_button("📥 تحميل القالب", data=sample.to_csv(index=False).encode("utf-8-sig"), file_name="template.csv", mime="text/csv", use_container_width=True, key="download_template_btn")
 st.markdown("---")
 
-# MODE 1
 if mode == "🏠 النظام الأساسي":
     tabs = st.tabs(["📍 المدخلات","➕ إدخال يدوي","📊 التقييم الجماعي","🛡️ الحلول","📄 التقرير","🗺️ الخريطة الحرارية","📈 الحساسية","☠️ السمية","🌍 GIS","🎲 Monte Carlo","🔬 التحقق المتقدم","🚀 تطوير النموذج","🗺️ الخرائط التلقائية","🎯 معايرة الأوزان","📐 العتبة المثلى"])
 
@@ -581,11 +577,11 @@ if mode == "🏠 النظام الأساسي":
             active_label = WEIGHTS[SCOPE_KEY if SCOPE_KEY != "all" else "traditional"]["ar"]
             st.info(f"🎯 **نمط التعدين النشط:** {active_label}")
             c1, c2 = st.columns([1, 2])
-            with c1: state = st.selectbox("**الولاية:**", get_states_list(), key="state_selector")
+            with c1: state = st.selectbox("**الولاية:**", get_states_list(), key="tab0_state_select")
             with c2:
                 state_info = STATES_DATABASE[state]
                 st.markdown(f'<div class="info-card" style="margin-top:28px;"><div style="font-size:0.9em;color:#5c2c16;">ℹ️ {state_info["description"]}<br><span style="font-size:0.85em;color:#666;">المصدر: {state_info["source"]}</span></div></div>', unsafe_allow_html=True)
-            site_key = st.selectbox("**الموقع:**", get_sites_list(state), key="site_selector")
+            site_key = st.selectbox("**الموقع:**", get_sites_list(state), key="tab0_site_select")
             site_data = get_site_data(state, site_key)
             mining_type_key = site_data.get("mining_type", SCOPE_KEY if SCOPE_KEY != "all" else "traditional")
             mining_type_label = WEIGHTS.get(mining_type_key, WEIGHTS["traditional"])["ar"]
@@ -633,24 +629,30 @@ if mode == "🏠 النظام الأساسي":
                     d3.metric("Base Bonus", dt_result['base_bonus']); d4.metric("Source Factor", dt_result['source_factor'])
                 st.markdown("---"); st.markdown("#### 📄 تصدير التقرير")
                 report_html = generate_html_report(site_info={"name":site_data.get("name_ar",site_key),"state":state,"coords":f"{site_data['coords'][0]}, {site_data['coords'][1]}","source":state_info["source"],"verified":site_data.get("verified",False),"depth":site_data['depth_m'],"recharge":site_data['recharge_mm'],"slope":site_data['slope_pct'],"conductivity":site_data['conductivity'],"cn":site_data['cn_water_mg_l'],"hg":site_data['hg_water_mg_l'],"mining_type_ar":mining_type_label}, drastic=idx, drastic_t=dt_result["drastic_t"], level=risk["level"], recommendation=risk["action"])
-                st.download_button("📄 تحميل التقرير (HTML)", data=report_html.encode("utf-8"), file_name=f"report_{site_key}.html", mime="text/html", use_container_width=True)
+                st.download_button("📄 تحميل التقرير (HTML)", data=report_html.encode("utf-8"), file_name=f"report_{site_key}.html", mime="text/html", use_container_width=True, key="download_report_btn")
             except ValueError as e: st.error(f"خطأ: {e}")
 
     with tabs[1]:
         st.markdown('<div class="section-header"><h3>➕ إدخال يدوي</h3></div>', unsafe_allow_html=True)
         c1, c2 = st.columns(2)
         with c1:
-            new_state = st.text_input("الولاية:", value="سنار"); new_site_key = st.text_input("اسم الموقع:", value="New_Site")
-            new_lat = st.number_input("خط العرض:", value=13.55); new_lon = st.number_input("خط الطول:", value=33.60)
-            new_depth = st.number_input("D:", 0.5, 100.0, 15.0); new_recharge = st.number_input("R:", 0.0, 400.0, 20.0)
+            new_state = st.text_input("الولاية:", value="سنار", key="new_state_input")
+            new_site_key = st.text_input("اسم الموقع:", value="New_Site", key="new_site_input")
+            new_lat = st.number_input("خط العرض:", value=13.55, key="new_lat_input")
+            new_lon = st.number_input("خط الطول:", value=33.60, key="new_lon_input")
+            new_depth = st.number_input("D:", 0.5, 100.0, 15.0, key="new_depth_input")
+            new_recharge = st.number_input("R:", 0.0, 400.0, 20.0, key="new_recharge_input")
         with c2:
-            new_slope = st.number_input("T:", 0.0, 30.0, 3.0); new_conductivity = st.number_input("C:", 0.01, 200.0, 3.0)
-            new_aquifer = st.selectbox("A:", VALID_AQUIFERS); new_soil = st.selectbox("S:", VALID_SOILS); new_vadose = st.selectbox("I:", VALID_VADOSE)
+            new_slope = st.number_input("T:", 0.0, 30.0, 3.0, key="new_slope_input")
+            new_conductivity = st.number_input("C:", 0.01, 200.0, 3.0, key="new_conductivity_input")
+            new_aquifer = st.selectbox("A:", VALID_AQUIFERS, key="new_aquifer_select")
+            new_soil = st.selectbox("S:", VALID_SOILS, key="new_soil_select")
+            new_vadose = st.selectbox("I:", VALID_VADOSE, key="new_vadose_select")
         c1, c2, c3 = st.columns(3)
-        with c1: new_cn = st.number_input("CN:", 0.0, 10.0, 0.010)
-        with c2: new_hg = st.number_input("Hg:", 0.0, 10.0, 0.001)
-        with c3: new_cont = st.selectbox("الحالة:", ["نظيف (0)","ملوث (1)"])
-        if st.button("💾 حفظ", type="primary"):
+        with c1: new_cn = st.number_input("CN:", 0.0, 10.0, 0.010, key="new_cn_input")
+        with c2: new_hg = st.number_input("Hg:", 0.0, 10.0, 0.001, key="new_hg_input")
+        with c3: new_cont = st.selectbox("الحالة:", ["نظيف (0)","ملوث (1)"], key="new_cont_select")
+        if st.button("💾 حفظ", type="primary", key="save_manual_site_btn"):
             site_data = {"name_ar":new_site_key,"coords":(new_lat,new_lon),"depth_m":new_depth,"recharge_mm":new_recharge,"slope_pct":new_slope,"conductivity":new_conductivity,"aquifer":new_aquifer,"soil":new_soil,"vadose":new_vadose,"cn_water_mg_l":new_cn,"hg_water_mg_l":new_hg,"actual_contaminated":1 if new_cont == "ملوث (1)" else 0,"season":"-","activity":"يدوي","verified":True}
             add_new_site(new_state, new_site_key, site_data); st.success("✅ تم الحفظ"); st.rerun()
 
@@ -663,8 +665,8 @@ if mode == "🏠 النظام الأساسي":
                 st.dataframe(df_bulk.head(10), width="stretch")
                 st.markdown("#### ⚙️ العتبات")
                 c1, c2 = st.columns(2)
-                with c1: th_d = st.number_input("عتبة DRASTIC:", 50, 200, 100, 10)
-                with c2: th_dt = st.number_input("عتبة DRASTIC-Tox:", 50, 280, 140, 10)
+                with c1: th_d = st.number_input("عتبة DRASTIC:", 50, 200, 100, 10, key="bulk_th_d_input")
+                with c2: th_dt = st.number_input("عتبة DRASTIC-Tox:", 50, 280, 140, 10, key="bulk_th_dt_input")
                 mt_current = st.session_state.get("mining_type", "traditional")
                 st.markdown(f"**نمط التعدين:** {WEIGHTS.get(mt_current, WEIGHTS['traditional'])['ar']}")
                 has_tox = "cn_water_mg_l" in df_bulk.columns and "hg_water_mg_l" in df_bulk.columns
@@ -693,15 +695,18 @@ if mode == "🏠 النظام الأساسي":
                     with c2:
                         st.markdown("**DRASTIC-Tox**"); mp = calculate_confusion_matrix(dp_list, actual_list, th_dt)
                         st.metric("Kappa", mp["kappa"]); st.metric("Recall", f"{mp['recall']}%")
-                st.download_button("📥 تحميل النتائج", data=df_results.to_csv(index=False).encode("utf-8-sig"), file_name="results.csv", mime="text/csv")
+                st.download_button("📥 تحميل النتائج", data=df_results.to_csv(index=False).encode("utf-8-sig"), file_name="results.csv", mime="text/csv", key="download_bulk_results_btn")
             except Exception as e: st.error(f"❌ {e}")
 
     with tabs[3]:
         st.markdown('<div class="section-header"><h3>🛡️ الحلول</h3></div>', unsafe_allow_html=True)
         if "ci" in st.session_state:
             ci = st.session_state["ci"]; c1, c2 = st.columns(2)
-            with c1: h = st.checkbox("HDPE Liner"); tr = st.checkbox("Cyanide Treatment")
-            with c2: mo = st.checkbox("Monitoring Wells")
+            with c1:
+                h = st.checkbox("HDPE Liner", key="chk_hdpe")
+                tr = st.checkbox("Cyanide Treatment", key="chk_cyanide")
+            with c2:
+                mo = st.checkbox("Monitoring Wells", key="chk_monitoring")
             if h or tr or mo:
                 r = mitigate(ci, h, tr, mo); c1, c2, c3 = st.columns(3)
                 c1.metric("قبل", ci); c2.metric("بعد", r["mitigated_index"]); c3.metric("التخفيض", f"{r['reduction_pct']}%")
@@ -728,24 +733,25 @@ if mode == "🏠 النظام الأساسي":
         if not DS_OK: st.error("❌ data_sources.py غير متوفر")
         else:
             c1, c2 = st.columns(2)
-            with c1: map_mode = st.radio("العرض:", ["🎨 كلاهما","📍 علامات","🔥 حراري"], key="map_mode", horizontal=True)
-            with c2: map_height = st.slider("الارتفاع:", 400, 900, 600, 50)
+            with c1: map_mode = st.radio("العرض:", ["🎨 كلاهما","📍 علامات","🔥 حراري"], key="map_mode_radio", horizontal=True)
+            with c2: map_height = st.slider("الارتفاع:", 400, 900, 600, 50, key="map_height_slider")
             show_heat = map_mode in ["🎨 كلاهما","🔥 حراري"]; show_markers = map_mode in ["🎨 كلاهما","📍 علامات"]
             with st.spinner("جاري البناء..."): mapa, stats, df_sites = build_heatmap_verified(show_heat=show_heat, show_markers=show_markers)
-            st_folium(mapa, height=map_height, key="map_v576", use_container_width=True)
+            st_folium(mapa, height=map_height, key="map_folium_v577", use_container_width=True)
             st.markdown("---"); st.markdown("#### 📊 إحصائيات")
             c1, c2, c3, c4, c5 = st.columns(5)
             c1.metric("🟢 منخفض", stats["low"]); c2.metric("🟡 متوسط", stats["medium"]); c3.metric("🟠 مرتفع", stats["high"]); c4.metric("🔴 مرتفع جداً", stats["very_high"]); c5.metric("📍 الإجمالي", sum(stats.values()))
             st.markdown("---"); st.dataframe(df_sites, width="stretch")
-            st.download_button("📥 تحميل بيانات المواقع", data=df_sites.to_csv(index=False).encode("utf-8-sig"), file_name="verified_sites.csv", mime="text/csv", use_container_width=True)
+            st.download_button("📥 تحميل بيانات المواقع", data=df_sites.to_csv(index=False).encode("utf-8-sig"), file_name="verified_sites.csv", mime="text/csv", use_container_width=True, key="download_sites_btn")
 
     with tabs[6]:
         st.markdown('<div class="section-header"><h3>📈 تحليل الحساسية</h3></div>', unsafe_allow_html=True)
         if "cv" not in st.session_state: st.warning("⚠️ اختر موقعاً أولاً")
         else:
-            var_pct = st.slider("نسبة التغيير (%):", 5, 30, 10, 5, key="sens_var")
-            if st.button("🚀 تشغيل", type="primary", key="run_sens"):
-                with st.spinner("جاري الحساب..."): sens = sensitivity_analysis(st.session_state["cv"], var_pct/100.0); st.session_state["sens_result"] = sens
+            var_pct = st.slider("نسبة التغيير (%):", 5, 30, 10, 5, key="sens_var_pct_slider")
+            if st.button("🚀 تشغيل", type="primary", key="run_sens_btn"):
+                with st.spinner("جاري الحساب..."):
+                    sens = sensitivity_analysis(st.session_state["cv"], var_pct/100.0); st.session_state["sens_result"] = sens
             if "sens_result" in st.session_state:
                 sens = st.session_state["sens_result"]; st.success(f"🏆 الأكثر تأثيراً: **{sens['most_sensitive']}**")
                 rows = []
@@ -760,9 +766,9 @@ if mode == "🏠 النظام الأساسي":
             c1, c2 = st.columns(2); c1.metric("CN", f"{cnw} mg/L"); c2.metric("Hg", f"{hgw} mg/L")
             st.markdown("#### ⚙️ المدخلات الإضافية")
             c1, c2 = st.columns(2)
-            with c1: hgs = st.number_input("Hg في التربة (mg/kg):", 0.0, 100.0, 0.5, 0.1)
-            with c2: cns = st.number_input("CN في التربة (mg/kg):", 0.0, 100.0, 5.0, 0.5)
-            if st.button("تحليل السمية", type="primary", key="run_tox"): st.session_state["tox_result"] = weighted_toxicity(hgw, hgs, cnw, cns)
+            with c1: hgs = st.number_input("Hg في التربة (mg/kg):", 0.0, 100.0, 0.5, 0.1, key="tox_hgs_input")
+            with c2: cns = st.number_input("CN في التربة (mg/kg):", 0.0, 100.0, 5.0, 0.5, key="tox_cns_input")
+            if st.button("تحليل السمية", type="primary", key="run_tox_btn"): st.session_state["tox_result"] = weighted_toxicity(hgw, hgs, cnw, cns)
             if "tox_result" in st.session_state:
                 tox = st.session_state["tox_result"]; st.markdown("---"); c1, c2, c3 = st.columns(3)
                 c1.metric("المؤشر", tox["index"]); c2.metric("التصنيف", tox["category"]); c3.metric("الإجراء", tox["action"])
@@ -771,21 +777,22 @@ if mode == "🏠 النظام الأساسي":
         st.markdown('<div class="section-header"><h3>🌍 GIS</h3></div>', unsafe_allow_html=True)
         if not DS_OK: st.error("❌ data_sources.py غير متوفر")
         else:
-            filter_mode = st.radio("عرض:", ["الكل","الموثقة فقط","للعرض فقط"], horizontal=True, key="gis_filter")
+            filter_mode = st.radio("عرض:", ["الكل","الموثقة فقط","للعرض فقط"], horizontal=True, key="gis_filter_radio")
             try:
                 df_all = get_all_sites_as_dataframe_with_flag()
                 if filter_mode == "الموثقة فقط": df_show = df_all[df_all["verified"] == True] if "verified" in df_all.columns else df_all
                 elif filter_mode == "للعرض فقط": df_show = df_all[df_all["verified"] == False] if "verified" in df_all.columns else df_all.head(0)
                 else: df_show = df_all
                 st.caption(f"📊 **{len(df_show)}** موقع"); st.dataframe(df_show, width="stretch")
-                st.download_button("📥 CSV", data=df_show.to_csv(index=False).encode("utf-8-sig"), file_name="sites_filtered.csv", mime="text/csv")
+                st.download_button("📥 CSV", data=df_show.to_csv(index=False).encode("utf-8-sig"), file_name="sites_filtered.csv", mime="text/csv", key="download_gis_csv_btn")
             except Exception as e: st.error(f"خطأ: {e}")
 
     with tabs[9]:
         st.markdown('<div class="section-header"><h3>🎲 Monte Carlo</h3></div>', unsafe_allow_html=True)
         if "ci" in st.session_state:
-            n_iter = st.slider("المحاكاات:", 100, 5000, 1000, 100); var_pct = st.slider("الاختلاف (%):", 5, 30, 15, 5)
-            if st.button("تشغيل", type="primary"):
+            n_iter = st.slider("المحاكاات:", 100, 5000, 1000, 100, key="mc_n_iter_slider")
+            var_pct = st.slider("الاختلاف (%):", 5, 30, 15, 5, key="mc_var_pct_slider")
+            if st.button("تشغيل", type="primary", key="run_mc_btn"):
                 mc = monte_carlo_analysis(st.session_state["cv"], n_iter, var_pct/100.0)
                 c1, c2, c3, c4 = st.columns(4)
                 c1.metric("المتوسط", mc["mean"]); c2.metric("الانحراف", mc["std"]); c3.metric("CI 90%", f"{mc['ci_90'][0]}-{mc['ci_90'][1]}"); c4.metric("P>140", f"{mc['prob_over_140']}%")
@@ -801,8 +808,8 @@ if mode == "🏠 النظام الأساسي":
                 if not has_tox: st.error("❌ الملف لا يحتوي على CN و Hg")
                 else:
                     c1, c2 = st.columns(2)
-                    with c1: th_d_adv = st.number_input("DRASTIC:", 50, 200, 100, 10, key="adv_th_d")
-                    with c2: th_dt_adv = st.number_input("DRASTIC-Tox:", 50, 280, 140, 10, key="adv_th_dt")
+                    with c1: th_d_adv = st.number_input("DRASTIC:", 50, 200, 100, 10, key="adv_th_d_input")
+                    with c2: th_dt_adv = st.number_input("DRASTIC-Tox:", 50, 280, 140, 10, key="adv_th_dt_input")
                     mt_adv = st.session_state.get("mining_type", "traditional")
                     st.info(f"نمط التعدين: {WEIGHTS.get(mt_adv, WEIGHTS['traditional'])['ar']}")
                     d_list_adv, dp_list_adv, actual_list_adv = [], [], []
@@ -817,7 +824,7 @@ if mode == "🏠 النظام الأساسي":
                         except Exception: pass
                     if not d_list_adv: st.error("❌ لا توجد بيانات صالحة")
                     else:
-                        if st.button("🚀 تشغيل التحليل المتقدم", type="primary"):
+                        if st.button("🚀 تشغيل التحليل المتقدم", type="primary", key="run_adv_btn"):
                             with st.spinner("جاري الحساب..."):
                                 m_d = compute_basic_metrics(actual_list_adv, d_list_adv, th_d_adv); b_d = bootstrap_kappa_ci(actual_list_adv, d_list_adv, th_d_adv, n_boot=1000); l_d = loocv_analysis(actual_list_adv, d_list_adv, th_d_adv)
                                 m_dt = compute_basic_metrics(actual_list_adv, dp_list_adv, th_dt_adv); b_dt = bootstrap_kappa_ci(actual_list_adv, dp_list_adv, th_dt_adv, n_boot=1000); l_dt = loocv_analysis(actual_list_adv, dp_list_adv, th_dt_adv)
@@ -853,9 +860,9 @@ if mode == "🏠 النظام الأساسي":
                         gray_rows.append({"الموقع":site_data.get("name_ar",site_key),"D (م)":site_data["depth_m"],"R (مم)":site_data["recharge_mm"],"CN (mg/L)":site_data["cn_water_mg_l"],"Hg (mg/L)":site_data["hg_water_mg_l"],"الحالة":"ملوث" if site_data["actual_contaminated"] == 1 else "نظيف"})
                 st.dataframe(pd.DataFrame(gray_rows), width="stretch", hide_index=True)
                 st.markdown("---")
-                merge_option = st.radio("اختر:", ["الموثقة فقط (11 موقعاً)","الموثقة + الرمادية (17 موقعاً)"], key="merge_choice")
+                merge_option = st.radio("اختر:", ["الموثقة فقط (11 موقعاً)","الموثقة + الرمادية (17 موقعاً)"], key="gray_merge_radio")
                 include_gray = "17" in merge_option
-                if st.button("🔄 تحميل البيانات", type="primary", key="load_combined"):
+                if st.button("🔄 تحميل البيانات", type="primary", key="load_combined_btn"):
                     df_combined = get_combined_dataset(include_gray=include_gray); drastic_vals, dt_vals = [], []
                     for _, row in df_combined.iterrows():
                         try:
@@ -883,10 +890,10 @@ if mode == "🏠 النظام الأساسي":
                     st.write(f"**عدد المواقع:** {len(df_cal)}")
                     c1, c2 = st.columns(2)
                     with c1:
-                        a_min = st.slider("α الأدنى:", 0.0, 1.0, 0.1, 0.1, key="cal_a_min"); a_max = st.slider("α الأعلى:", 0.0, 1.0, 0.9, 0.1, key="cal_a_max")
+                        a_min = st.slider("α الأدنى:", 0.0, 1.0, 0.1, 0.1, key="cal_a_min_slider"); a_max = st.slider("α الأعلى:", 0.0, 1.0, 0.9, 0.1, key="cal_a_max_slider")
                     with c2:
-                        b_min = st.slider("β الأدنى:", 0.0, 1.0, 0.1, 0.1, key="cal_b_min"); b_max = st.slider("β الأعلى:", 0.0, 1.0, 0.9, 0.1, key="cal_b_max")
-                    if st.button("🚀 تشغيل المعايرة", type="primary", key="run_cal"):
+                        b_min = st.slider("β الأدنى:", 0.0, 1.0, 0.1, 0.1, key="cal_b_min_slider"); b_max = st.slider("β الأعلى:", 0.0, 1.0, 0.9, 0.1, key="cal_b_max_slider")
+                    if st.button("🚀 تشغيل المعايرة", type="primary", key="run_cal_btn"):
                         with st.spinner("جاري البحث..."):
                             alpha_range = list(np.arange(a_min, a_max + 0.05, 0.1)); beta_range = list(np.arange(b_min, b_max + 0.05, 0.1))
                             st.session_state["cal_result"] = calibrate_alpha_beta(df_cal, {"DRASTIC":100,"DRASTIC-T":140}, alpha_range=alpha_range, beta_range=beta_range)
@@ -906,7 +913,7 @@ if mode == "🏠 النظام الأساسي":
                 df_cmp = get_loaded_df("df_combined", "df_validation")
                 if df_cmp is None: st.warning("⚠️ حمّل البيانات أولاً")
                 else:
-                    if st.button("🚀 تشغيل المقارنة", type="primary", key="run_cmp"):
+                    if st.button("🚀 تشغيل المقارنة", type="primary", key="run_cmp_btn"):
                         with st.spinner("جاري الحساب..."): st.session_state["cmp_results"] = compare_models(df_cmp, (get_d_rating,get_r_rating,get_a_rating,get_s_rating,get_t_rating,get_i_rating,get_c_rating), calc_index)
                     if "cmp_results" in st.session_state:
                         r = st.session_state["cmp_results"]; summary_rows = []
@@ -922,7 +929,7 @@ if mode == "🏠 النظام الأساسي":
             if df_source is None: st.warning("⚠️ لا توجد بيانات محمّلة.")
             else:
                 st.write(f"**عدد المواقع:** {len(df_source)}")
-                if st.button("🎨 توليد الخرائط", type="primary", key="gen_maps"):
+                if st.button("🎨 توليد الخرائط", type="primary", key="gen_maps_btn"):
                     with st.spinner("جاري التوليد..."):
                         try:
                             df_maps = df_source.copy()
@@ -953,9 +960,9 @@ if mode == "🏠 النظام الأساسي":
                             st.session_state["auto_maps_fig"] = fig; st.success(f"✅ تم التوليد: {len(df_prepared)} موقع")
                         except Exception as e: st.error(f"❌ {e}")
                 if "auto_maps_fig" in st.session_state:
-                    st.plotly_chart(st.session_state["auto_maps_fig"], use_container_width=True, key="auto_maps_chart")
+                    st.plotly_chart(st.session_state["auto_maps_fig"], use_container_width=True, key="auto_maps_chart_v577")
                     html_str = st.session_state["auto_maps_fig"].to_html(include_plotlyjs='cdn')
-                    st.download_button("📥 تحميل الخرائط (HTML)", data=html_str.encode("utf-8"), file_name="auto_maps.html", mime="text/html", use_container_width=True)
+                    st.download_button("📥 تحميل الخرائط (HTML)", data=html_str.encode("utf-8"), file_name="auto_maps.html", mime="text/html", use_container_width=True, key="download_maps_html_btn")
 
     with tabs[13]:
         st.markdown('<div class="section-header"><h3>🎯 معايرة الأوزان التلقائية</h3></div>', unsafe_allow_html=True)
@@ -973,15 +980,15 @@ if mode == "🏠 النظام الأساسي":
                     st.success(f"✅ الملف يحتوي على **{len(df_cal)} موقع**")
                     st.markdown("---"); st.markdown("#### ⚙️ إعدادات المعايرة")
                     c1, c2, c3 = st.columns(3)
-                    with c1: mt_choice = st.selectbox("نمط التعدين:", ["traditional","industrial","mixed"], format_func=lambda x: WEIGHTS[x]["ar"], key="cal_mining_type")
-                    with c2: n_steps = st.slider("دقة البحث:", 10, 30, 15, 5)
-                    with c3: threshold = st.number_input("عتبة DRASTIC-Tox:", 50, 280, 140, 10)
+                    with c1: mt_choice = st.selectbox("نمط التعدين:", ["traditional","industrial","mixed"], format_func=lambda x: WEIGHTS[x]["ar"], key="cal_mining_type_select")
+                    with c2: n_steps = st.slider("دقة البحث:", 10, 30, 15, 5, key="cal_n_steps_slider")
+                    with c3: threshold = st.number_input("عتبة DRASTIC-Tox:", 50, 280, 140, 10, key="cal_threshold_input")
                     n_combos = n_steps ** 3; st.caption(f"🔢 عدد التركيبات: **{n_combos:,}**")
                     st.markdown("---")
                     b1, b2, b3 = st.columns(3)
-                    with b1: run_cal = st.button("🚀 تشغيل المعايرة", type="primary", key="run_auto_cal", use_container_width=True)
-                    with b2: run_cmp = st.button("📊 مقارنة", key="run_compare", use_container_width=True)
-                    with b3: reset = st.button("🔄 إعادة تعيين", key="reset_weights", use_container_width=True)
+                    with b1: run_cal = st.button("🚀 تشغيل المعايرة", type="primary", key="run_auto_cal_btn", use_container_width=True)
+                    with b2: run_cmp = st.button("📊 مقارنة", key="run_compare_btn", use_container_width=True)
+                    with b3: reset = st.button("🔄 إعادة تعيين", key="reset_weights_btn", use_container_width=True)
                     if reset:
                         st.session_state["calibrated_weights"] = None; st.session_state.pop("auto_cal_result", None); st.session_state.pop("auto_cal_mining_type", None); st.session_state.pop("comparison_result", None)
                         st.success("✅ تمت إعادة التعيين"); st.rerun()
@@ -1029,11 +1036,11 @@ if mode == "🏠 النظام الأساسي":
             df_opt = get_loaded_df("df_validation","df_combined")
             if df_opt is None: st.warning("⚠️ ارفع ملف التحقق أولاً")
             else:
-                mt_choice_opt = st.selectbox("نمط التعدين:", ["traditional","industrial","mixed"], format_func=lambda x: WEIGHTS[x]["ar"], key="opt_mining_type")
+                mt_choice_opt = st.selectbox("نمط التعدين:", ["traditional","industrial","mixed"], format_func=lambda x: WEIGHTS[x]["ar"], key="opt_mining_type_select")
                 use_calibrated = False
                 if CALIBRATED_WEIGHTS and CALIBRATED_WEIGHTS.get("mining_type") == mt_choice_opt:
-                    use_calibrated = st.checkbox(f"استخدام الأوزان المُعايرة (Kappa = {CALIBRATED_WEIGHTS.get('kappa', '—')})", value=True, key="use_calibrated_for_opt")
-                if st.button("🚀 حساب العتبة المثلى", type="primary", key="run_opt_threshold"):
+                    use_calibrated = st.checkbox(f"استخدام الأوزان المُعايرة (Kappa = {CALIBRATED_WEIGHTS.get('kappa', '—')})", value=True, key="use_calibrated_for_opt_chk")
+                if st.button("🚀 حساب العتبة المثلى", type="primary", key="run_opt_threshold_btn"):
                     with st.spinner("جاري الحساب..."):
                         try:
                             if use_calibrated and CALIBRATED_WEIGHTS:
@@ -1068,23 +1075,22 @@ if mode == "🏠 النظام الأساسي":
                             fig.add_trace(go.Scatter(x=fprs, y=tprs, mode='lines+markers', line=dict(color='#5c2c16', width=2), marker=dict(size=4), name='DRASTIC-Tox ROC'))
                             fig.add_trace(go.Scatter(x=[1-res["specificity"]], y=[res["sensitivity"]], mode='markers', marker=dict(size=18, color='red', symbol='star'), name=f"العتبة ({res['optimal_threshold']})"))
                             fig.update_layout(title=f"ROC Curve — {WEIGHTS[res['mining_type']]['ar']}", xaxis_title="FPR", yaxis_title="TPR", height=500)
-                            st.plotly_chart(fig, use_container_width=True)
+                            st.plotly_chart(fig, use_container_width=True, key="roc_chart_v577")
                         except Exception as e: st.warning(f"⚠️ تعذّر رسم ROC: {e}")
                         st.markdown("---"); st.warning(f"⚠️ **n = {res['n_sites']} موقعاً** | العتبة المُقترحة: **{res['optimal_threshold']}** | المرجع: Youden (1950)")
-                        if st.button("✅ تطبيق هذه العتبة", type="primary", key="apply_opt_threshold"):
+                        if st.button("✅ تطبيق هذه العتبة", type="primary", key="apply_opt_threshold_btn"):
                             st.session_state["custom_threshold"] = res["optimal_threshold"]; st.success(f"✅ تم تطبيق {res['optimal_threshold']}")
                         if "custom_threshold" in st.session_state: st.info(f"🎯 العتبة المُطبّقة: **{st.session_state['custom_threshold']}**")
 
-# MODE 2
 elif mode == "🌾 القطاع الزراعي" and ADV_OK:
     st.markdown("""<div class="header-container header-agri"><div class="header-title">🌾 القطاع الزراعي</div><div class="header-subtitle">DRASTIC-Agri + SAR + Na% + EC</div></div>""", unsafe_allow_html=True)
     if DS_OK:
         try:
             agri_summary = get_agricultural_data_summary(); st.info(f"📊 {agri_summary['total_states']} ولاية، {agri_summary['total_sites']} موقع")
             c1, c2 = st.columns([1, 2])
-            with c1: agri_state = st.selectbox("الولاية:", get_agri_states_list())
+            with c1: agri_state = st.selectbox("الولاية:", get_agri_states_list(), key="agri_state_select")
             with c2: st.markdown(f'<div class="info-card" style="margin-top:28px;">{AGRICULTURAL_DATA[agri_state]["description"]}</div>', unsafe_allow_html=True)
-            agri_site_key = st.selectbox("الموقع:", get_agri_sites_list(agri_state))
+            agri_site_key = st.selectbox("الموقع:", get_agri_sites_list(agri_state), key="agri_site_select")
             agri_data = get_agri_site_data(agri_state, agri_site_key)
             st.markdown("---"); c1, c2, c3 = st.columns(3)
             c1.metric("المحصول", agri_data.get("crop_type","N/A")); c2.metric("الري", agri_data.get("irrigation_method","N/A")); c3.metric("EC", f"{agri_data['ec_ds_m']} dS/m")
@@ -1102,7 +1108,7 @@ elif mode == "✅ التحقق الفعلي" and ADV_OK:
     if DS_OK:
         c1, c2 = st.columns([3, 1])
         with c2:
-            if st.button("📥 تحميل الموثقة", type="primary"):
+            if st.button("📥 تحميل الموثقة", type="primary", key="load_verified_sites_btn"):
                 try:
                     df_ver = get_verified_sites_as_dataframe(); st.session_state["df_validation"] = df_ver; st.success(f"✅ {len(df_ver)} موقع"); st.rerun()
                 except Exception as e: st.error(f"❌ {e}")
@@ -1116,8 +1122,8 @@ elif mode == "✅ التحقق الفعلي" and ADV_OK:
             if not has_tox: st.error("❌ الملف لا يحتوي على CN و Hg")
             else:
                 st.markdown("#### ⚙️ العتبات"); c1, c2 = st.columns(2)
-                with c1: th_d = st.number_input("DRASTIC:", 50, 200, 100, 10, key="v_th_d")
-                with c2: th_dt = st.number_input("DRASTIC-Tox:", 50, 280, 140, 10, key="v_th_dt")
+                with c1: th_d = st.number_input("DRASTIC:", 50, 200, 100, 10, key="verify_th_d_input")
+                with c2: th_dt = st.number_input("DRASTIC-Tox:", 50, 280, 140, 10, key="verify_th_dt_input")
                 mt_v = st.session_state.get("mining_type", "traditional"); st.info(f"نمط التعدين: {WEIGHTS.get(mt_v, WEIGHTS['traditional'])['ar']}")
                 d_list, dp_list, actual_list = [], [], []
                 for i, row in df_val.iterrows():
@@ -1144,12 +1150,16 @@ elif mode == "🚀 نقل الملوثات" and ADV_OK:
     else:
         cv = st.session_state["cv"]; c1, c2 = st.columns(2)
         with c1:
-            init_conc = st.number_input("التركيز الأولي:", 0.001, 10.0, 0.10, 0.001, format="%.4f"); distance = st.number_input("المسافة (m):", 10.0, 5000.0, 500.0, 50.0)
+            init_conc = st.number_input("التركيز الأولي:", 0.001, 10.0, 0.10, 0.001, format="%.4f", key="trans_init_conc")
+            distance = st.number_input("المسافة (m):", 10.0, 5000.0, 500.0, 50.0, key="trans_distance")
         with c2:
-            gradient = st.number_input("التدرج:", 0.0001, 0.5, 0.01, 0.0001, format="%.4f"); years = st.slider("السنوات:", 1, 30, 10, 1)
-        porosity = st.slider("المسامية:", 0.02, 0.55, 0.25, 0.01)
-        k_val = st.number_input("K (m/day):", 0.01, 500.0, float(cv.get("conductivity", 3.5)), 0.1); dispersivity = st.number_input("التشتت α:", 0.1, 100.0, 10.0, 0.5)
-        if st.button("🚀 تشغيل", type="primary"): st.session_state["transport_result"] = model_contaminant_transport_fixed(init_conc, k_val, porosity, gradient, distance, years, dispersivity)
+            gradient = st.number_input("التدرج:", 0.0001, 0.5, 0.01, 0.0001, format="%.4f", key="trans_gradient")
+            years = st.slider("السنوات:", 1, 30, 10, 1, key="trans_years")
+        porosity = st.slider("المسامية:", 0.02, 0.55, 0.25, 0.01, key="trans_porosity")
+        k_val = st.number_input("K (m/day):", 0.01, 500.0, float(cv.get("conductivity", 3.5)), 0.1, key="trans_k_val")
+        dispersivity = st.number_input("التشتت α:", 0.1, 100.0, 10.0, 0.5, key="trans_disper")
+        if st.button("🚀 تشغيل", type="primary", key="run_transport_btn"):
+            st.session_state["transport_result"] = model_contaminant_transport_fixed(init_conc, k_val, porosity, gradient, distance, years, dispersivity)
         if "transport_result" in st.session_state:
             tr = st.session_state["transport_result"]
             if "error" in tr: st.error(f"❌ {tr['error']}")
@@ -1168,7 +1178,7 @@ elif mode == "🔬 التحقق المستقل" and ADV_OK:
             missing = [c for c in required if c not in df_val.columns]
             if missing: st.error(f"❌ أعمدة مفقودة: {missing}")
             else:
-                if st.button("🚀 تشغيل", type="primary"):
+                if st.button("🚀 تشغيل", type="primary", key="run_ind_val_btn"):
                     with st.spinner("جاري التحقق..."):
                         try:
                             df_ind = df_val.copy()
@@ -1199,10 +1209,10 @@ elif mode == "🔬 التحقق المستقل" and ADV_OK:
 elif mode == "🛰️ الأقمار الصناعية" and ADV_OK:
     st.markdown('<div class="section-header"><h3>🛰️ بيانات الأقمار الصناعية (ERA5)</h3></div>', unsafe_allow_html=True)
     c1, c2 = st.columns(2)
-    with c1: lat = st.number_input("خط العرض:", -90.0, 90.0, 13.55, 0.01, format="%.4f", key="sat_lat")
-    with c2: lon = st.number_input("خط الطول:", -180.0, 180.0, 33.60, 0.01, format="%.4f", key="sat_lon")
-    years = st.slider("عدد السنوات:", 1, 10, 3, 1)
-    if st.button("🛰️ جلب البيانات", type="primary"):
+    with c1: lat = st.number_input("خط العرض:", -90.0, 90.0, 13.55, 0.01, format="%.4f", key="sat_lat_input")
+    with c2: lon = st.number_input("خط الطول:", -180.0, 180.0, 33.60, 0.01, format="%.4f", key="sat_lon_input")
+    years = st.slider("عدد السنوات:", 1, 10, 3, 1, key="sat_years_slider")
+    if st.button("🛰️ جلب البيانات", type="primary", key="fetch_sat_btn"):
         with st.spinner("جاري الجلب..."):
             try: st.session_state["sat_result"] = fetch_satellite_data(lat, lon, years)
             except Exception as e: st.error(f"❌ {e}")
@@ -1220,11 +1230,11 @@ elif mode == "⏳ الديناميكي" and ADV_OK:
     else:
         c1, c2 = st.columns(2)
         with c1:
-            years = st.slider("السنوات:", 1, 50, 10, 1); mining = st.slider("توسع التعدين:", 0.0, 0.20, 0.05, 0.01)
+            years = st.slider("السنوات:", 1, 50, 10, 1, key="dyn_years_slider"); mining = st.slider("توسع التعدين:", 0.0, 0.20, 0.05, 0.01, key="dyn_mining_slider")
         with c2:
-            climate = st.slider("المناخ:", -0.10, 0.05, -0.02, 0.005); pop = st.slider("السكان:", 0.0, 0.10, 0.03, 0.01)
-        cri0 = st.slider("CRI الآن:", 0.0, 10.0, 1.0, 0.1); mri0 = st.slider("MRI الآن:", 0.0, 10.0, 0.5, 0.1)
-        if st.button("⏳ تشغيل", type="primary"):
+            climate = st.slider("المناخ:", -0.10, 0.05, -0.02, 0.005, key="dyn_climate_slider"); pop = st.slider("السكان:", 0.0, 0.10, 0.03, 0.01, key="dyn_pop_slider")
+        cri0 = st.slider("CRI الآن:", 0.0, 10.0, 1.0, 0.1, key="dyn_cri_slider"); mri0 = st.slider("MRI الآن:", 0.0, 10.0, 0.5, 0.1, key="dyn_mri_slider")
+        if st.button("⏳ تشغيل", type="primary", key="run_dyn_btn"):
             try: st.session_state["dyn"] = calculate_dynamic_risk(st.session_state["ci"], years, mining, climate, pop, cri0, mri0)
             except Exception as e: st.error(f"خطأ: {e}")
         if "dyn" in st.session_state:
@@ -1239,10 +1249,10 @@ elif mode == "🌊 MODFLOW" and MODFLOW_OK:
         st.success(f"✅ {mf_msg}")
         c1, c2 = st.columns(2)
         with c1:
-            nlay = st.number_input("طبقات:", 1, 5, 1); nrow = st.number_input("صفوف:", 5, 50, 20); ncol = st.number_input("أعمدة:", 5, 50, 20); delr = st.number_input("عرض الخلية:", 50.0, 5000.0, 500.0, 50.0)
+            nlay = st.number_input("طبقات:", 1, 5, 1, key="mf_nlay_input"); nrow = st.number_input("صفوف:", 5, 50, 20, key="mf_nrow_input"); ncol = st.number_input("أعمدة:", 5, 50, 20, key="mf_ncol_input"); delr = st.number_input("عرض الخلية:", 50.0, 5000.0, 500.0, 50.0, key="mf_delr_input")
         with c2:
-            delc = st.number_input("ارتفاع الخلية:", 50.0, 5000.0, 500.0, 50.0); top = st.number_input("السطح:", 100.0, 2000.0, 350.0, 10.0); botm = st.number_input("القاعدة:", 0.0, 1000.0, 250.0, 10.0); k_val = st.number_input("K:", 0.01, 500.0, 3.5, 0.1); rech = st.number_input("التغذية:", 0.0, 500.0, 15.0, 1.0)
-        if st.button("🚀 تشغيل", type="primary"):
+            delc = st.number_input("ارتفاع الخلية:", 50.0, 5000.0, 500.0, 50.0, key="mf_delc_input"); top = st.number_input("السطح:", 100.0, 2000.0, 350.0, 10.0, key="mf_top_input"); botm = st.number_input("القاعدة:", 0.0, 1000.0, 250.0, 10.0, key="mf_botm_input"); k_val = st.number_input("K:", 0.01, 500.0, 3.5, 0.1, key="mf_k_input"); rech = st.number_input("التغذية:", 0.0, 500.0, 15.0, 1.0, key="mf_rech_input")
+        if st.button("🚀 تشغيل", type="primary", key="run_mf_btn"):
             try:
                 ws = f"/tmp/mf_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
                 st.session_state["mf_res"] = build_and_run_model(workspace=ws, nlay=int(nlay), nrow=int(nrow), ncol=int(ncol), delr=float(delr), delc=float(delc), top=float(top), botm=float(botm), k_value=float(k_val), recharge_mm=float(rech))
@@ -1254,4 +1264,4 @@ elif mode == "🌊 MODFLOW" and MODFLOW_OK:
                 c1.metric("أدنى", f"{res['head_min']:.2f} m"); c2.metric("أعلى", f"{res['head_max']:.2f} m"); c3.metric("متوسط", f"{res['head_mean']:.2f} m")
 
 st.markdown("---")
-st.markdown("""<div style="text-align:center;color:#666;padding:10px;"><b>نظام التعدين السوداني v57.6</b> — PILOT VERSION<br><span style="font-size:0.85em;">⚠️ أداة فرز أولي — لا تُغني عن الفحص المخبري</span></div>""", unsafe_allow_html=True)
+st.markdown("""<div style="text-align:center;color:#666;padding:10px;"><b>نظام التعدين السوداني v57.7</b> — PILOT VERSION<br><span style="font-size:0.85em;">⚠️ أداة فرز أولي — لا تُغني عن الفحص المخبري</span></div>""", unsafe_allow_html=True)
