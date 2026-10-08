@@ -355,26 +355,93 @@ def sensitivity_analysis(pv, variation=0.10):
     sr = dict(sorted(res.items(), key=lambda x: x[1]["sensitivity"], reverse=True))
     return {"base_index":base,"parameters":sr,"most_sensitive":list(sr.keys())[0] if sr else None}
 
-def monte_carlo_analysis(pv, n_iter=1000, variation=0.15):
+def monte_carlo_analysis(pv, n_iter=1000, variation=0.15, mining_type="traditional",
+                          calibrated_weights=None):
+    """
+    Monte Carlo Simulation — v58.2
+    Simulates uncertainty in both DRASTIC and DRASTIC-Tox.
+    """
     np.random.seed(42)
-    D=float(pv.get("depth",15.0)); R=float(pv.get("recharge",100.0))
-    A_b=get_a_rating(str(pv.get("aquifer","massive_sandstone"))); S_b=get_s_rating(str(pv.get("soil","sand")))
-    T=float(pv.get("slope",4.0)); I_b=get_i_rating(str(pv.get("vadose","sand_gravel"))); C=float(pv.get("conductivity",5.0))
-    D_s = np.clip(np.random.normal(D, max(0.5, D*variation), n_iter), 0.5, 100.0)
-    R_s = np.clip(np.random.lognormal(np.log(max(1,R)) - 0.5*variation**2, variation, n_iter), 0.0, 400.0) if R > 0 else np.zeros(n_iter)
-    A_s = np.random.choice([max(1,A_b-1),A_b,min(10,A_b+1)], n_iter, p=[0.15,0.70,0.15])
-    S_s = np.random.choice([max(1,S_b-1),S_b,min(10,S_b+1)], n_iter, p=[0.15,0.70,0.15])
-    T_s = np.clip(np.random.normal(T, max(0.5,T*variation), n_iter), 0.0, 30.0)
-    I_s = np.random.choice([max(1,I_b-1),I_b,min(10,I_b+1)], n_iter, p=[0.15,0.70,0.15])
-    C_s = np.clip(np.random.lognormal(np.log(max(0.01,C)) - 0.5*variation**2, variation, n_iter), 0.01, 100.0)
-    D_r = np.select([D_s<=1.5,D_s<=4.6,D_s<=9.1,D_s<=15.2,D_s<=22.9,D_s<=30.5],[10,9,7,5,3,2],default=1)
-    R_r = np.select([R_s<=50.8,R_s<=101.6,R_s<=177.8,R_s<=254.0],[1,3,6,8],default=9)
-    T_r = np.select([T_s<=2.0,T_s<=6.0,T_s<=12.0,T_s<=18.0],[10,9,5,3],default=1)
-    C_r = np.select([C_s<=4.074,C_s<=12.222,C_s<=28.518,C_s<=40.740,C_s<=81.480],[1,2,4,6,8],default=10)
-    drastic = D_r*5+R_r*4+A_s*3+S_s*2+T_r*1+I_s*5+C_r*3
+
+    D = float(pv.get("depth", 15.0))
+    R = float(pv.get("recharge", 100.0))
+    T = float(pv.get("slope", 4.0))
+    C = float(pv.get("conductivity", 5.0))
+    A_b = get_a_rating(str(pv.get("aquifer", "massive_sandstone")))
+    S_b = get_s_rating(str(pv.get("soil", "sand")))
+    I_b = get_i_rating(str(pv.get("vadose", "sand_gravel")))
+    cn_w = float(pv.get("cn_water_mg_l", 0.025))
+    hg_w = float(pv.get("hg_water_mg_l", 0.011))
+
+    D_s = np.clip(np.random.normal(D, max(0.5, D * variation), n_iter), 0.5, 100.0)
+    R_s = np.clip(np.random.lognormal(np.log(max(1, R)) - 0.5 * variation ** 2,
+                                       variation, n_iter), 0.0, 400.0) if R > 0 else np.zeros(n_iter)
+    A_s = np.random.choice([max(1, A_b - 1), A_b, min(10, A_b + 1)], n_iter, p=[0.15, 0.70, 0.15])
+    S_s = np.random.choice([max(1, S_b - 1), S_b, min(10, S_b + 1)], n_iter, p=[0.15, 0.70, 0.15])
+    T_s = np.clip(np.random.normal(T, max(0.5, T * variation), n_iter), 0.0, 30.0)
+    I_s = np.random.choice([max(1, I_b - 1), I_b, min(10, I_b + 1)], n_iter, p=[0.15, 0.70, 0.15])
+    C_s = np.clip(np.random.lognormal(np.log(max(0.01, C)) - 0.5 * variation ** 2,
+                                       variation, n_iter), 0.01, 100.0)
+
+    D_r = np.select([D_s <= 1.5, D_s <= 4.6, D_s <= 9.1, D_s <= 15.2, D_s <= 22.9, D_s <= 30.5],
+                    [10, 9, 7, 5, 3, 2], default=1)
+    R_r = np.select([R_s <= 50.8, R_s <= 101.6, R_s <= 177.8, R_s <= 254.0],
+                    [1, 3, 6, 8], default=9)
+    T_r = np.select([T_s <= 2.0, T_s <= 6.0, T_s <= 12.0, T_s <= 18.0],
+                    [10, 9, 5, 3], default=1)
+    C_r = np.select([C_s <= 4.074, C_s <= 12.222, C_s <= 28.518, C_s <= 40.740, C_s <= 81.480],
+                    [1, 2, 4, 6, 8], default=10)
+
+    drastic = D_r * 5 + R_r * 4 + A_s * 3 + S_s * 2 + T_r * 1 + I_s * 5 + C_r * 3
+
+    if calibrated_weights:
+        alpha_mean = calibrated_weights.get("alpha", 0.3)
+        beta_mean = calibrated_weights.get("beta", 1.0)
+        SF_mean = calibrated_weights.get("SF", 1.1)
+    else:
+        w = WEIGHTS.get(mining_type, WEIGHTS["traditional"])
+        alpha_mean = w["alpha"]
+        beta_mean = w["beta"]
+        SF_mean = w["SF"]
+
+    alpha_s = np.clip(np.random.normal(alpha_mean, 0.05, n_iter), 0.0, 1.0)
+    beta_s = np.clip(np.random.normal(beta_mean, 0.10, n_iter), 0.0, 1.0)
+    SF_s = np.clip(np.random.normal(SF_mean, 0.08, n_iter), 0.5, 2.0)
+
+    CN_LIMIT = 0.05
+    HG_LIMIT = 0.0007
+    cn_s = np.clip(np.random.lognormal(np.log(max(0.001, cn_w)) - 0.5 * 0.2 ** 2, 0.2, n_iter),
+                   0.0, 10.0)
+    hg_s = np.clip(np.random.lognormal(np.log(max(0.0001, hg_w)) - 0.5 * 0.2 ** 2, 0.2, n_iter),
+                   0.0, 10.0)
+
+    cn_score_s = np.minimum(30.0, (cn_s / CN_LIMIT) * 30.0)
+    hg_score_s = np.minimum(30.0, (hg_s / HG_LIMIT) * 30.0)
+    base_bonus_s = np.minimum(50.0, alpha_s * cn_score_s + beta_s * hg_score_s)
+    toxicity_bonus_s = base_bonus_s * SF_s
+    drastic_tox = drastic + toxicity_bonus_s
+
     results = np.sort(drastic.astype(int))
-    def pct(p): return int(np.percentile(results, p))
-    return {"mean":round(float(np.mean(results)),1),"std":round(float(np.std(results)),2),"min":int(results[0]),"max":int(results[-1]),"ci_90":(pct(5),pct(95)),"prob_over_140":round(float(np.mean(results>=140)*100),1)}
+    results_tox = np.sort(drastic_tox)
+
+    def pct(arr, p): return float(np.percentile(arr, p))
+
+    return {
+        "mean": round(float(np.mean(results)), 1),
+        "std": round(float(np.std(results)), 2),
+        "min": int(results[0]),
+        "max": int(results[-1]),
+        "ci_90": (int(pct(results, 5)), int(pct(results, 95))),
+        "prob_over_140": round(float(np.mean(results >= 140) * 100), 1),
+
+        "tox_mean": round(float(np.mean(results_tox)), 1),
+        "tox_std": round(float(np.std(results_tox)), 2),
+        "tox_min": round(float(results_tox[0]), 1),
+        "tox_max": round(float(results_tox[-1]), 1),
+        "tox_ci_90": (round(pct(results_tox, 5), 1), round(pct(results_tox, 95), 1)),
+        "tox_prob_over_140": round(float(np.mean(results_tox >= 140) * 100), 1),
+        "tox_prob_over_180": round(float(np.mean(results_tox >= 180) * 100), 1),
+    }
 
 def model_contaminant_transport_fixed(C0, K, porosity, gradient, distance, years, dispersivity=10.0):
     try:
@@ -1065,15 +1132,36 @@ if MODE_KEY == "system":
 
     with tabs[9]:
         st.markdown(f'<div class="section-header"><h3>{t("mc_title")}</h3></div>', unsafe_allow_html=True)
-        if "ci" in st.session_state:
+        if "ci" not in st.session_state:
+            st.warning(t("site_selection"))
+        else:
             ni = st.slider(t("simulations"), 100, 5000, 1000, 100, key="mc_n_iter_slider")
             vp = st.slider(t("variation"), 5, 30, 15, 5, key="mc_var_pct_slider")
             if st.button(t("run"), type="primary", key="run_mc_btn"):
-                mc = monte_carlo_analysis(st.session_state["cv"], ni, vp/100.0)
+                mt_mc = st.session_state.get("mining_type", "traditional")
+                cal_w = CALIBRATED_WEIGHTS if (CALIBRATED_WEIGHTS and CALIBRATED_WEIGHTS.get("mining_type") == mt_mc) else None
+                st.session_state["mc_result"] = monte_carlo_analysis(
+                    st.session_state["cv"], ni, vp/100.0,
+                    mining_type=mt_mc, calibrated_weights=cal_w)
+            if "mc_result" in st.session_state:
+                mc = st.session_state["mc_result"]
+                st.markdown("---")
+                st.markdown(f"#### DRASTIC")
                 c1, c2, c3, c4 = st.columns(4)
-                c1.metric(t("mean"), mc["mean"]); c2.metric(t("std"), mc["std"])
+                c1.metric(t("mean"), mc["mean"])
+                c2.metric(t("std"), mc["std"])
                 c3.metric(t("ci_90"), f"{mc['ci_90'][0]}-{mc['ci_90'][1]}")
                 c4.metric("P>140", f"{mc['prob_over_140']}%")
+                st.markdown("---")
+                st.markdown(f"#### DRASTIC-Tox (مع Bonus)")
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric(t("mean"), mc["tox_mean"])
+                c2.metric(t("std"), mc["tox_std"])
+                c3.metric(t("ci_90"), f"{mc['tox_ci_90'][0]}-{mc['tox_ci_90'][1]}")
+                c4.metric("P>140", f"{mc['tox_prob_over_140']}%")
+                c1, c2 = st.columns(2)
+                c1.metric("P>180", f"{mc['tox_prob_over_180']}%")
+                c2.metric("Range", f"{mc['tox_min']}-{mc['tox_max']}")
 
     with tabs[10]:
         st.markdown(f'<div class="section-header"><h3>{t("advanced_title")}</h3></div>', unsafe_allow_html=True)
