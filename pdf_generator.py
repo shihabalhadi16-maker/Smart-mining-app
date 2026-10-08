@@ -1,11 +1,14 @@
 """
-PDF Report Generator — DRASTIC-Tox v58.5.1
+PDF Report Generator — DRASTIC-Tox v58.9
 Author: Shihab Alhadi + Sarah Akasha
 University of Khartoum, Faculty of Engineering
 
 Generates professional English PDF reports.
 Handles Arabic text safely by mapping to English equivalents.
 Requires: fpdf2
+
+Changelog:
+    - v58.9: Updated DRASTIC-Tox range from /280 to /300 (correct max)
 """
 import datetime
 from io import BytesIO
@@ -32,7 +35,7 @@ COLOR_LIGHT_BG = (250, 248, 243)
 
 
 # ============================================================
-# ARABIC → ENGLISH MAPPING (CRITICAL FIX)
+# ARABIC → ENGLISH MAPPING
 # ============================================================
 ARABIC_TO_ENGLISH = {
     # Risk levels
@@ -87,16 +90,13 @@ def _to_english(text, default="N/A"):
     if not text:
         return default
 
-    # Direct map lookup
     if text in ARABIC_TO_ENGLISH:
         return ARABIC_TO_ENGLISH[text]
 
-    # Try partial match
     for ar, en in ARABIC_TO_ENGLISH.items():
         if ar in text:
             return en
 
-    # Strip non-Latin-1 characters safely
     result = []
     for ch in text:
         try:
@@ -114,11 +114,9 @@ def _safe_str(value, default="N/A"):
         return default
     try:
         s = str(value)
-        # Try direct encoding first
         s.encode('latin-1')
         return s
     except UnicodeEncodeError:
-        # Fall back to translation mapping
         return _to_english(value, default)
 
 
@@ -139,12 +137,9 @@ def _level_english(level_input):
     if not level_input:
         return "Unknown"
     s = str(level_input).strip()
-    # If already English
     if s.lower() in ["low", "medium", "high", "very high", "critical"]:
         return s.title()
-    # Map Arabic
     mapped = _to_english(s, "Unknown")
-    # Normalize
     low = mapped.lower()
     if "very high" in low: return "Very High"
     if "critical" in low: return "Critical"
@@ -157,7 +152,6 @@ def _level_english(level_input):
 # ============================================================
 # MAIN PDF GENERATOR
 # ============================================================
-
 def generate_pdf_report(site_info, drastic, drastic_t, level, recommendation,
                           cn_score=None, hg_score=None, base_bonus=None,
                           source_factor=None, toxicity_bonus=None,
@@ -197,7 +191,7 @@ def generate_pdf_report(site_info, drastic, drastic_t, level, recommendation,
     pdf.set_xy(10, 50)
     pdf.set_font("Helvetica", "", 10)
     pdf.cell(90, 6, f"Date: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}", ln=False)
-    pdf.cell(90, 6, "Version: v58.5.1", ln=True, align="R")
+    pdf.cell(90, 6, "Version: v58.9", ln=True, align="R")
 
     pdf.ln(4)
     pdf.set_draw_color(*COLOR_ACCENT)
@@ -261,7 +255,7 @@ def generate_pdf_report(site_info, drastic, drastic_t, level, recommendation,
     pdf.ln(6)
 
     # ============================================================
-    # 3. DRASTIC-TOX INDEX
+    # 3. DRASTIC-TOX INDEX (v58.9: /300)
     # ============================================================
     pdf.set_font("Helvetica", "B", 13)
     pdf.set_text_color(*COLOR_PRIMARY)
@@ -273,7 +267,7 @@ def generate_pdf_report(site_info, drastic, drastic_t, level, recommendation,
     pdf.set_fill_color(240, 240, 240)
     pdf.cell(70, 8, "DRASTIC-Tox Value", border=1, fill=True)
     pdf.set_font("Helvetica", "B", 11)
-    pdf.cell(60, 8, f"{drastic_t} / 280", border=1, ln=True)
+    pdf.cell(60, 8, f"{drastic_t} / 300", border=1, ln=True)
 
     pdf.set_font("Helvetica", "", 10)
     pdf.set_fill_color(*COLOR_LIGHT_BG)
@@ -322,11 +316,9 @@ def generate_pdf_report(site_info, drastic, drastic_t, level, recommendation,
     pdf.set_text_color(*COLOR_PRIMARY)
     pdf.cell(0, 8, "4. Risk Assessment", ln=True)
 
-    # Translate level to English
     level_en = _level_english(level)
     level_color = _get_level_color(level_en)
 
-    # Colored level box
     pdf.set_fill_color(*level_color)
     pdf.set_text_color(255, 255, 255)
     pdf.set_font("Helvetica", "B", 16)
@@ -338,7 +330,6 @@ def generate_pdf_report(site_info, drastic, drastic_t, level, recommendation,
     pdf.cell(0, 7, "Recommended Action:", ln=True)
     pdf.set_font("Helvetica", "", 11)
 
-    # Translate recommendation to English
     rec_en = _to_english(recommendation, "Consult with hydrogeologist")
     pdf.multi_cell(0, 6, rec_en)
 
@@ -356,7 +347,8 @@ def generate_pdf_report(site_info, drastic, drastic_t, level, recommendation,
         "DRASTIC-Tox integrates cyanide (CN) and mercury (Hg) toxicity into the "
         "classical DRASTIC model. The Final Bonus reflects site-specific weighting "
         "based on mining pattern (traditional, industrial, or mixed). "
-        "Scores above 140 indicate high contamination risk requiring urgent action.")
+        "Scores above 140 indicate high contamination risk requiring urgent action. "
+        "Range: 23-300.")
 
     pdf.ln(6)
 
@@ -371,7 +363,7 @@ def generate_pdf_report(site_info, drastic, drastic_t, level, recommendation,
     pdf.set_text_color(100, 100, 100)
     pdf.cell(0, 5, "Authors: Shihab Alhadi Saeed Dangal & Sarah Akasha Al-Tayeb Ali", ln=True, align="C")
     pdf.cell(0, 5, "University of Khartoum - Faculty of Engineering", ln=True, align="C")
-    pdf.cell(0, 5, "DRASTIC-Tox v58.5.1 - Pilot Version", ln=True, align="C")
+    pdf.cell(0, 5, "DRASTIC-Tox v58.9 - Pilot Version", ln=True, align="C")
 
     pdf.ln(4)
     pdf.set_text_color(150, 50, 50)
