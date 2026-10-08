@@ -1,4 +1,4 @@
-"""نظام التعدين السوداني v58.8 — University of Khartoum"""
+"""نظام التعدين السوداني v58.9 — University of Khartoum"""
 import streamlit as st
 import subprocess, os, sys, shutil, stat, zipfile, io
 import folium
@@ -94,7 +94,7 @@ try:
 except ImportError:
     AUTOCAL_OK = False
 
-st.set_page_config(page_title="Sudan Mining System v58.8", page_icon="⛏️", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Sudan Mining System v58.9", page_icon="⛏️", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""<style>
 html,body,[class*="css"]{font-family:'Segoe UI','Tahoma',Arial;font-size:15px;}
@@ -284,7 +284,21 @@ def get_c_rating(c):
 
 def calc_index(D, R, A, S, T, I, C): return (D*5)+(R*4)+(A*3)+(S*2)+(T*1)+(I*5)+(C*3)
 
-def classify(idx):
+# ============================================================
+# v58.9: classify() updated to support mining_type + is_tox
+# ============================================================
+def classify(idx, mining_type=None, is_tox=False):
+    """
+    Classify an index into risk level.
+    - is_tox=False → uses standard DRASTIC thresholds (100/140/180)
+    - is_tox=True  → uses optimal (Youden) threshold per mining_type
+    """
+    if is_tox and mining_type:
+        th = get_optimal_threshold(mining_type)
+        if idx >= th + 80: return {"level": "very_high", "color": "red", "action": "action_immediate"}
+        if idx >= th: return {"level": "high", "color": "orange", "action": "action_urgent"}
+        if idx >= th - 30: return {"level": "medium", "color": "yellow", "action": "action_periodic"}
+        return {"level": "low", "color": "green", "action": "action_routine"}
     if idx >= 180: return {"level": "very_high", "color": "red", "action": "action_immediate"}
     if idx >= 140: return {"level": "high", "color": "orange", "action": "action_urgent"}
     if idx >= 100: return {"level": "medium", "color": "yellow", "action": "action_periodic"}
@@ -298,10 +312,22 @@ def mitigate(idx, hdpe=False, treat=False, mon=False):
     red = ((idx - m) / idx * 100) if idx > 0 else 0.0
     return {"mitigated_index": round(m, 1), "reduction_pct": round(red, 1)}
 
+# ============================================================
+# v58.9: calc_drastic_t() — log-transform + classify with optimal threshold
+# ============================================================
 def calc_drastic_t(base_drastic, cn_water, hg_water, distance_m=100.0, seepage=1.0, bio_acc=1.0,
-                    mining_type="traditional", alpha_override=None, beta_override=None, SF_override=None):
+                    mining_type="traditional", alpha_override=None, beta_override=None, SF_override=None,
+                    use_log_transform=None):
+    """
+    DRASTIC-Tox calculation.
+    v58.9 fixes:
+      - Range correctly = 23-300 (not 280)
+      - Classify uses optimal threshold per mining_type
+      - Optional log-transform for CN (mitigates Ceiling Effect)
+    """
     CN_LIMIT = 0.05; HG_LIMIT = 0.0007
     MAX_CN_SCORE = 30.0; MAX_HG_SCORE = 30.0; MAX_TOXICITY_BONUS = 50.0
+
     if alpha_override is not None:
         alpha = alpha_override
         beta = beta_override if beta_override is not None else 0.5
@@ -309,28 +335,40 @@ def calc_drastic_t(base_drastic, cn_water, hg_water, distance_m=100.0, seepage=1
     else:
         w = WEIGHTS.get(mining_type, WEIGHTS["traditional"])
         alpha, beta, source_factor = w["alpha"], w["beta"], w["SF"]
+
     d_factor = max(0.1, min(1.0, 100.0 / max(1, distance_m)))
     s_factor = max(0.1, min(1.0, seepage))
     cn_ratio = cn_water / CN_LIMIT if CN_LIMIT > 0 else 0
     cri = cn_ratio * d_factor * s_factor
-    cn_score = min(MAX_CN_SCORE, cri * 30.0)
+
+    if use_log_transform is None:
+        use_log_transform = st.session_state.get("use_log_transform", False)
+
+    if use_log_transform:
+        cn_score = min(MAX_CN_SCORE, np.log1p(cri) * MAX_CN_SCORE / np.log(101))
+    else:
+        cn_score = min(MAX_CN_SCORE, cri * 30.0)
+
     hg_ratio = hg_water / HG_LIMIT if HG_LIMIT > 0 else 0
     mri = hg_ratio * bio_acc
     hg_score = min(MAX_HG_SCORE, mri * 30.0)
+
     base_bonus = min(MAX_TOXICITY_BONUS, alpha * cn_score + beta * hg_score)
     toxicity_bonus = base_bonus * source_factor
     drastic_t = base_drastic + toxicity_bonus
-    if drastic_t >= 180: level, color = "very_high", "red"
-    elif drastic_t >= 140: level, color = "high", "orange"
-    elif drastic_t >= 100: level, color = "medium", "yellow"
-    else: level, color = "low", "green"
+
+    _cls = classify(drastic_t, mining_type=mining_type, is_tox=True)
+    level = _cls["level"]
+    color = _cls["color"]
+
     increase_pct = (toxicity_bonus / base_drastic * 100) if base_drastic > 0 else 0
     return {"base_drastic":base_drastic,"mining_type":mining_type,"alpha":alpha,"beta":beta,
             "source_factor":source_factor,"cri":round(cri,3),"mri":round(mri,3),
             "cn_score":round(cn_score,2),"hg_score":round(hg_score,2),"base_bonus":round(base_bonus,2),
             "toxicity_bonus":round(toxicity_bonus,2),"drastic_t":round(drastic_t,1),
             "drastic_p":round(drastic_t,1),"modifier":round(1.0 + toxicity_bonus / max(base_drastic, 1), 3),
-            "increase_pct":round(increase_pct,1),"level":level,"color":color}
+            "increase_pct":round(increase_pct,1),"level":level,"color":color,
+            "used_log_transform": bool(use_log_transform)}
 
 def weighted_toxicity(hgw, hgs, cnw, cns, mining_type="traditional",
                       alpha_override=None, beta_override=None, SF_override=None):
@@ -535,6 +573,9 @@ def loocv_analysis(y_true, y_score, threshold):
         return {"kappa":round(kappa,3),"accuracy":round(accuracy,1),"recall":round(recall,1),"n_correct":int(np.sum(all_actual == all_pred)),"n_total":n}
     except Exception as e: return {"error": str(e)}
 
+# ============================================================
+# v58.9: HTML report uses /300 (not /280)
+# ============================================================
 def generate_html_report(site_info, drastic, drastic_t, level, recommendation):
     return f"""<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8"><title>Report</title>
 <style>body{{font-family:Arial;padding:40px;max-width:800px;margin:0 auto;}}
@@ -548,11 +589,11 @@ th{{background-color:#f5eedc;color:#5c2c16;}}.metric{{font-size:1.5em;font-weigh
 <tr><th>Site</th><td>{site_info.get('name','N/A')}</td></tr>
 <tr><th>State</th><td>{site_info.get('state','N/A')}</td></tr>
 <tr><th>DRASTIC</th><td class="metric">{drastic}/230</td></tr>
-<tr><th>DRASTIC-Tox</th><td class="metric">{drastic_t}/280</td></tr>
+<tr><th>DRASTIC-Tox</th><td class="metric">{drastic_t}/300</td></tr>
 <tr><th>Level</th><td class="metric">{level}</td></tr>
 </table>
 <p><b>{recommendation}</b></p>
-<p style="text-align:center;color:#666;">DRASTIC-Tox v58.8</p>
+<p style="text-align:center;color:#666;">DRASTIC-Tox v58.9</p>
 </body></html>"""
 
 def build_heatmap_verified(show_heat=True, show_markers=True):
@@ -590,6 +631,7 @@ VALID_AQUIFERS = ["massive_shale","metamorphic_igneous","weathered_metamorphic_i
 VALID_SOILS = ["thin_or_absent","gravel","sand","peat","shrinking_aggregated_clay","sandy_loam","loam","silty_loam","clay_loam","muck","nonshrinking_clay"]
 VALID_VADOSE = ["confining_layer","silt_clay","shale","metamorphic_igneous","limestone","sandstone","sand_gravel_silt_clay","sand_gravel","basalt","karst_limestone"]
 
+# ⬇️ هنا ينتهي الجزء 1 — الصق الجزء 2 مباشرة بعده بدون سطر فارغ
 if DS_OK:
     preset = get_preset_locations_for_app(); summary = get_data_summary(); n_states = summary.get('total_states', 0)
     try:
@@ -606,6 +648,7 @@ else: preset = {}; n_states = n_sites_total = n_sites_verified = n_agri_states =
 
 INDUSTRIAL_SITES = load_industrial_sites_csv()
 if "lang" not in st.session_state: st.session_state["lang"] = "ar"
+if "use_log_transform" not in st.session_state: st.session_state["use_log_transform"] = False
 
 _lang_opts = {"🇸🇦 العربية": "ar", "🇬🇧 English": "en"}
 _cur = "🇸🇦 العربية" if st.session_state["lang"] == "ar" else "🇬🇧 English"
@@ -695,6 +738,20 @@ MODE_MAP = {
 }
 MODE_KEY = MODE_MAP.get(mode, "system")
 
+# ============================================================
+# v58.9: Advanced Settings — Log-transform toggle
+# ============================================================
+st.sidebar.markdown("---")
+with st.sidebar.expander("⚙️ " + ("إعدادات متقدمة" if is_ar() else "Advanced Settings"), expanded=False):
+    st.session_state["use_log_transform"] = st.checkbox(
+        "Log-transform for CN (Ceiling Effect fix)",
+        value=st.session_state.get("use_log_transform", False),
+        key="log_transform_toggle",
+        help="Distinguishes CN values above WHO limit. Recommended when all sites exceed 0.05 mg/L."
+    )
+    if st.session_state["use_log_transform"]:
+        st.caption("⚠️ CN scores now use log₁₀ scale")
+
 st.sidebar.markdown("---")
 st.sidebar.markdown(f"### {t('status')}")
 _si = "OK" if _modflow_status in ["already_installed","installed"] else "WARN"
@@ -704,7 +761,7 @@ if "ci" in st.session_state: st.sidebar.success(f"{t('current_index')}: {st.sess
 st.sidebar.markdown("---")
 with st.sidebar.expander(t("about"), expanded=False):
     st.markdown(f"""<div class="about-box">
-<h4>{t('app_title')} v58.8</h4>
+<h4>{t('app_title')} v58.9</h4>
 <h4>{t('modules')}:</h4>
 <p style="font-size:0.8em;">
 weight_manager: {'OK' if WM_OK else 'NO'}<br>
@@ -728,7 +785,7 @@ live_apis: {'OK' if LIVE_API_OK else 'NO'}
 </ul>
 </div>""", unsafe_allow_html=True)
 
-st.markdown(f"""<div class="pilot-banner">{t("pilot_version")}</div><div class="header-container"><div class="header-title">{t("app_title")}</div><div class="header-subtitle">{t("university")}</div><div class="header-subtitle">{t("subtitle")}</div><div class="header-badge">{t("version")} 58.8 | {n_states} | {n_sites_total} {t("sites")} ({n_sites_verified} {t("verified_sites")})</div></div>""", unsafe_allow_html=True)
+st.markdown(f"""<div class="pilot-banner">{t("pilot_version")}</div><div class="header-container"><div class="header-title">{t("app_title")}</div><div class="header-subtitle">{t("university")}</div><div class="header-subtitle">{t("subtitle")}</div><div class="header-badge">{t("version")} 58.9 | {n_states} | {n_sites_total} {t("sites")} ({n_sites_verified} {t("verified_sites")})</div></div>""", unsafe_allow_html=True)
 
 with st.expander(f"📤 {t('upload_files')}", expanded=False):
     c1, c2, c3 = st.columns(3)
@@ -913,7 +970,7 @@ if MODE_KEY == "system":
                 st.markdown("---")
                 st.markdown(f"#### {t('drastic_tox')} - {mt_label}")
                 m1, m2, m3, m4 = st.columns(4)
-                m1.metric(t("drastic_tox"), f"{dt_result['drastic_t']}/280", delta=f"+{dt_result['increase_pct']}%")
+                m1.metric(t("drastic_tox"), f"{dt_result['drastic_t']}/300", delta=f"+{dt_result['increase_pct']}%")
                 m2.metric(t("bonus"), dt_result['toxicity_bonus'])
                 m3.metric("alpha (CN)", dt_result['alpha'])
                 m4.metric("beta (Hg)", dt_result['beta'])
@@ -923,6 +980,8 @@ if MODE_KEY == "system":
                     d2.metric(t("hg_score"), dt_result['hg_score'])
                     d3.metric(t("base_bonus"), dt_result['base_bonus'])
                     d4.metric(t("source_factor"), dt_result['source_factor'])
+                    if dt_result.get("used_log_transform"):
+                        st.caption("⚠️ Log-transform active for CN")
                 st.markdown("---")
                 report_html = generate_html_report(
                     site_info={"name":site_data.get("name_ar",site_key),"state":state,
@@ -1163,7 +1222,7 @@ if MODE_KEY == "system":
             sm = mm in [t("both"), t("markers")]
             with st.spinner(t("calculating")):
                 mapa, stats, df_sites = build_heatmap_verified(show_heat=sh, show_markers=sm)
-            st_folium(mapa, height=mh, key="map_folium_v588", use_container_width=True)
+            st_folium(mapa, height=mh, key="map_folium_v589", use_container_width=True)
             st.markdown("---")
             st.markdown(f"#### {t('statistics')}")
             c1, c2, c3, c4, c5 = st.columns(5)
@@ -1574,7 +1633,7 @@ if MODE_KEY == "system":
                             st.success(f"{len(df_p)} {t('sites')}")
                         except Exception as e: st.error(str(e))
                 if "auto_maps_fig" in st.session_state:
-                    st.plotly_chart(st.session_state["auto_maps_fig"], use_container_width=True, key="auto_maps_chart_v588")
+                    st.plotly_chart(st.session_state["auto_maps_fig"], use_container_width=True, key="auto_maps_chart_v589")
                     html = st.session_state["auto_maps_fig"].to_html(include_plotlyjs='cdn')
                     st.download_button("📥 HTML", data=html.encode("utf-8"),
                         file_name="auto_maps.html", mime="text/html", key="download_maps_html_btn")
@@ -1726,7 +1785,7 @@ if MODE_KEY == "system":
                             fig.add_trace(go.Scatter(x=fprs, y=tprs, mode='lines+markers', line=dict(color='#5c2c16', width=2), marker=dict(size=4), name='DRASTIC-Tox'))
                             fig.add_trace(go.Scatter(x=[1-res["specificity"]], y=[res["sensitivity"]], mode='markers', marker=dict(size=18, color='red', symbol='star'), name=f"{t('threshold_label')} ({res['optimal_threshold']})"))
                             fig.update_layout(xaxis_title="FPR", yaxis_title="TPR", height=500)
-                            st.plotly_chart(fig, use_container_width=True, key="roc_chart_v588")
+                            st.plotly_chart(fig, use_container_width=True, key="roc_chart_v589")
                         except Exception as e: st.warning(str(e))
                         st.markdown("---")
                         st.warning(f"n = {res['n_sites']} | {t('threshold_label')}: {res['optimal_threshold']}")
@@ -2621,4 +2680,4 @@ elif MODE_KEY == "modflow" and MODFLOW_OK:
                 c3.metric("Mean", f"{res['head_mean']:.2f} m")
 
 st.markdown("---")
-st.markdown(f"""<div style="text-align:center;color:#666;padding:10px;"><b>{t("app_title")} v58.8</b> - PILOT VERSION<br><span style="font-size:0.85em;">{t("screening_only")}</span></div>""", unsafe_allow_html=True)
+st.markdown(f"""<div style="text-align:center;color:#666;padding:10px;"><b>{t("app_title")} v58.9</b> - PILOT VERSION<br><span style="font-size:0.85em;">{t("screening_only")}</span></div>""", unsafe_allow_html=True)
