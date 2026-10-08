@@ -1,4 +1,4 @@
-"""نظام التعدين السوداني v58.7 — University of Khartoum"""
+"""نظام التعدين السوداني v58.7.1 — University of Khartoum"""
 import streamlit as st
 import subprocess, os, sys, shutil, stat, zipfile, io
 import folium
@@ -81,7 +81,7 @@ try:
 except ImportError:
     AUTOCAL_OK = False
 
-st.set_page_config(page_title="Sudan Mining System v58.7", page_icon="⛏️", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Sudan Mining System v58.7.1", page_icon="⛏️", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""<style>
 html,body,[class*="css"]{font-family:'Segoe UI','Tahoma',Arial;font-size:15px;}
@@ -539,7 +539,7 @@ th{{background-color:#f5eedc;color:#5c2c16;}}.metric{{font-size:1.5em;font-weigh
 <tr><th>Level</th><td class="metric">{level}</td></tr>
 </table>
 <p><b>{recommendation}</b></p>
-<p style="text-align:center;color:#666;">DRASTIC-Tox v58.7</p>
+<p style="text-align:center;color:#666;">DRASTIC-Tox v58.7.1</p>
 </body></html>"""
 
 def build_heatmap_verified(show_heat=True, show_markers=True):
@@ -691,7 +691,7 @@ if "ci" in st.session_state: st.sidebar.success(f"{t('current_index')}: {st.sess
 st.sidebar.markdown("---")
 with st.sidebar.expander(t("about"), expanded=False):
     st.markdown(f"""<div class="about-box">
-<h4>{t('app_title')} v58.7</h4>
+<h4>{t('app_title')} v58.7.1</h4>
 <h4>{t('modules')}:</h4>
 <p style="font-size:0.8em;">
 weight_manager: {'OK' if WM_OK else 'NO'}<br>
@@ -714,7 +714,7 @@ gis_raster: {'OK' if RASTER_OK else 'NO'}
 </ul>
 </div>""", unsafe_allow_html=True)
 
-st.markdown(f"""<div class="pilot-banner">{t("pilot_version")}</div><div class="header-container"><div class="header-title">{t("app_title")}</div><div class="header-subtitle">{t("university")}</div><div class="header-subtitle">{t("subtitle")}</div><div class="header-badge">{t("version")} 58.7 | {n_states} | {n_sites_total} {t("sites")} ({n_sites_verified} {t("verified_sites")})</div></div>""", unsafe_allow_html=True)
+st.markdown(f"""<div class="pilot-banner">{t("pilot_version")}</div><div class="header-container"><div class="header-title">{t("app_title")}</div><div class="header-subtitle">{t("university")}</div><div class="header-subtitle">{t("subtitle")}</div><div class="header-badge">{t("version")} 58.7.1 | {n_states} | {n_sites_total} {t("sites")} ({n_sites_verified} {t("verified_sites")})</div></div>""", unsafe_allow_html=True)
 
 with st.expander(f"📤 {t('upload_files')}", expanded=False):
     c1, c2, c3 = st.columns(3)
@@ -1149,7 +1149,7 @@ if MODE_KEY == "system":
             sm = mm in [t("both"), t("markers")]
             with st.spinner(t("calculating")):
                 mapa, stats, df_sites = build_heatmap_verified(show_heat=sh, show_markers=sm)
-            st_folium(mapa, height=mh, key="map_folium_v587", use_container_width=True)
+            st_folium(mapa, height=mh, key="map_folium_v5871", use_container_width=True)
             st.markdown("---")
             st.markdown(f"#### {t('statistics')}")
             c1, c2, c3, c4, c5 = st.columns(5)
@@ -1560,7 +1560,7 @@ if MODE_KEY == "system":
                             st.success(f"{len(df_p)} {t('sites')}")
                         except Exception as e: st.error(str(e))
                 if "auto_maps_fig" in st.session_state:
-                    st.plotly_chart(st.session_state["auto_maps_fig"], use_container_width=True, key="auto_maps_chart_v587")
+                    st.plotly_chart(st.session_state["auto_maps_fig"], use_container_width=True, key="auto_maps_chart_v5871")
                     html = st.session_state["auto_maps_fig"].to_html(include_plotlyjs='cdn')
                     st.download_button("📥 HTML", data=html.encode("utf-8"),
                         file_name="auto_maps.html", mime="text/html", key="download_maps_html_btn")
@@ -1712,7 +1712,7 @@ if MODE_KEY == "system":
                             fig.add_trace(go.Scatter(x=fprs, y=tprs, mode='lines+markers', line=dict(color='#5c2c16', width=2), marker=dict(size=4), name='DRASTIC-Tox'))
                             fig.add_trace(go.Scatter(x=[1-res["specificity"]], y=[res["sensitivity"]], mode='markers', marker=dict(size=18, color='red', symbol='star'), name=f"{t('threshold_label')} ({res['optimal_threshold']})"))
                             fig.update_layout(xaxis_title="FPR", yaxis_title="TPR", height=500)
-                            st.plotly_chart(fig, use_container_width=True, key="roc_chart_v587")
+                            st.plotly_chart(fig, use_container_width=True, key="roc_chart_v5871")
                         except Exception as e: st.warning(str(e))
                         st.markdown("---")
                         st.warning(f"n = {res['n_sites']} | {t('threshold_label')}: {res['optimal_threshold']}")
@@ -1940,26 +1940,67 @@ if MODE_KEY == "system":
             st.info("Create a file named `gis_raster.py` in the same folder as `app.py`")
         else:
             df_raster = get_loaded_df("df_combined", "df_validation", "df_bulk")
-            if df_raster is None:
+
+            # If user's data lacks coords, build from STATES_DATABASE
+            if df_raster is None or ("coords" not in df_raster.columns and "lat" not in df_raster.columns):
                 if DS_OK:
                     try:
-                        df_raster = get_all_sites_as_dataframe_with_flag()
-                        df_raster = df_raster[df_raster["verified"] == True] if "verified" in df_raster.columns else df_raster
-                    except Exception:
+                        rows = []
+                        for _st_name, _st_data in STATES_DATABASE.items():
+                            for _sk, _sd in _st_data.get("sites", {}).items():
+                                _c = _sd.get("coords")
+                                if not _c or len(_c) < 2:
+                                    continue
+                                rows.append({
+                                    "site_name": _sd.get("name_ar", _sk),
+                                    "site_key": _sk,
+                                    "state": _st_name,
+                                    "lat": float(_c[0]),
+                                    "lon": float(_c[1]),
+                                    "depth_m": _sd.get("depth_m"),
+                                    "recharge_mm": _sd.get("recharge_mm"),
+                                    "slope_pct": _sd.get("slope_pct"),
+                                    "conductivity": _sd.get("conductivity"),
+                                    "aquifer": _sd.get("aquifer"),
+                                    "soil": _sd.get("soil"),
+                                    "vadose": _sd.get("vadose"),
+                                    "cn_water_mg_l": _sd.get("cn_water_mg_l"),
+                                    "hg_water_mg_l": _sd.get("hg_water_mg_l"),
+                                    "actual_contaminated": _sd.get("actual_contaminated"),
+                                    "mining_type": _sd.get("mining_type", "traditional"),
+                                    "verified": _sd.get("verified", False),
+                                })
+                        df_raster = pd.DataFrame(rows) if rows else None
+                    except Exception as _e:
+                        st.error(f"Failed to load built-in sites: {_e}")
                         df_raster = None
+
+            # If user data has coords column, extract lat/lon from it
+            if df_raster is not None and not df_raster.empty:
+                if "coords" in df_raster.columns and ("lat" not in df_raster.columns or "lon" not in df_raster.columns):
+                    df_raster = df_raster.copy()
+                    def _extract_coord(c, idx):
+                        if isinstance(c, (tuple, list)) and len(c) >= 2:
+                            return c[idx]
+                        if isinstance(c, str):
+                            try:
+                                import ast
+                                parsed = ast.literal_eval(c)
+                                if isinstance(parsed, (tuple, list)) and len(parsed) >= 2:
+                                    return parsed[idx]
+                            except Exception:
+                                pass
+                        return None
+                    df_raster["lat"] = df_raster["coords"].apply(lambda c: _extract_coord(c, 0))
+                    df_raster["lon"] = df_raster["coords"].apply(lambda c: _extract_coord(c, 1))
 
             if df_raster is None or df_raster.empty:
                 st.warning("No data available. Upload a file or load verified sites.")
             else:
-                if "coords" in df_raster.columns and "lat" not in df_raster.columns:
-                    df_raster = df_raster.copy()
-                    df_raster["lat"] = df_raster["coords"].apply(
-                        lambda c: c[0] if isinstance(c, (tuple, list)) and len(c) >= 2 else None)
-                    df_raster["lon"] = df_raster["coords"].apply(
-                        lambda c: c[1] if isinstance(c, (tuple, list)) and len(c) >= 2 else None)
-
                 if "lat" not in df_raster.columns or "lon" not in df_raster.columns:
                     st.error("Coordinates (lat/lon) not found in data")
+                elif df_raster["lat"].isna().all() or df_raster["lon"].isna().all():
+                    st.error("Coordinates are all empty/null")
                 else:
                     st.success(f"Data loaded: {len(df_raster)} sites")
 
@@ -2393,4 +2434,4 @@ elif MODE_KEY == "modflow" and MODFLOW_OK:
                 c3.metric("Mean", f"{res['head_mean']:.2f} m")
 
 st.markdown("---")
-st.markdown(f"""<div style="text-align:center;color:#666;padding:10px;"><b>{t("app_title")} v58.7</b> - PILOT VERSION<br><span style="font-size:0.85em;">{t("screening_only")}</span></div>""", unsafe_allow_html=True)
+st.markdown(f"""<div style="text-align:center;color:#666;padding:10px;"><b>{t("app_title")} v58.7.1</b> - PILOT VERSION<br><span style="font-size:0.85em;">{t("screening_only")}</span></div>""", unsafe_allow_html=True)
