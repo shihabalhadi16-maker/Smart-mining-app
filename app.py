@@ -1,4 +1,4 @@
-"""نظام التعدين السوداني v58.0 — University of Khartoum"""
+"""نظام التعدين السوداني v58.1 — University of Khartoum"""
 import streamlit as st
 import subprocess, os, sys, shutil, stat, zipfile, io
 import folium
@@ -42,7 +42,7 @@ try:
 except ImportError:
     AUTOCAL_OK = False
 
-st.set_page_config(page_title="Sudan Mining System v58.0", page_icon="⛏️", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Sudan Mining System v58.1", page_icon="⛏️", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""<style>
 html,body,[class*="css"]{font-family:'Segoe UI','Tahoma',Arial;font-size:15px;}
@@ -80,8 +80,6 @@ div[data-testid="stMetric"]{background:linear-gradient(135deg,#fff,#f9f5ec);bord
 .cal-result-card{background:#f5eedc;border:2px solid #c19a6b;border-radius:12px;padding:16px;margin:8px 0;text-align:center;}
 .cal-result-value{font-size:2em;font-weight:700;color:#5c2c16;margin:4px 0;}
 .cal-result-label{font-size:.85em;color:#777;}
-.profile-card{background:#faf8f3;border:2px solid #e0d4b8;border-radius:10px;padding:16px;margin:8px 0;}
-.profile-card-active{border-color:#4caf50;background:#f1f8e9;}
 #MainMenu{visibility:hidden;} footer{visibility:hidden;}
 @media(max-width:768px){.header-title{font-size:1.5em!important;}.header-container{padding:18px 14px!important;}[data-testid="stHorizontalBlock"]{flex-direction:column!important;}[data-testid="stHorizontalBlock"]>div{width:100%!important;}}
 </style>""", unsafe_allow_html=True)
@@ -302,6 +300,32 @@ def weighted_toxicity(hgw, hgs, cnw, cns, mining_type="traditional"):
             "soil_factor": round(soil_factor, 2),
             "category": cat, "action": act, "mining_type": mining_type}
 
+def spsa_analysis(pv):
+    """SPSA - Single Parameter Sensitivity Analysis (Napolitano & Fabbri 1996)"""
+    D_r = get_d_rating(float(pv.get("depth", 15.0)))
+    R_r = get_r_rating(float(pv.get("recharge", 100.0)))
+    A_r = get_a_rating(str(pv.get("aquifer", "massive_sandstone")))
+    S_r = get_s_rating(str(pv.get("soil", "sand")))
+    T_r = get_t_rating(float(pv.get("slope", 4.0)))
+    I_r = get_i_rating(str(pv.get("vadose", "sand_gravel")))
+    C_r = get_c_rating(float(pv.get("conductivity", 5.0)))
+    D_w, R_w, A_w, S_w, T_w, I_w, C_w = 5, 4, 3, 2, 1, 5, 3
+    total_weight = 23
+    DI = (D_r*D_w) + (R_r*R_w) + (A_r*A_w) + (S_r*S_w) + (T_r*T_w) + (I_r*I_w) + (C_r*C_w)
+    params = [("D",D_w,D_r),("R",R_w,R_r),("A",A_w,A_r),("S",S_w,S_r),
+              ("T",T_w,T_r),("I",I_w,I_r),("C",C_w,C_r)]
+    results = []
+    for name, w, r in params:
+        theo = (w / total_weight) * 100
+        eff = (w * r / DI) * 100 if DI > 0 else 0
+        results.append({"param":name,"weight":w,"rating":r,"weighted_score":w*r,
+            "theoretical_pct":round(theo,2),"effective_pct":round(eff,2),
+            "difference":round(eff-theo,2)})
+    results_sorted = sorted(results, key=lambda x: x["effective_pct"], reverse=True)
+    return {"base_index": DI, "parameters": results_sorted,
+            "most_influential": results_sorted[0]["param"] if results_sorted else None,
+            "least_influential": results_sorted[-1]["param"] if results_sorted else None}
+
 def sensitivity_analysis(pv, variation=0.10):
     D=float(pv.get("depth",15.0)); R=float(pv.get("recharge",100.0))
     A=str(pv.get("aquifer","massive_sandstone")); S=str(pv.get("soil","sand"))
@@ -431,7 +455,7 @@ th{{background-color:#f5eedc;color:#5c2c16;}}.metric{{font-size:1.5em;font-weigh
 <tr><th>Level</th><td class="metric">{level}</td></tr>
 </table>
 <p><b>{recommendation}</b></p>
-<p style="text-align:center;color:#666;">DRASTIC-Tox v58.0</p>
+<p style="text-align:center;color:#666;">DRASTIC-Tox v58.1</p>
 </body></html>"""
 
 def build_heatmap_verified(show_heat=True, show_markers=True):
@@ -486,7 +510,6 @@ else: preset = {}; n_states = n_sites_total = n_sites_verified = n_agri_states =
 INDUSTRIAL_SITES = load_industrial_sites_csv()
 if "lang" not in st.session_state: st.session_state["lang"] = "ar"
 
-# ============== SIDEBAR ==============
 _lang_opts = {"🇸🇦 العربية": "ar", "🇬🇧 English": "en"}
 _cur = "🇸🇦 العربية" if st.session_state["lang"] == "ar" else "🇬🇧 English"
 _sel = st.sidebar.selectbox(t("language"), list(_lang_opts.keys()), index=list(_lang_opts.keys()).index(_cur), key="lang_switcher")
@@ -533,16 +556,13 @@ elif DATA_SCOPE == t("scope_industrial"): SCOPE_KEY = "industrial"
 else: SCOPE_KEY = "all"
 if SCOPE_KEY == "industrial" and not INDUSTRIAL_SITES: st.sidebar.warning(t("no_industrial_file"))
 
-# ✅ تحميل الأوزان من نظام Profiles
 CALIBRATED_WEIGHTS = None
 if WM_OK:
     _active_prof = get_active_profile(SCOPE_KEY if SCOPE_KEY != "all" else "traditional")
     if _active_prof:
         CALIBRATED_WEIGHTS = {
             "mining_type": _active_prof["mining_type"],
-            "alpha": _active_prof["alpha"],
-            "beta": _active_prof["beta"],
-            "SF": _active_prof["SF"],
+            "alpha": _active_prof["alpha"], "beta": _active_prof["beta"], "SF": _active_prof["SF"],
             "kappa": _active_prof.get("kappa", "—"),
             "source_type": _active_prof.get("source_type", ""),
             "ar": _active_prof.get("name_ar", ""),
@@ -551,11 +571,11 @@ if WM_OK:
 _display_weights = None
 if CALIBRATED_WEIGHTS and CALIBRATED_WEIGHTS.get("mining_type") == SCOPE_KEY:
     _display_weights = {"name": CALIBRATED_WEIGHTS["ar"], "cal": True,
-        "alpha": CALIBRATED_WEIGHTS["alpha"], "beta": CALIBRATED_WEIGHTS["beta"], "SF": CALIBRATED_WEIGHTS["SF"], "kappa": CALIBRATED_WEIGHTS.get("kappa","-")}
+        "alpha": CALIBRATED_WEIGHTS["alpha"], "beta": CALIBRATED_WEIGHTS["beta"], "SF": CALIBRATED_WEIGHTS["SF"]}
 else:
     _w = WEIGHTS.get(SCOPE_KEY if SCOPE_KEY != "all" else "traditional", WEIGHTS["traditional"])
     _display_weights = {"name": _w["ar"] if is_ar() else _w["en"], "cal": False,
-        "alpha": _w["alpha"], "beta": _w["beta"], "SF": _w["SF"], "kappa": "-"}
+        "alpha": _w["alpha"], "beta": _w["beta"], "SF": _w["SF"]}
 
 _badge_cls = "mining-industrial" if SCOPE_KEY == "industrial" else "mining-mixed" if SCOPE_KEY == "mixed" else "mining-traditional"
 st.sidebar.markdown(f"""<div class="mining-badge {_badge_cls}">{_display_weights['name']}</div><div style="font-size:0.75em;color:#666;margin-top:4px;">α={_display_weights['alpha']} | β={_display_weights['beta']} | SF={_display_weights['SF']}</div>""", unsafe_allow_html=True)
@@ -587,7 +607,7 @@ if "ci" in st.session_state: st.sidebar.success(f"{t('current_index')}: {st.sess
 st.sidebar.markdown("---")
 with st.sidebar.expander(t("about"), expanded=False):
     st.markdown(f"""<div class="about-box">
-<h4>{t('app_title')} v58.0</h4>
+<h4>{t('app_title')} v58.1</h4>
 <h4>{t('modules')}:</h4>
 <p style="font-size:0.8em;">
 weight_manager: {'OK' if WM_OK else 'NO'}<br>
@@ -605,7 +625,7 @@ model_development: {'OK' if DEV_OK else 'NO'}
 </ul>
 </div>""", unsafe_allow_html=True)
 
-st.markdown(f"""<div class="pilot-banner">{t("pilot_version")}</div><div class="header-container"><div class="header-title">{t("app_title")}</div><div class="header-subtitle">{t("university")}</div><div class="header-subtitle">{t("subtitle")}</div><div class="header-badge">{t("version")} 58.0 | {n_states} | {n_sites_total} {t("sites")} ({n_sites_verified} {t("verified_sites")})</div></div>""", unsafe_allow_html=True)
+st.markdown(f"""<div class="pilot-banner">{t("pilot_version")}</div><div class="header-container"><div class="header-title">{t("app_title")}</div><div class="header-subtitle">{t("university")}</div><div class="header-subtitle">{t("subtitle")}</div><div class="header-badge">{t("version")} 58.1 | {n_states} | {n_sites_total} {t("sites")} ({n_sites_verified} {t("verified_sites")})</div></div>""", unsafe_allow_html=True)
 
 with st.expander(f"📤 {t('upload_files')}", expanded=False):
     c1, c2, c3 = st.columns(3)
@@ -873,7 +893,7 @@ if MODE_KEY == "system":
             sm = mm in [t("both"), t("markers")]
             with st.spinner(t("calculating")):
                 mapa, stats, df_sites = build_heatmap_verified(show_heat=sh, show_markers=sm)
-            st_folium(mapa, height=mh, key="map_folium_v580", use_container_width=True)
+            st_folium(mapa, height=mh, key="map_folium_v581", use_container_width=True)
             st.markdown("---")
             st.markdown(f"#### {t('statistics')}")
             c1, c2, c3, c4, c5 = st.columns(5)
@@ -891,19 +911,72 @@ if MODE_KEY == "system":
         st.info(t("sensitivity_hint"))
         if "cv" not in st.session_state: st.warning(t("site_selection"))
         else:
-            vp = st.slider(t("change_pct"), 5, 30, 10, 5, key="sens_var_pct_slider")
-            if st.button("🚀 " + t("run"), type="primary", key="run_sens_btn"):
-                with st.spinner(t("calculating")):
-                    st.session_state["sens_result"] = sensitivity_analysis(st.session_state["cv"], vp/100.0)
-            if "sens_result" in st.session_state:
-                sens = st.session_state["sens_result"]
-                st.success(f"{t('most_sensitive')}: {sens['most_sensitive']}")
-                rows = []
-                for p, d in sens["parameters"].items():
-                    rows.append({t("parameter"):p,t("original_value"):d["original_phys"],
-                        t("modified_value"):d["modified_phys"],t("new_index"):d["new_index"],
-                        t("change"):d["change"],t("sensitivity_pct"):d["sensitivity"]})
-                st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+            sub_sens = st.tabs([t("spsa_tab"), t("variation_tab")])
+
+            with sub_sens[0]:
+                st.markdown(f"#### {t('spsa_title')}")
+                st.markdown(f'<div class="research-note"><b>{t("reference")}:</b> Napolitano &amp; Fabbri (1996)<br><b>{t("formula")}:</b> Si = (Wi × Ri / DI) × 100</div>', unsafe_allow_html=True)
+                st.info(t("spsa_explanation"))
+
+                if st.button("🚀 " + t("run_spsa"), type="primary", key="run_spsa_btn"):
+                    with st.spinner(t("calculating")):
+                        st.session_state["spsa_result"] = spsa_analysis(st.session_state["cv"])
+
+                if "spsa_result" in st.session_state:
+                    spsa = st.session_state["spsa_result"]
+                    st.success(f"🏆 {t('most_influential')}: **{spsa['most_influential']}** | {t('base_index')}: **{spsa['base_index']}**")
+
+                    st.markdown("---")
+                    rows = []
+                    for p in spsa["parameters"]:
+                        rows.append({
+                            t("parameter"): p["param"],
+                            t("weight_wi"): p["weight"],
+                            t("rating_ri"): p["rating"],
+                            t("weighted"): p["weighted_score"],
+                            t("theoretical_pct"): f"{p['theoretical_pct']}%",
+                            t("effective_pct"): f"{p['effective_pct']}%",
+                            t("difference"): f"{p['difference']:+.2f}%",
+                        })
+                    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+
+                    st.markdown("---")
+                    st.markdown(f"#### {t('interpretation')}")
+                    for p in spsa["parameters"][:3]:
+                        if p["difference"] > 0:
+                            st.info(f"**{p['param']}**: {t('more_important')} (+{p['difference']:.2f}%)")
+                        elif p["difference"] < 0:
+                            st.warning(f"**{p['param']}**: {t('less_important')} ({p['difference']:.2f}%)")
+
+                    try:
+                        import plotly.graph_objects as go
+                        fig = go.Figure()
+                        params = [p["param"] for p in spsa["parameters"]]
+                        theo = [p["theoretical_pct"] for p in spsa["parameters"]]
+                        eff = [p["effective_pct"] for p in spsa["parameters"]]
+                        fig.add_trace(go.Bar(name=t("theoretical_pct"), x=params, y=theo, marker_color='#c19a6b'))
+                        fig.add_trace(go.Bar(name=t("effective_pct"), x=params, y=eff, marker_color='#5c2c16'))
+                        fig.update_layout(barmode='group', height=400, xaxis_title=t("parameter"), yaxis_title="%")
+                        st.plotly_chart(fig, use_container_width=True, key="spsa_chart")
+                    except Exception:
+                        pass
+
+            with sub_sens[1]:
+                st.markdown(f"#### {t('variation_title')}")
+                st.info(t("variation_explanation"))
+                vp = st.slider(t("change_pct"), 5, 30, 10, 5, key="sens_var_pct_slider")
+                if st.button("🚀 " + t("run"), type="primary", key="run_sens_btn"):
+                    with st.spinner(t("calculating")):
+                        st.session_state["sens_result"] = sensitivity_analysis(st.session_state["cv"], vp/100.0)
+                if "sens_result" in st.session_state:
+                    sens = st.session_state["sens_result"]
+                    st.success(f"{t('most_sensitive')}: {sens['most_sensitive']}")
+                    rows = []
+                    for p, d in sens["parameters"].items():
+                        rows.append({t("parameter"):p,t("original_value"):d["original_phys"],
+                            t("modified_value"):d["modified_phys"],t("new_index"):d["new_index"],
+                            t("change"):d["change"],t("sensitivity_pct"):d["sensitivity"]})
+                    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
 
     with tabs[7]:
         st.markdown(f'<div class="section-header"><h3>{t("toxicity_title")}</h3></div>', unsafe_allow_html=True)
@@ -1004,666 +1077,4 @@ if MODE_KEY == "system":
                                 m_d = compute_basic_metrics(act_l, d_l, th_d)
                                 b_d = bootstrap_kappa_ci(act_l, d_l, th_d, n_boot=1000)
                                 l_d = loocv_analysis(act_l, d_l, th_d)
-                                m_dt = compute_basic_metrics(act_l, dp_l, th_dt)
-                                b_dt = bootstrap_kappa_ci(act_l, dp_l, th_dt, n_boot=1000)
-                                l_dt = loocv_analysis(act_l, dp_l, th_dt)
-                                st.session_state["adv_results"] = {"m_d":m_d,"b_d":b_d,"l_d":l_d,"m_dt":m_dt,"b_dt":b_dt,"l_dt":l_dt}
-                        if "adv_results" in st.session_state:
-                            r = st.session_state["adv_results"]
-                            st.markdown("---")
-                            c1, c2 = st.columns(2)
-                            with c1:
-                                st.markdown(f"#### DRASTIC")
-                                if "error" not in r["m_d"]:
-                                    st.metric(t("kappa"), r["m_d"]["kappa"])
-                                    st.metric(t("roc_auc"), r["m_d"]["auc"])
-                                    st.metric(t("f1_score"), r["m_d"]["f1"])
-                                    st.metric(t("recall"), f"{r['m_d']['recall']}%")
-                                    with st.expander(t("confusion_matrix")):
-                                        st.write(f"TP={r['m_d']['tp']} TN={r['m_d']['tn']} FP={r['m_d']['fp']} FN={r['m_d']['fn']}")
-                                    with st.expander(t("bootstrap_ci")):
-                                        st.write(f"[{r['b_d']['ci_low']}, {r['b_d']['ci_high']}]")
-                                    with st.expander(t("loocv")):
-                                        st.write(f"Kappa={r['l_d']['kappa']} Acc={r['l_d']['accuracy']}%")
-                            with c2:
-                                st.markdown(f"#### DRASTIC-Tox")
-                                if "error" not in r["m_dt"]:
-                                    st.metric(t("kappa"), r["m_dt"]["kappa"])
-                                    st.metric(t("roc_auc"), r["m_dt"]["auc"])
-                                    st.metric(t("f1_score"), r["m_dt"]["f1"])
-                                    st.metric(t("recall"), f"{r['m_dt']['recall']}%")
-                                    with st.expander(t("confusion_matrix")):
-                                        st.write(f"TP={r['m_dt']['tp']} TN={r['m_dt']['tn']} FP={r['m_dt']['fp']} FN={r['m_dt']['fn']}")
-                                    with st.expander(t("bootstrap_ci")):
-                                        st.write(f"[{r['b_dt']['ci_low']}, {r['b_dt']['ci_high']}]")
-                                    with st.expander(t("loocv")):
-                                        st.write(f"Kappa={r['l_dt']['kappa']} Acc={r['l_dt']['accuracy']}%")
-
-    with tabs[11]:
-        st.markdown(f'<div class="section-header"><h3>{t("development_title")}</h3></div>', unsafe_allow_html=True)
-        if not DEV_OK: st.error(t("no_dev_module"))
-        elif not SKLEARN_OK: st.error(t("no_sklearn"))
-        else:
-            sub = st.tabs([t("gray_zone"), t("calibration_ab"), t("model_comparison")])
-            with sub[0]:
-                st.markdown(f"#### {t('gray_zone')}")
-                st.warning(t("gray_warning"))
-                gray_rows = []
-                for sname, sdata in GRAY_ZONE_SITES.items():
-                    for sk, sd in sdata.get("sites", {}).items():
-                        gray_rows.append({"Site":sd.get("name_ar",sk),"D":sd["depth_m"],"R":sd["recharge_mm"],
-                            "CN":sd["cn_water_mg_l"],"Hg":sd["hg_water_mg_l"],
-                            "Status":t("contaminated") if sd["actual_contaminated"] == 1 else t("clean")})
-                st.dataframe(pd.DataFrame(gray_rows), width="stretch", hide_index=True)
-                st.markdown("---")
-                mo = st.radio(t("select"), [t("verified_only_11"), t("with_gray_17")], key="gray_merge_radio")
-                inc_gray = "17" in mo
-                if st.button("🔄 " + t("load_data"), type="primary", key="load_combined_btn"):
-                    df_c = get_combined_dataset(include_gray=inc_gray)
-                    dv, dtv = [], []
-                    for _, row in df_c.iterrows():
-                        try:
-                            ix = calc_index(get_d_rating(float(row["depth_m"])), get_r_rating(float(row["recharge_mm"])),
-                                get_a_rating(str(row["aquifer"])), get_s_rating(str(row["soil"])),
-                                get_t_rating(float(row["slope_pct"])), get_i_rating(str(row["vadose"])),
-                                get_c_rating(float(row["conductivity"])))
-                            dt = calc_drastic_t(ix, float(row["cn_water_mg_l"]), float(row["hg_water_mg_l"]),
-                                mining_type="traditional")["drastic_t"]
-                            dv.append(ix); dtv.append(dt)
-                        except Exception: dv.append(0); dtv.append(0)
-                    df_c = df_c.copy(); df_c["DRASTIC"] = dv; df_c["DRASTIC_Tox"] = dtv
-                    st.session_state["df_combined"] = df_c
-                    st.success(f"{len(df_c)} {t('sites')}"); st.rerun()
-                if "df_combined" in st.session_state:
-                    df_s = st.session_state["df_combined"]
-                    st.markdown("---"); st.dataframe(df_s, width="stretch")
-                    c1, c2, c3, c4 = st.columns(4)
-                    c1.metric(t("total_sites"), len(df_s))
-                    c2.metric(t("verified_sites"), safe_sum(df_s, "verified", 0))
-                    c3.metric(t("gray_sites"), safe_sum(df_s, "is_gray_zone", 0))
-                    c4.metric(t("contaminated_sites"), safe_sum(df_s, "actual_contaminated", 0))
-            with sub[1]:
-                st.markdown(f"#### {t('calibration_ab')}")
-                df_c = get_loaded_df("df_combined", "df_validation")
-                if df_c is None: st.warning(t("calibrate_hint"))
-                else:
-                    if "DRASTIC" not in df_c.columns:
-                        dv = []
-                        for _, row in df_c.iterrows():
-                            try: dv.append(calc_index(get_d_rating(float(row["depth_m"])), get_r_rating(float(row["recharge_mm"])),
-                                get_a_rating(str(row["aquifer"])), get_s_rating(str(row["soil"])),
-                                get_t_rating(float(row["slope_pct"])), get_i_rating(str(row["vadose"])),
-                                get_c_rating(float(row["conductivity"]))))
-                            except Exception: dv.append(0)
-                        df_c = df_c.copy(); df_c["DRASTIC"] = dv; st.session_state["df_combined"] = df_c
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        amin = st.slider(t("alpha_min"), 0.0, 1.0, 0.1, 0.1, key="cal_a_min_slider")
-                        amax = st.slider(t("alpha_max"), 0.0, 1.0, 0.9, 0.1, key="cal_a_max_slider")
-                    with c2:
-                        bmin = st.slider(t("beta_min"), 0.0, 1.0, 0.1, 0.1, key="cal_b_min_slider")
-                        bmax = st.slider(t("beta_max"), 0.0, 1.0, 0.9, 0.1, key="cal_b_max_slider")
-                    if st.button("🚀 " + t("run_calibration"), type="primary", key="run_cal_btn"):
-                        with st.spinner(t("searching")):
-                            ar = list(np.arange(amin, amax + 0.05, 0.1))
-                            br = list(np.arange(bmin, bmax + 0.05, 0.1))
-                            st.session_state["cal_result"] = calibrate_alpha_beta(df_c, {"DRASTIC":100,"DRASTIC-T":140}, alpha_range=ar, beta_range=br)
-                    if "cal_result" in st.session_state:
-                        res = st.session_state["cal_result"]
-                        if "error" in res: st.error(res["error"])
-                        else:
-                            st.markdown("---")
-                            c1, c2 = st.columns(2)
-                            with c1:
-                                st.markdown(f"#### {t('best_kappa')}")
-                                bk = res["best_kappa"]
-                                st.metric("alpha", bk["alpha"]); st.metric("beta", bk["beta"])
-                                st.metric(t("kappa"), bk["kappa"]); st.metric(t("recall"), f"{bk['recall']}%")
-                            with c2:
-                                st.markdown(f"#### {t('balanced')}")
-                                bb = res["best_balanced"]
-                                st.metric("alpha", bb["alpha"]); st.metric("beta", bb["beta"])
-                                st.metric(t("kappa"), bb["kappa"]); st.metric(t("recall"), f"{bb['recall']}%")
-            with sub[2]:
-                st.markdown(f"#### {t('model_comparison')}")
-                df_c = get_loaded_df("df_combined", "df_validation")
-                if df_c is None: st.warning(t("calibrate_hint"))
-                else:
-                    if st.button("🚀 " + t("run"), type="primary", key="run_cmp_btn"):
-                        with st.spinner(t("calculating")):
-                            st.session_state["cmp_results"] = compare_models(df_c,
-                                (get_d_rating,get_r_rating,get_a_rating,get_s_rating,get_t_rating,get_i_rating,get_c_rating),
-                                calc_index)
-                    if "cmp_results" in st.session_state:
-                        r = st.session_state["cmp_results"]
-                        rows = []
-                        for mn, mt in r.items():
-                            if "error" not in mt:
-                                rows.append({"Model":mn,t("kappa"):mt["kappa"],t("recall"):mt["recall"],
-                                    t("precision"):mt["precision"],t("accuracy"):mt["accuracy"],"ROC-AUC":mt["auc"]})
-                        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
-
-    with tabs[12]:
-        st.markdown(f'<div class="section-header"><h3>{t("tab_auto_maps")}</h3></div>', unsafe_allow_html=True)
-        if not MAPS_OK: st.error("auto_maps.py")
-        else:
-            df_s = get_loaded_df("df_combined","df_validation")
-            if df_s is None: st.warning(t("no_file"))
-            else:
-                st.write(f"{len(df_s)} {t('sites')}")
-                if st.button("🎨 " + t("run"), type="primary", key="gen_maps_btn"):
-                    with st.spinner(t("calculating")):
-                        try:
-                            df_m = df_s.copy()
-                            if "coords" in df_m.columns and "lon" not in df_m.columns:
-                                df_m["lat"] = df_m["coords"].apply(lambda c: c[0] if isinstance(c,(tuple,list)) and len(c)>=2 else None)
-                                df_m["lon"] = df_m["coords"].apply(lambda c: c[1] if isinstance(c,(tuple,list)) and len(c)>=2 else None)
-                            if "lon" not in df_m.columns: st.error("No coordinates"); st.stop()
-                            if "DRASTIC" not in df_m.columns:
-                                dv = []
-                                for _, row in df_m.iterrows():
-                                    try: dv.append(calc_index(get_d_rating(float(row["depth_m"])), get_r_rating(float(row["recharge_mm"])),
-                                        get_a_rating(str(row["aquifer"])), get_s_rating(str(row["soil"])),
-                                        get_t_rating(float(row["slope_pct"])), get_i_rating(str(row["vadose"])),
-                                        get_c_rating(float(row["conductivity"]))))
-                                    except Exception: dv.append(0)
-                                df_m["DRASTIC"] = dv
-                            if "DRASTIC_Tox" not in df_m.columns:
-                                dtv = []
-                                for _, row in df_m.iterrows():
-                                    try:
-                                        ix = calc_index(get_d_rating(float(row["depth_m"])), get_r_rating(float(row["recharge_mm"])),
-                                            get_a_rating(str(row["aquifer"])), get_s_rating(str(row["soil"])),
-                                            get_t_rating(float(row["slope_pct"])), get_i_rating(str(row["vadose"])),
-                                            get_c_rating(float(row["conductivity"])))
-                                        dtv.append(calc_drastic_t(ix, float(row.get("cn_water_mg_l",0)),
-                                            float(row.get("hg_water_mg_l",0)), mining_type="traditional")["drastic_t"])
-                                    except Exception: dtv.append(0)
-                                df_m["DRASTIC_Tox"] = dtv
-                            rm = {}
-                            if "cn_water_mg_l" in df_m.columns: rm["cn_water_mg_l"] = "CN"
-                            if "hg_water_mg_l" in df_m.columns: rm["hg_water_mg_l"] = "Hg"
-                            if rm: df_m = df_m.rename(columns=rm)
-                            df_p = prepare_df_for_maps(df_m, (get_d_rating,get_r_rating,get_a_rating,get_s_rating,get_t_rating,get_i_rating,get_c_rating))
-                            fig = generate_auto_maps(df_p, show_sudan=True)
-                            st.session_state["auto_maps_fig"] = fig
-                            st.success(f"{len(df_p)} {t('sites')}")
-                        except Exception as e: st.error(str(e))
-                if "auto_maps_fig" in st.session_state:
-                    st.plotly_chart(st.session_state["auto_maps_fig"], use_container_width=True, key="auto_maps_chart_v580")
-                    html = st.session_state["auto_maps_fig"].to_html(include_plotlyjs='cdn')
-                    st.download_button("📥 HTML", data=html.encode("utf-8"),
-                        file_name="auto_maps.html", mime="text/html", key="download_maps_html_btn")
-
-    with tabs[13]:
-        st.markdown(f'<div class="section-header"><h3>{t("auto_calibration")}</h3></div>', unsafe_allow_html=True)
-        st.markdown(f"""<div class="research-note"><b>{t('references')}:</b><br>• Konate et al. (2025)<br>• Karan et al. (2018)<br>• Landis &amp; Koch (1977)</div>""", unsafe_allow_html=True)
-        if not AUTOCAL_OK: st.error("auto_calibration.py")
-        elif not SKLEARN_OK: st.error(t("no_sklearn"))
-        else:
-            if SCOPE_KEY == "industrial" and INDUSTRIAL_SITES:
-                df_c = pd.DataFrame(INDUSTRIAL_SITES)
-            else:
-                df_c = get_loaded_df("df_validation","df_bulk","df_combined")
-            if df_c is None: st.warning(t("upload_validation_first"))
-            else:
-                req = ["depth_m","recharge_mm","slope_pct","conductivity","aquifer","soil","vadose","cn_water_mg_l","hg_water_mg_l","actual_contaminated"]
-                miss = [x for x in req if x not in df_c.columns]
-                if miss: st.error(f"Missing: {miss}")
-                else:
-                    st.success(f"{t('file_has')} {len(df_c)} {t('sites')}")
-                    if WM_OK:
-                        ceiling = detect_ceiling_effect(df_c, SCOPE_KEY if SCOPE_KEY != "all" else "traditional")
-                        if ceiling:
-                            st.warning("⚠️ Ceiling Effect detected in CN scores — calibrated alpha may be unreliable. Consider using literature profile.")
-                    st.markdown("---")
-                    st.markdown(f"#### {t('calibration_settings')}")
-                    c1, c2, c3 = st.columns(3)
-                    with c1: mc = st.selectbox(t("mining_pattern"), ["traditional","industrial","mixed"], key="cal_mining_type_select")
-                    with c2: ns = st.slider(t("search_precision"), 10, 30, 15, 5, key="cal_n_steps_slider")
-                    with c3: th = st.number_input(t("drastic_tox_threshold"), 50, 280, 140, 10, key="cal_threshold_input")
-                    st.caption(f"{t('combinations')}: {ns**3:,}")
-                    st.markdown("---")
-                    b1, b2, b3 = st.columns(3)
-                    with b1: rc = st.button("🚀 " + t("run_auto_calibration"), type="primary", key="run_auto_cal_btn", use_container_width=True)
-                    with b2: rcm = st.button("📊 " + t("compare"), key="run_compare_btn", use_container_width=True)
-                    with b3: rst = st.button("🔄 " + t("reset"), key="reset_weights_btn", use_container_width=True)
-                    if rst:
-                        for k in ["auto_cal_result","auto_cal_mining_type","comparison_result"]: st.session_state.pop(k, None)
-                        st.success(t("reset_done")); st.rerun()
-                    if rcm:
-                        with st.spinner(t("calculating")): cmp = compare_with_defaults(df_c, mc, threshold=th)
-                        if "error" in cmp: st.error(cmp["error"])
-                        else: st.session_state["comparison_result"] = cmp
-                    if rc:
-                        with st.spinner(f"{t('searching')} {ns**3:,}..."):
-                            result = auto_calibrate_weights(df_c, mc, n_steps=ns, threshold=th)
-                        if "error" in result: st.error(result["error"])
-                        else:
-                            st.session_state["auto_cal_result"] = result
-                            st.session_state["auto_cal_mining_type"] = mc
-                            # ✅ حفظ في نظام Profiles
-                            if WM_OK:
-                                pk = save_calibrated_profile(mc, result, len(df_c))
-                                st.success(f"{t('kappa')} = {result['best_kappa']} — Saved to profile: {pk}")
-                            else:
-                                st.success(f"{t('kappa')} = {result['best_kappa']}")
-                            st.rerun()
-                    if "comparison_result" in st.session_state:
-                        cmp = st.session_state["comparison_result"]
-                        st.markdown("---")
-                        c1, c2, c3 = st.columns(3)
-                        with c1: st.metric(t("default_kappa"), cmp["default_kappa"])
-                        with c2: st.metric(t("calibrated_kappa"), cmp["best_kappa"] or "-",
-                            delta=f"{cmp.get('improvement',0):+.4f}" if cmp.get("best_kappa") else None)
-                        with c3: st.metric(t("recall"), f"{cmp.get('best_recall',0)}%")
-                    if "auto_cal_result" in st.session_state:
-                        res = st.session_state["auto_cal_result"]
-                        ms = st.session_state.get("auto_cal_mining_type","traditional")
-                        interp = res.get("kappa_interpretation", {})
-                        st.markdown("---")
-                        lbl = WEIGHTS[ms]["ar"] if is_ar() else WEIGHTS[ms]["en"]
-                        st.markdown(f"### {t('result')} - {lbl}")
-                        kc = "kappa-excellent" if interp.get("level") == "ممتاز" else "kappa-good" if interp.get("level") == "جيد" else "kappa-moderate" if interp.get("level") == "متوسط" else "kappa-fair" if interp.get("level") == "مقبول" else "kappa-poor"
-                        st.markdown(f'<div class="kappa-box {kc}"><div style="font-size:0.9em;opacity:0.9;">{t("kappa")}</div><div style="font-size:3em;font-weight:700;margin:8px 0;">{res["best_kappa"]}</div><div style="font-size:1.3em;font-weight:600;">{interp.get("level","-")} - {interp.get("en","-")}</div></div>', unsafe_allow_html=True)
-                        st.markdown(f"#### {t('optimal_weights')}")
-                        c1, c2, c3, c4 = st.columns(4)
-                        with c1: st.markdown(f'<div class="cal-result-card"><div class="cal-result-label">alpha (CN)</div><div class="cal-result-value">{res["best_alpha"]}</div></div>', unsafe_allow_html=True)
-                        with c2: st.markdown(f'<div class="cal-result-card"><div class="cal-result-label">beta (Hg)</div><div class="cal-result-value">{res["best_beta"]}</div></div>', unsafe_allow_html=True)
-                        with c3: st.markdown(f'<div class="cal-result-card"><div class="cal-result-label">SF</div><div class="cal-result-value">{res["best_SF"]}</div></div>', unsafe_allow_html=True)
-                        with c4: st.markdown(f'<div class="cal-result-card"><div class="cal-result-label">{t("recall_pct")}</div><div class="cal-result-value">{res["best_recall"]}%</div></div>', unsafe_allow_html=True)
-                        st.markdown("---")
-                        st.markdown(f"#### {t('top_10')}")
-                        tr_ = res.get("all_results", [])[:10]
-                        if tr_:
-                            dt = pd.DataFrame(tr_).rename(columns={"alpha":"alpha (CN)","beta":"beta (Hg)","SF":"SF","kappa":t("kappa"),"recall":t("recall")})
-                            dt.insert(0, t("rank"), range(1, len(dt)+1))
-                            st.dataframe(dt, width="stretch", hide_index=True)
-                        st.markdown("---")
-                        st.warning(t("calibration_warning"))
-
-    with tabs[14]:
-        st.markdown(f'<div class="section-header"><h3>{t("optimal_threshold_title")}</h3></div>', unsafe_allow_html=True)
-        st.markdown(f"""<div class="research-note"><b>{t('references')}:</b><br>• Youden (1950)<br>• Landis &amp; Koch (1977)</div>""", unsafe_allow_html=True)
-        st.info(t("threshold_hint"))
-        if not AUTOCAL_OK: st.error("auto_calibration.py")
-        elif not SKLEARN_OK: st.error(t("no_sklearn"))
-        else:
-            if SCOPE_KEY == "industrial" and INDUSTRIAL_SITES:
-                df_o = pd.DataFrame(INDUSTRIAL_SITES)
-            else:
-                df_o = get_loaded_df("df_validation","df_combined")
-            if df_o is None: st.warning(t("upload_validation_first"))
-            else:
-                mto = st.selectbox(t("mining_pattern"), ["traditional","industrial","mixed"], key="opt_mining_type_select")
-                uc = False
-                if CALIBRATED_WEIGHTS and CALIBRATED_WEIGHTS.get("mining_type") == mto:
-                    uc = st.checkbox(f"{t('use_calibrated_weights')} (Kappa = {CALIBRATED_WEIGHTS.get('kappa','-')})", value=True, key="use_calibrated_for_opt_chk")
-                if st.button("🚀 " + t("compute_threshold"), type="primary", key="run_opt_threshold_btn"):
-                    with st.spinner(t("calculating")):
-                        try:
-                            if uc and CALIBRATED_WEIGHTS:
-                                optr = find_optimal_threshold(df_o, mto, alpha=CALIBRATED_WEIGHTS["alpha"],
-                                    beta=CALIBRATED_WEIGHTS["beta"], SF=CALIBRATED_WEIGHTS["SF"])
-                            else: optr = find_optimal_threshold(df_o, mto)
-                            st.session_state["opt_threshold_result"] = optr
-                        except Exception as e: st.error(str(e))
-                if "opt_threshold_result" in st.session_state:
-                    res = st.session_state["opt_threshold_result"]
-                    if "error" in res: st.error(res["error"])
-                    else:
-                        lbl = WEIGHTS[res["mining_type"]]["ar"] if is_ar() else WEIGHTS[res["mining_type"]]["en"]
-                        st.markdown("---")
-                        st.markdown(f"### {t('optimal_threshold_title')} - {lbl}")
-                        c1, c2, c3, c4 = st.columns(4)
-                        with c1: st.markdown(f'<div class="cal-result-card" style="background:linear-gradient(135deg,#e8f5e9,#c8e6c9);"><div class="cal-result-label">{t("threshold")}</div><div class="cal-result-value">{res["optimal_threshold"]}</div><div class="cal-result-label">{t("youden_index")}</div></div>', unsafe_allow_html=True)
-                        with c2: st.markdown(f'<div class="cal-result-card"><div class="cal-result-label">J</div><div class="cal-result-value">{res["J_max"]}</div></div>', unsafe_allow_html=True)
-                        with c3: st.markdown(f'<div class="cal-result-card"><div class="cal-result-label">{t("sensitivity")}</div><div class="cal-result-value">{res["sensitivity"]}</div></div>', unsafe_allow_html=True)
-                        with c4: st.markdown(f'<div class="cal-result-card"><div class="cal-result-label">{t("specificity")}</div><div class="cal-result-value">{res["specificity"]}</div></div>', unsafe_allow_html=True)
-                        st.markdown("---")
-                        st.markdown(f"#### {t('comparison_default')}")
-                        cmp_df = pd.DataFrame({
-                            "Metric":[t("threshold"),"Youden J",t("sensitivity"),t("specificity")],
-                            "Default (140)":[res["default_threshold"],res["default_J"],res["default_sensitivity"],res["default_specificity"]],
-                            "Optimal":[res["optimal_threshold"],res["J_max"],res["sensitivity"],res["specificity"]]})
-                        st.dataframe(cmp_df, width="stretch", hide_index=True)
-                        imp = res["J_max"] - res["default_J"]
-                        if imp > 0.2: st.success(f"{t('excellent_improvement')}: +{imp:.3f}")
-                        elif imp > 0.05: st.info(f"{t('good_improvement')}: +{imp:.3f}")
-                        elif imp > 0: st.warning(f"{t('minor_improvement')}: +{imp:.3f}")
-                        else: st.error(f"{t('default_better')}: {abs(imp):.3f}")
-                        st.markdown("---")
-                        st.markdown(f"#### {t('roc_curve')}")
-                        try:
-                            import plotly.graph_objects as go
-                            roc = res["roc_data"]
-                            fprs = [p["fpr"] for p in roc]; tprs = [p["tpr"] for p in roc]
-                            fig = go.Figure()
-                            fig.add_trace(go.Scatter(x=[0,1], y=[0,1], mode='lines', line=dict(color='gray', dash='dash'), name=t("random")))
-                            fig.add_trace(go.Scatter(x=fprs, y=tprs, mode='lines+markers', line=dict(color='#5c2c16', width=2), marker=dict(size=4), name='DRASTIC-Tox'))
-                            fig.add_trace(go.Scatter(x=[1-res["specificity"]], y=[res["sensitivity"]], mode='markers', marker=dict(size=18, color='red', symbol='star'), name=f"{t('threshold_label')} ({res['optimal_threshold']})"))
-                            fig.update_layout(xaxis_title="FPR", yaxis_title="TPR", height=500)
-                            st.plotly_chart(fig, use_container_width=True, key="roc_chart_v580")
-                        except Exception as e: st.warning(str(e))
-                        st.markdown("---")
-                        st.warning(f"n = {res['n_sites']} | {t('threshold_label')}: {res['optimal_threshold']}")
-                        if st.button("✅ " + t("apply_threshold"), type="primary", key="apply_opt_threshold_btn"):
-                            st.session_state["custom_threshold"] = res["optimal_threshold"]
-                            st.success(f"{t('applied_threshold')}: {res['optimal_threshold']}")
-
-    # ============ ✅ TAB 15: Weight Profiles Manager (NEW) ============
-    with tabs[15]:
-        st.markdown('<div class="section-header"><h3>⚙️ Weight Profiles Manager / إدارة الأوزان</h3></div>', unsafe_allow_html=True)
-        if not WM_OK:
-            st.error("❌ weight_manager.py not installed")
-            st.info("Add weight_manager.py to enable persistent weight profiles.")
-        else:
-            st.info("💡 Select weight profile. Changes are **saved permanently** to `weights/weights_config.json`.")
-            
-            # Filter by mining type
-            mining_filter = st.radio(
-                "Mining Type / نمط التعدين:",
-                ["traditional", "industrial", "mixed"],
-                format_func=lambda x: {"traditional":"⛏️ Traditional","industrial":"🏭 Industrial","mixed":"🔀 Mixed"}[x],
-                key="profile_filter", horizontal=True
-            )
-            
-            profiles = get_all_profiles()
-            active = get_active_profile(mining_filter)
-            filtered = {k:v for k,v in profiles.items() if v.get("mining_type") == mining_filter}
-            
-            st.markdown("---")
-            st.markdown(f"#### Available Profiles: {len(filtered)}")
-            
-            for key, prof in filtered.items():
-                is_active = (active and 
-                              prof["alpha"] == active.get("alpha") and
-                              prof["beta"] == active.get("beta") and
-                              prof["SF"] == active.get("SF"))
-                
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    border_color = "#4caf50" if is_active else "#e0d4b8"
-                    bg_color = "#f1f8e9" if is_active else "#faf8f3"
-                    src_badge = "📚 Literature" if prof.get("source_type") == "literature" else "📊 Calibrated"
-                    warning_html = f'<div style="background:#fff3e0;border-left:3px solid #ff9800;padding:6px 10px;margin-top:8px;font-size:0.8em;color:#e65100;">{prof.get("warning_ar","")}</div>' if prof.get('warning_ar') else ""
-                    active_html = '<div style="background:#e8f5e9;padding:4px 8px;border-radius:4px;display:inline-block;margin-top:6px;font-size:0.8em;color:#2e7d32;font-weight:bold;">✅ ACTIVE</div>' if is_active else ""
-                    kappa_html = f'<p style="font-size:0.85em;color:#e65100;margin:6px 0;"><b>Kappa:</b> {prof["kappa"]} | <b>n:</b> {prof["n_sites"]}</p>' if prof.get('kappa') else ""
-                    st.markdown(f"""
-                    <div style="background:{bg_color};border:2px solid {border_color};border-radius:10px;padding:16px;margin:8px 0;">
-                        <div style="display:flex;justify-content:space-between;align-items:center;">
-                            <h4 style="color:#5c2c16;margin:0;">{prof.get('name_ar', key)}</h4>
-                            <span style="font-size:0.75em;background:#e8eaf6;color:#3f51b5;padding:2px 8px;border-radius:4px;">{src_badge}</span>
-                        </div>
-                        <p style="font-size:0.85em;color:#666;margin:6px 0;">
-                            <b>Source:</b> {prof.get('source','N/A')}
-                        </p>
-                        <div style="display:flex;gap:20px;margin-top:8px;font-size:1.05em;">
-                            <span><b>α</b> = <b>{prof['alpha']}</b></span>
-                            <span><b>β</b> = <b>{prof['beta']}</b></span>
-                            <span><b>SF</b> = <b>{prof['SF']}</b></span>
-                        </div>
-                        <p style="font-size:0.8em;color:#666;margin:6px 0;">
-                            {prof.get('description_ar','')}
-                        </p>
-                        {kappa_html}
-                        {warning_html}
-                        {active_html}
-                    </div>
-                    """, unsafe_allow_html=True)
-                with col2:
-                    if not is_active:
-                        if st.button("✅ Activate", key=f"act_{key}", use_container_width=True):
-                            set_active_profile(key)
-                            st.success(f"Activated")
-                            st.rerun()
-                    else:
-                        st.success("Active")
-            
-            st.markdown("---")
-            st.markdown("#### Active Profile Details (JSON)")
-            if active:
-                st.json(active)
-
-elif MODE_KEY == "agricultural" and ADV_OK:
-    st.markdown(f"""<div class="header-container header-agri"><div class="header-title">{t("agricultural_title")}</div><div class="header-subtitle">DRASTIC-Agri + SAR + Na% + EC</div></div>""", unsafe_allow_html=True)
-    if DS_OK:
-        try:
-            ag_s = get_agricultural_data_summary()
-            st.info(f"{ag_s['total_states']} / {ag_s['total_sites']}")
-            c1, c2 = st.columns([1, 2])
-            with c1: ags = st.selectbox(t("state"), get_agri_states_list(), key="agri_state_select")
-            with c2: st.markdown(f'<div class="info-card" style="margin-top:28px;">{AGRICULTURAL_DATA[ags]["description"]}</div>', unsafe_allow_html=True)
-            agk = st.selectbox(t("site"), get_agri_sites_list(ags), key="agri_site_select")
-            agd = get_agri_site_data(ags, agk)
-            st.markdown("---")
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Crop", agd.get("crop_type","N/A"))
-            c2.metric("Irrigation", agd.get("irrigation_method","N/A"))
-            c3.metric("EC", f"{agd['ec_ds_m']} dS/m")
-            sar = calculate_sar(agd['na_meq_l'], agd['ca_meq_l'], agd['mg_meq_l'])
-            nap = calculate_na_percent(agd['na_meq_l'], agd['ca_meq_l'], agd['mg_meq_l'], agd['k_meq_l'])
-            ecr = calculate_ec_quality(agd['ec_ds_m'])
-            ov = classify_irrigation_water(sar, nap, ecr)
-            st.markdown("---")
-            c1, c2, c3 = st.columns(3)
-            c1.metric("SAR", sar.get("sar","N/A"))
-            c2.metric("Na%", f"{nap.get('na_percent','N/A')}%")
-            c3.metric("EC", ecr.get("ec","N/A"))
-            st.markdown("---")
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Class", ov.get("class","N/A"))
-            c2.metric(t("level"), ov.get("level","N/A"))
-            c3.metric(t("action"), ov.get("action","N/A"))
-        except Exception as e: st.error(str(e))
-
-elif MODE_KEY == "verification" and ADV_OK:
-    st.markdown(f'<div class="section-header"><h3>{t("verification_title")}</h3></div>', unsafe_allow_html=True)
-    if DS_OK:
-        c1, c2 = st.columns([3, 1])
-        with c2:
-            if st.button("📥 " + t("load_data"), type="primary", key="load_verified_sites_btn"):
-                try:
-                    df_v = get_verified_sites_as_dataframe()
-                    st.session_state["df_validation"] = df_v
-                    st.success(f"{len(df_v)} {t('sites')}"); st.rerun()
-                except Exception as e: st.error(str(e))
-        with c1: st.info(f"{n_sites_verified} {t('verified_sites')}")
-    df_val = st.session_state.get("df_validation")
-    if df_val is None: st.warning(t("no_file"))
-    else:
-        try:
-            st.dataframe(df_val.head(10), width="stretch")
-            has_tox = "cn_water_mg_l" in df_val.columns and "hg_water_mg_l" in df_val.columns
-            if not has_tox: st.error(t("file_missing_tox"))
-            else:
-                c1, c2 = st.columns(2)
-                with c1: th_d = st.number_input("DRASTIC:", 50, 200, 100, 10, key="verify_th_d_input")
-                with c2: th_dt = st.number_input("DRASTIC-Tox:", 50, 280, 140, 10, key="verify_th_dt_input")
-                mt = st.session_state.get("mining_type", "traditional")
-                d_l, dp_l, act_l = [], [], []
-                for i, row in df_val.iterrows():
-                    try:
-                        ix = calc_index(get_d_rating(float(row["depth_m"])), get_r_rating(float(row["recharge_mm"])),
-                            get_a_rating(str(row["aquifer"])), get_s_rating(str(row["soil"])),
-                            get_t_rating(float(row["slope_pct"])), get_i_rating(str(row["vadose"])),
-                            get_c_rating(float(row["conductivity"])))
-                        d_l.append(ix)
-                        cw = float(row.get("cn_water_mg_l",0.0)); hw = float(row.get("hg_water_mg_l",0.0))
-                        if CALIBRATED_WEIGHTS and CALIBRATED_WEIGHTS.get("mining_type") == mt:
-                            dp_l.append(calc_drastic_t(ix, cw, hw, mining_type=mt,
-                                alpha_override=CALIBRATED_WEIGHTS["alpha"],
-                                beta_override=CALIBRATED_WEIGHTS["beta"],
-                                SF_override=CALIBRATED_WEIGHTS["SF"])["drastic_t"])
-                        else: dp_l.append(calc_drastic_t(ix, cw, hw, mining_type=mt)["drastic_t"])
-                        act_l.append(int(row["actual_contaminated"]))
-                    except Exception: pass
-                st.markdown("---")
-                c1, c2 = st.columns(2)
-                with c1:
-                    st.markdown("#### DRASTIC")
-                    md = calculate_confusion_matrix(d_l, act_l, th_d)
-                    st.metric(t("kappa"), md["kappa"])
-                    st.metric(t("recall"), f"{md['recall']}%")
-                    st.metric(t("accuracy"), f"{md.get('accuracy','N/A')}%")
-                with c2:
-                    st.markdown("#### DRASTIC-Tox")
-                    mp = calculate_confusion_matrix(dp_l, act_l, th_dt)
-                    st.metric(t("kappa"), mp["kappa"])
-                    st.metric(t("recall"), f"{mp['recall']}%")
-                    st.metric(t("accuracy"), f"{mp.get('accuracy','N/A')}%")
-        except Exception as e: st.error(str(e))
-
-elif MODE_KEY == "transport" and ADV_OK:
-    st.markdown(f'<div class="section-header"><h3>{t("transport_title")}</h3></div>', unsafe_allow_html=True)
-    if "cv" not in st.session_state: st.warning(t("mode_system"))
-    else:
-        cv = st.session_state["cv"]
-        c1, c2 = st.columns(2)
-        with c1:
-            ic = st.number_input("C0:", 0.001, 10.0, 0.10, 0.001, format="%.4f", key="trans_init_conc")
-            ds = st.number_input("Distance (m):", 10.0, 5000.0, 500.0, 50.0, key="trans_distance")
-        with c2:
-            gr = st.number_input("Gradient:", 0.0001, 0.5, 0.01, 0.0001, format="%.4f", key="trans_gradient")
-            yr = st.slider("Years:", 1, 30, 10, 1, key="trans_years")
-        po = st.slider("Porosity:", 0.02, 0.55, 0.25, 0.01, key="trans_porosity")
-        kv = st.number_input("K (m/d):", 0.01, 500.0, float(cv.get("conductivity", 3.5)), 0.1, key="trans_k_val")
-        di = st.number_input("Dispersivity:", 0.1, 100.0, 10.0, 0.5, key="trans_disper")
-        if st.button("🚀 " + t("run"), type="primary", key="run_transport_btn"):
-            st.session_state["transport_result"] = model_contaminant_transport_fixed(ic, kv, po, gr, ds, yr, di)
-        if "transport_result" in st.session_state:
-            tr = st.session_state["transport_result"]
-            if "error" in tr: st.error(tr["error"])
-            else:
-                c1, c2, c3 = st.columns(3)
-                c1.metric("Velocity", f"{tr['v_seepage']:.6f} m/d")
-                c2.metric("Dispersion", f"{tr['D_dispersion']} m2/d")
-                c3.metric("Travel Time", f"{tr['t_travel_years']} yr")
-                st.dataframe(tr["results"], width="stretch")
-                st.line_chart(tr["results"].set_index("Year")["Concentration"])
-
-elif MODE_KEY == "independent" and ADV_OK:
-    st.markdown(f'<div class="section-header"><h3>{t("independent_title")}</h3></div>', unsafe_allow_html=True)
-    df_val = st.session_state.get("df_validation")
-    if df_val is None: st.warning(t("upload_validation_first"))
-    else:
-        try:
-            req = ["depth_m","recharge_mm","slope_pct","conductivity","aquifer","soil","vadose","actual_contaminated"]
-            miss = [c for c in req if c not in df_val.columns]
-            if miss: st.error(f"Missing: {miss}")
-            else:
-                if st.button("🚀 " + t("run"), type="primary", key="run_ind_val_btn"):
-                    with st.spinner(t("calculating")):
-                        try:
-                            df_i = df_val.copy()
-                            if "DRASTIC" not in df_i.columns:
-                                dv = []
-                                for _, row in df_i.iterrows():
-                                    try: dv.append(calc_index(get_d_rating(float(row["depth_m"])), get_r_rating(float(row["recharge_mm"])),
-                                        get_a_rating(str(row["aquifer"])), get_s_rating(str(row["soil"])),
-                                        get_t_rating(float(row["slope_pct"])), get_i_rating(str(row["vadose"])),
-                                        get_c_rating(float(row["conductivity"]))))
-                                    except Exception: dv.append(0)
-                                df_i["DRASTIC"] = dv
-                            if "DRASTIC_Tox" not in df_i.columns and "cn_water_mg_l" in df_i.columns and "hg_water_mg_l" in df_i.columns:
-                                dtv = []; mti = st.session_state.get("mining_type", "traditional")
-                                for _, row in df_i.iterrows():
-                                    try:
-                                        ix = calc_index(get_d_rating(float(row["depth_m"])), get_r_rating(float(row["recharge_mm"])),
-                                            get_a_rating(str(row["aquifer"])), get_s_rating(str(row["soil"])),
-                                            get_t_rating(float(row["slope_pct"])), get_i_rating(str(row["vadose"])),
-                                            get_c_rating(float(row["conductivity"])))
-                                        dtv.append(calc_drastic_t(ix, float(row.get("cn_water_mg_l",0)),
-                                            float(row.get("hg_water_mg_l",0)), mining_type=mti)["drastic_t"])
-                                    except Exception: dtv.append(0)
-                                df_i["DRASTIC_Tox"] = dtv
-                            st.session_state["ind_val_result"] = independent_validation(df_i, "DRASTIC", "actual_contaminated", test_size=0.3)
-                        except Exception as e: st.error(str(e))
-                if "ind_val_result" in st.session_state:
-                    r = st.session_state["ind_val_result"]
-                    if "error" in r: st.error(r["error"])
-                    else:
-                        c1, c2, c3, c4 = st.columns(4)
-                        c1.metric("alpha", r.get("best_alpha","N/A"))
-                        c2.metric("beta", r.get("best_beta","N/A"))
-                        c3.metric(f"{t('kappa')} (Train)", r.get("train_kappa","N/A"))
-                        c4.metric(f"{t('kappa')} (Test)", r.get("test_kappa","N/A"))
-        except Exception as e: st.error(str(e))
-
-elif MODE_KEY == "satellite" and ADV_OK:
-    st.markdown(f'<div class="section-header"><h3>{t("satellite_title")}</h3></div>', unsafe_allow_html=True)
-    c1, c2 = st.columns(2)
-    with c1: lt = st.number_input("Latitude:", -90.0, 90.0, 13.55, 0.01, format="%.4f", key="sat_lat_input")
-    with c2: ln = st.number_input("Longitude:", -180.0, 180.0, 33.60, 0.01, format="%.4f", key="sat_lon_input")
-    yr = st.slider("Years:", 1, 10, 3, 1, key="sat_years_slider")
-    if st.button("🛰️ " + t("run"), type="primary", key="fetch_sat_btn"):
-        with st.spinner(t("calculating")):
-            try: st.session_state["sat_result"] = fetch_satellite_data(lt, ln, yr)
-            except Exception as e: st.error(str(e))
-    if "sat_result" in st.session_state:
-        s = st.session_state["sat_result"]
-        if s.get("rainfall_mm") is not None:
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Rainfall", f"{s['rainfall_mm']} mm")
-            c2.metric("Temp", f"{s['temperature_c']} C")
-            c3.metric("Climate", s["aridity"])
-            c4.metric("NDVI", s["ndvi_estimated"])
-            st.caption(s['source'])
-        else: st.error(s.get('source',''))
-
-elif MODE_KEY == "dynamic" and ADV_OK:
-    st.markdown(f'<div class="section-header"><h3>{t("dynamic_title")}</h3></div>', unsafe_allow_html=True)
-    if "ci" not in st.session_state: st.warning(t("mode_system"))
-    else:
-        c1, c2 = st.columns(2)
-        with c1:
-            yr = st.slider("Years:", 1, 50, 10, 1, key="dyn_years_slider")
-            mn = st.slider("Mining:", 0.0, 0.20, 0.05, 0.01, key="dyn_mining_slider")
-        with c2:
-            cl = st.slider("Climate:", -0.10, 0.05, -0.02, 0.005, key="dyn_climate_slider")
-            pp = st.slider("Pop:", 0.0, 0.10, 0.03, 0.01, key="dyn_pop_slider")
-        cr0 = st.slider("CRI:", 0.0, 10.0, 1.0, 0.1, key="dyn_cri_slider")
-        mr0 = st.slider("MRI:", 0.0, 10.0, 0.5, 0.1, key="dyn_mri_slider")
-        if st.button("⏳ " + t("run"), type="primary", key="run_dyn_btn"):
-            try: st.session_state["dyn"] = calculate_dynamic_risk(st.session_state["ci"], yr, mn, cl, pp, cr0, mr0)
-            except Exception as e: st.error(str(e))
-        if "dyn" in st.session_state:
-            res = st.session_state["dyn"]
-            if isinstance(res, dict) and "combined" in res:
-                st.dataframe(res["combined"], width="stretch")
-
-elif MODE_KEY == "modflow" and MODFLOW_OK:
-    st.markdown(f'<div class="section-header"><h3>{t("modflow_title")}</h3></div>', unsafe_allow_html=True)
-    mok, mmsg = is_modflow_available()
-    if not mok: st.error(mmsg)
-    else:
-        st.success(mmsg)
-        c1, c2 = st.columns(2)
-        with c1:
-            nl = st.number_input("Layers:", 1, 5, 1, key="mf_nlay_input")
-            nr = st.number_input("Rows:", 5, 50, 20, key="mf_nrow_input")
-            nc = st.number_input("Cols:", 5, 50, 20, key="mf_ncol_input")
-            dr = st.number_input("Delr:", 50.0, 5000.0, 500.0, 50.0, key="mf_delr_input")
-        with c2:
-            dc = st.number_input("Delc:", 50.0, 5000.0, 500.0, 50.0, key="mf_delc_input")
-            tp = st.number_input("Top:", 100.0, 2000.0, 350.0, 10.0, key="mf_top_input")
-            bt = st.number_input("Bottom:", 0.0, 1000.0, 250.0, 10.0, key="mf_botm_input")
-            kv = st.number_input("K:", 0.01, 500.0, 3.5, 0.1, key="mf_k_input")
-            rc = st.number_input("Recharge:", 0.0, 500.0, 15.0, 1.0, key="mf_rech_input")
-        if st.button("🚀 " + t("run"), type="primary", key="run_mf_btn"):
-            try:
-                ws = f"/tmp/mf_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
-                st.session_state["mf_res"] = build_and_run_model(workspace=ws, nlay=int(nl), nrow=int(nr),
-                    ncol=int(nc), delr=float(dr), delc=float(dc), top=float(tp), botm=float(bt),
-                    k_value=float(kv), recharge_mm=float(rc))
-            except Exception as e: st.error(str(e))
-        if "mf_res" in st.session_state:
-            res = st.session_state["mf_res"]
-            if res.get("success"):
-                c1, c2, c3 = st.columns(3)
-                c1.metric("Min", f"{res['head_min']:.2f} m")
-                c2.metric("Max", f"{res['head_max']:.2f} m")
-                c3.metric("Mean", f"{res['head_mean']:.2f} m")
-
-st.markdown("---")
-st.markdown(f"""<div style="text-align:center;color:#666;padding:10px;"><b>{t("app_title")} v58.0</b> - PILOT VERSION<br><span style="font-size:0.85em;">{t("screening_only")}</span></div>""", unsafe_allow_html=True)
+                                m_dt = compute_basic_metrics(act_l, dp_l, th
