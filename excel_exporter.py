@@ -1,5 +1,5 @@
 """
-Excel Multi-sheet Exporter — DRASTIC-Tox v58.6
+Excel Multi-sheet Exporter — DRASTIC-Tox v58.9
 Author: Shihab Alhadi + Sarah Akasha
 University of Khartoum, Faculty of Engineering
 
@@ -11,6 +11,9 @@ Generates comprehensive Excel reports with 5 sheets:
     5. Metadata — Report generation info
 
 Requires: openpyxl (already in requirements)
+
+Changelog:
+    - v58.9: Updated DRASTIC-Tox range from /280 to /300
 """
 import datetime
 from io import BytesIO
@@ -81,18 +84,6 @@ def generate_excel_report(
 ):
     """
     Generate Excel report with 5 sheets. Returns bytes.
-
-    Parameters
-    ----------
-    site_info : dict with name, state, coords, depth, recharge, slope,
-                conductivity, cn, hg, aquifer, soil, vadose
-    drastic_result : dict from calc_drastic_t (base_drastic, cn_score,
-                    hg_score, base_bonus, source_factor, toxicity_bonus,
-                    drastic_t, increase_pct)
-    risk_info : dict from classify (level, action)
-    mining_type : str
-    spsa_result : dict (optional)
-    mc_result : dict (optional)
     """
     ok, Workbook = _has_openpyxl()
     if not ok:
@@ -149,6 +140,7 @@ def generate_excel_report(
     ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=2)
     row += 1
 
+    # v58.9: DRASTIC-Tox range updated to /300
     idx_rows = [
         ("DRASTIC Index", f"{drastic_result.get('base_drastic', 'N/A')} / 230"),
         ("CN Score", drastic_result.get("cn_score", "N/A")),
@@ -156,7 +148,7 @@ def generate_excel_report(
         ("Base Bonus", drastic_result.get("base_bonus", "N/A")),
         ("Source Factor (SF)", drastic_result.get("source_factor", "N/A")),
         ("Final Bonus", drastic_result.get("toxicity_bonus", "N/A")),
-        ("DRASTIC-Tox Index", f"{drastic_result.get('drastic_t', 'N/A')} / 280"),
+        ("DRASTIC-Tox Index", f"{drastic_result.get('drastic_t', 'N/A')} / 300"),
         ("Increase", f"+{drastic_result.get('increase_pct', 0)}%"),
     ]
     for label, val in idx_rows:
@@ -383,7 +375,7 @@ def generate_excel_report(
 
     meta_rows = [
         ("Application", "DRASTIC-Tox"),
-        ("Version", "v58.6"),
+        ("Version", "v58.9"),
         ("Report Date", datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')),
         ("Authors", "Shihab Alhadi Saeed Dangal & Sarah Akasha Al-Tayeb Ali"),
         ("Institution", "University of Khartoum — Faculty of Engineering"),
@@ -413,4 +405,4 @@ def generate_excel_report(
     output = BytesIO()
     wb.save(output)
     output.seek(0)
-    return output.getvalue()
+    return output.getvalue() 
