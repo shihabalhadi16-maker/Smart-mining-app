@@ -74,7 +74,6 @@ div[data-testid="stMetric"]{background:linear-gradient(135deg,#fff,#f9f5ec);bord
 @media(max-width:768px){.header-title{font-size:1.5em!important;}.header-container{padding:18px 14px!important;}[data-testid="stHorizontalBlock"]{flex-direction:column!important;}[data-testid="stHorizontalBlock"]>div{width:100%!important;}.stTabs [data-baseweb="tab"]{padding:8px 12px;font-size:.8em;}}
 </style>""", unsafe_allow_html=True)
 
-# MODFLOW
 MODFLOW_URL = "https://github.com/MODFLOW-ORG/modflow6/releases/download/6.4.4/mf6.4.4_linux.zip"
 MODFLOW_DIR = "/tmp/modflow6"
 
@@ -133,7 +132,6 @@ try:
     DEV_OK = True
 except ImportError: DEV_OK = False
 
-# Safe helpers
 def get_loaded_df(*keys):
     for key in keys:
         df = st.session_state.get(key)
@@ -392,8 +390,7 @@ th{{background-color:#f5eedc;color:#5c2c16;}}.metric{{font-size:1.5em;font-weigh
 .disclaimer{{background:#fff3e0;padding:15px;border-right:4px solid #ff9800;margin:20px 0;}}</style></head><body>
 <h1>⛏️ تقرير تقييم المخاطر</h1>
 <p><b>التاريخ:</b> {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}</p>
-<h2>📍 معلومات الموقع</h2>
-<table>
+<h2>📍 معلومات الموقع</h2><table>
 <tr><th>الموقع</th><td>{site_info.get('name','N/A')}</td></tr>
 <tr><th>الولاية</th><td>{site_info.get('state','N/A')}</td></tr>
 <tr><th>الإحداثيات</th><td>{site_info.get('coords','N/A')}</td></tr>
@@ -401,8 +398,7 @@ th{{background-color:#f5eedc;color:#5c2c16;}}.metric{{font-size:1.5em;font-weigh
 <tr><th>التوثيق</th><td>{'موثق' if site_info.get('verified', False) else 'للعرض'}</td></tr>
 <tr><th>نمط التعدين</th><td>{site_info.get('mining_type_ar','N/A')}</td></tr>
 </table>
-<h2>📊 المعايير</h2>
-<table>
+<h2>📊 المعايير</h2><table>
 <tr><th>العمق (D)</th><td>{site_info.get('depth','N/A')} م</td></tr>
 <tr><th>التغذية (R)</th><td>{site_info.get('recharge','N/A')} مم/سنة</td></tr>
 <tr><th>الميل (T)</th><td>{site_info.get('slope','N/A')} %</td></tr>
@@ -410,8 +406,7 @@ th{{background-color:#f5eedc;color:#5c2c16;}}.metric{{font-size:1.5em;font-weigh
 <tr><th>CN</th><td>{site_info.get('cn','N/A')} mg/L</td></tr>
 <tr><th>Hg</th><td>{site_info.get('hg','N/A')} mg/L</td></tr>
 </table>
-<h2>🎯 النتائج</h2>
-<table>
+<h2>🎯 النتائج</h2><table>
 <tr><th>DRASTIC</th><td class="metric">{drastic}/230</td></tr>
 <tr><th>DRASTIC-Tox</th><td class="metric">{drastic_t}/280</td></tr>
 <tr><th>المستوى</th><td class="metric">{level}</td></tr>
@@ -430,19 +425,12 @@ def build_heatmap_verified(show_heat=True, show_markers=True):
             if not coords or len(coords) < 2: continue
             lat, lon = coords[0], coords[1]
             try:
-                drastic = calc_index(get_d_rating(site_data.get("depth_m",15)),
-                    get_r_rating(site_data.get("recharge_mm",100)),
-                    get_a_rating(site_data.get("aquifer","massive_sandstone")),
-                    get_s_rating(site_data.get("soil","sand")),
-                    get_t_rating(site_data.get("slope_pct",4)),
-                    get_i_rating(site_data.get("vadose","sand_gravel")),
-                    get_c_rating(site_data.get("conductivity",5)))
+                drastic = calc_index(get_d_rating(site_data.get("depth_m",15)), get_r_rating(site_data.get("recharge_mm",100)), get_a_rating(site_data.get("aquifer","massive_sandstone")), get_s_rating(site_data.get("soil","sand")), get_t_rating(site_data.get("slope_pct",4)), get_i_rating(site_data.get("vadose","sand_gravel")), get_c_rating(site_data.get("conductivity",5)))
                 cn = site_data.get("cn_water_mg_l",0.0); hg = site_data.get("hg_water_mg_l",0.0)
                 mt = site_data.get("mining_type","traditional")
                 if CALIBRATED_WEIGHTS and CALIBRATED_WEIGHTS.get("mining_type") == mt:
                     w = CALIBRATED_WEIGHTS
-                    drastic_t = calc_drastic_t(drastic, cn, hg, mining_type=mt,
-                        alpha_override=w["alpha"], beta_override=w["beta"], SF_override=w["SF"])["drastic_t"]
+                    drastic_t = calc_drastic_t(drastic, cn, hg, mining_type=mt, alpha_override=w["alpha"], beta_override=w["beta"], SF_override=w["SF"])["drastic_t"]
                 else: drastic_t = calc_drastic_t(drastic, cn, hg, mining_type=mt)["drastic_t"]
             except Exception: continue
             if drastic_t >= 180: color, radius, level = "#d32f2f", 20, "مرتفع جداً"; stats["very_high"] += 1
@@ -451,15 +439,11 @@ def build_heatmap_verified(show_heat=True, show_markers=True):
             else: color, radius, level = "#388e3c", 9, "منخفض"; stats["low"] += 1
             popup_html = f"""<div style="font-family:Arial;font-size:12px;min-width:230px;"><h4 style="color:{color};margin:0 0 8px 0;">{site_data.get('name_ar', site_key)}</h4><hr><b>الولاية:</b> {state_name}<br><b>DRASTIC:</b> {drastic}<br><b>DRASTIC-Tox:</b> <span style="color:{color};font-weight:bold;">{drastic_t}</span><br><b>المستوى:</b> {level}<br><b>CN:</b> {cn} mg/L<br><b>Hg:</b> {hg} mg/L</div>"""
             if show_markers:
-                folium.CircleMarker(location=[lat,lon], radius=radius,
-                    popup=folium.Popup(popup_html, max_width=280),
-                    tooltip=f"{site_data.get('name_ar', site_key)} — {drastic_t}",
-                    color=color, fill=True, fillColor=color, fillOpacity=0.75, weight=2).add_to(m)
+                folium.CircleMarker(location=[lat,lon], radius=radius, popup=folium.Popup(popup_html, max_width=280), tooltip=f"{site_data.get('name_ar', site_key)} — {drastic_t}", color=color, fill=True, fillColor=color, fillOpacity=0.75, weight=2).add_to(m)
             heat_data.append([lat, lon, min(1.0, drastic_t/230.0)])
             sites_info.append({"state":state_name,"site":site_data.get("name_ar",site_key),"lat":lat,"lon":lon,"DRASTIC":drastic,"DRASTIC-Tox":drastic_t,"CN":cn,"Hg":hg,"المستوى":level})
     if show_heat and heat_data:
-        HeatMap(heat_data, min_opacity=0.3, max_zoom=10, radius=30, blur=20,
-                gradient={0.0:'#388e3c',0.4:'#fbc02d',0.7:'#f57c00',1.0:'#d32f2f'}).add_to(m)
+        HeatMap(heat_data, min_opacity=0.3, max_zoom=10, radius=30, blur=20, gradient={0.0:'#388e3c',0.4:'#fbc02d',0.7:'#f57c00',1.0:'#d32f2f'}).add_to(m)
     legend_html = """<div style="position:fixed;bottom:50px;left:50px;width:230px;background-color:white;border:2px solid grey;z-index:9999;font-size:13px;padding:12px;border-radius:8px;">
 <b>🗺️ مفتاح الخريطة</b><hr><span style="color:#388e3c;">●</span> منخفض (&lt;100)<br><span style="color:#fbc02d;">●</span> متوسط (100-140)<br><span style="color:#f57c00;">●</span> مرتفع (140-180)<br><span style="color:#d32f2f;">●</span> مرتفع جداً (≥180)</div>"""
     m.get_root().html.add_child(folium.Element(legend_html))
@@ -487,9 +471,7 @@ INDUSTRIAL_SITES = load_industrial_sites_csv()
 if "calibrated_weights" not in st.session_state: st.session_state["calibrated_weights"] = None
 CALIBRATED_WEIGHTS = st.session_state["calibrated_weights"]
 
-# SIDEBAR
 st.sidebar.markdown("""<div style="background:linear-gradient(135deg,#5c2c16,#c19a6b);padding:16px;border-radius:12px;color:white;text-align:center;margin-bottom:16px;"><div style="font-size:1.3em;font-weight:700;">📤 منطقة رفع الملفات</div></div>""", unsafe_allow_html=True)
-
 uploaded_val = st.sidebar.file_uploader("🔵 ملف التحقق:", type=["csv","xlsx"], key="uploader_validation")
 uploaded_bulk = st.sidebar.file_uploader("🟢 ملف التقييم الجماعي:", type=["csv","xlsx"], key="uploader_bulk")
 uploaded_extra = st.sidebar.file_uploader("🟡 ملف إضافي:", type=["csv","xlsx"], key="uploader_extra")
@@ -509,7 +491,6 @@ if uploaded_extra is not None:
         df_extra_side = pd.read_csv(uploaded_extra) if uploaded_extra.name.endswith(".csv") else pd.read_excel(uploaded_extra)
         st.session_state["df_extra"] = df_extra_side; st.sidebar.info(f"ℹ️ {len(df_extra_side)} صف")
     except Exception as e: st.sidebar.error(f"❌ {str(e)[:80]}")
-
 if st.sidebar.button("🗑️ مسح جميع الملفات"):
     for k in ["df_validation","df_bulk","df_extra","df_combined"]: st.session_state.pop(k, None)
     st.rerun()
@@ -629,10 +610,7 @@ if mode == "🏠 النظام الأساسي":
             c1.metric("CN", f"{site_data['cn_water_mg_l']} mg/L"); c2.metric("Hg", f"{site_data['hg_water_mg_l']} mg/L")
             st.caption("**الحدود:** CN = 0.05 mg/L | Hg = 0.0007 mg/L")
             try:
-                idx = calc_index(get_d_rating(site_data['depth_m']), get_r_rating(site_data['recharge_mm']),
-                                 get_a_rating(site_data['aquifer']), get_s_rating(site_data['soil']),
-                                 get_t_rating(site_data['slope_pct']), get_i_rating(site_data['vadose']),
-                                 get_c_rating(site_data['conductivity']))
+                idx = calc_index(get_d_rating(site_data['depth_m']), get_r_rating(site_data['recharge_mm']), get_a_rating(site_data['aquifer']), get_s_rating(site_data['soil']), get_t_rating(site_data['slope_pct']), get_i_rating(site_data['vadose']), get_c_rating(site_data['conductivity']))
                 risk = classify(idx); st.session_state["ci"] = idx
                 st.session_state["cv"] = {"depth":site_data['depth_m'],"recharge":site_data['recharge_mm'],"aquifer":site_data['aquifer'],"soil":site_data['soil'],"slope":site_data['slope_pct'],"vadose":site_data['vadose'],"conductivity":site_data['conductivity'],"cn_water_mg_l":site_data['cn_water_mg_l'],"hg_water_mg_l":site_data['hg_water_mg_l']}
                 z1, z2, z3 = st.columns(3)
@@ -643,7 +621,7 @@ if mode == "🏠 النظام الأساسي":
                 else: st.success(f"🟢 {risk['action']}")
                 if CALIBRATED_WEIGHTS and CALIBRATED_WEIGHTS.get("mining_type") == mining_type_key:
                     dt_result = calc_drastic_t(idx, site_data['cn_water_mg_l'], site_data['hg_water_mg_l'], mining_type=mining_type_key, alpha_override=CALIBRATED_WEIGHTS["alpha"], beta_override=CALIBRATED_WEIGHTS["beta"], SF_override=CALIBRATED_WEIGHTS["SF"])
-                    st.caption("✅ يتم استخدام الأوزان المُعايرة")
+                    st.caption("✅ الأوزان المُعايرة")
                 else: dt_result = calc_drastic_t(idx, site_data['cn_water_mg_l'], site_data['hg_water_mg_l'], mining_type=mining_type_key)
                 st.markdown("---"); st.markdown(f"#### 🧪 DRASTIC-Tox — {mining_type_label}")
                 m1, m2, m3, m4 = st.columns(4)
@@ -893,7 +871,7 @@ if mode == "🏠 النظام الأساسي":
                     c1.metric("إجمالي", len(df_saved)); c2.metric("موثقة", safe_sum(df_saved, "verified", 0)); c3.metric("رمادية", safe_sum(df_saved, "is_gray_zone", 0)); c4.metric("ملوثة", safe_sum(df_saved, "actual_contaminated", 0))
             with sub_tabs[1]:
                 st.markdown("#### ⚙️ معايرة α و β")
-                df_cal = st.session_state.get("df_combined") or st.session_state.get("df_validation")
+                df_cal = get_loaded_df("df_combined", "df_validation")
                 if df_cal is None: st.warning("⚠️ حمّل البيانات أولاً")
                 else:
                     if "DRASTIC" not in df_cal.columns:
@@ -925,7 +903,7 @@ if mode == "🏠 النظام الأساسي":
                                 st.metric("α", bb["alpha"]); st.metric("β", bb["beta"]); st.metric("Kappa", bb["kappa"]); st.metric("Recall", f"{bb['recall']}%")
             with sub_tabs[2]:
                 st.markdown("#### 📊 مقارنة النماذج")
-                df_cmp = st.session_state.get("df_combined") or st.session_state.get("df_validation")
+                df_cmp = get_loaded_df("df_combined", "df_validation")
                 if df_cmp is None: st.warning("⚠️ حمّل البيانات أولاً")
                 else:
                     if st.button("🚀 تشغيل المقارنة", type="primary", key="run_cmp"):
@@ -1275,6 +1253,5 @@ elif mode == "🌊 MODFLOW" and MODFLOW_OK:
                 c1, c2, c3 = st.columns(3)
                 c1.metric("أدنى", f"{res['head_min']:.2f} m"); c2.metric("أعلى", f"{res['head_max']:.2f} m"); c3.metric("متوسط", f"{res['head_mean']:.2f} m")
 
-# FOOTER
 st.markdown("---")
 st.markdown("""<div style="text-align:center;color:#666;padding:10px;"><b>نظام التعدين السوداني v57.6</b> — PILOT VERSION<br><span style="font-size:0.85em;">⚠️ أداة فرز أولي — لا تُغني عن الفحص المخبري</span></div>""", unsafe_allow_html=True)
