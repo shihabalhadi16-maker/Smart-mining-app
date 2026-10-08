@@ -1,4 +1,4 @@
-"""نظام التعدين السوداني v58.3 — University of Khartoum"""
+"""نظام التعدين السوداني v58.4 — University of Khartoum"""
 import streamlit as st
 import subprocess, os, sys, shutil, stat, zipfile, io
 import folium
@@ -25,6 +25,13 @@ except ImportError:
     EXT_VAL_OK = False
     _ext_val_fn = None
 
+try:
+    from data_validator import validate_dataframe, get_quality_color, get_quality_label_ar
+    VALIDATOR_OK = True
+except ImportError:
+    VALIDATOR_OK = False
+    validate_dataframe = None
+
 def t(key, **kwargs):
     lang = st.session_state.get("lang", "ar")
     return _t(key, lang)
@@ -49,7 +56,7 @@ try:
 except ImportError:
     AUTOCAL_OK = False
 
-st.set_page_config(page_title="Sudan Mining System v58.3", page_icon="⛏️", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Sudan Mining System v58.4", page_icon="⛏️", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""<style>
 html,body,[class*="css"]{font-family:'Segoe UI','Tahoma',Arial;font-size:15px;}
@@ -505,7 +512,7 @@ th{{background-color:#f5eedc;color:#5c2c16;}}.metric{{font-size:1.5em;font-weigh
 <tr><th>Level</th><td class="metric">{level}</td></tr>
 </table>
 <p><b>{recommendation}</b></p>
-<p style="text-align:center;color:#666;">DRASTIC-Tox v58.3</p>
+<p style="text-align:center;color:#666;">DRASTIC-Tox v58.4</p>
 </body></html>"""
 
 def build_heatmap_verified(show_heat=True, show_markers=True):
@@ -657,7 +664,7 @@ if "ci" in st.session_state: st.sidebar.success(f"{t('current_index')}: {st.sess
 st.sidebar.markdown("---")
 with st.sidebar.expander(t("about"), expanded=False):
     st.markdown(f"""<div class="about-box">
-<h4>{t('app_title')} v58.3</h4>
+<h4>{t('app_title')} v58.4</h4>
 <h4>{t('modules')}:</h4>
 <p style="font-size:0.8em;">
 weight_manager: {'OK' if WM_OK else 'NO'}<br>
@@ -666,7 +673,8 @@ auto_maps: {'OK' if MAPS_OK else 'NO'}<br>
 modflow: {'OK' if MODFLOW_OK else 'NO'}<br>
 advanced: {'OK' if ADV_OK else 'NO'}<br>
 model_development: {'OK' if DEV_OK else 'NO'}<br>
-external_validation: {'OK' if EXT_VAL_OK else 'NO'}
+external_validation: {'OK' if EXT_VAL_OK else 'NO'}<br>
+data_validator: {'OK' if VALIDATOR_OK else 'NO'}
 </p>
 <h4>{t('constraints')}:</h4>
 <ul style="font-size:0.85em;">
@@ -676,7 +684,7 @@ external_validation: {'OK' if EXT_VAL_OK else 'NO'}
 </ul>
 </div>""", unsafe_allow_html=True)
 
-st.markdown(f"""<div class="pilot-banner">{t("pilot_version")}</div><div class="header-container"><div class="header-title">{t("app_title")}</div><div class="header-subtitle">{t("university")}</div><div class="header-subtitle">{t("subtitle")}</div><div class="header-badge">{t("version")} 58.3 | {n_states} | {n_sites_total} {t("sites")} ({n_sites_verified} {t("verified_sites")})</div></div>""", unsafe_allow_html=True)
+st.markdown(f"""<div class="pilot-banner">{t("pilot_version")}</div><div class="header-container"><div class="header-title">{t("app_title")}</div><div class="header-subtitle">{t("university")}</div><div class="header-subtitle">{t("subtitle")}</div><div class="header-badge">{t("version")} 58.4 | {n_states} | {n_sites_total} {t("sites")} ({n_sites_verified} {t("verified_sites")})</div></div>""", unsafe_allow_html=True)
 
 with st.expander(f"📤 {t('upload_files')}", expanded=False):
     c1, c2, c3 = st.columns(3)
@@ -684,23 +692,98 @@ with st.expander(f"📤 {t('upload_files')}", expanded=False):
         mv = st.file_uploader(t("validation_file") + ":", type=["csv","xlsx"], key="main_val_uploader")
         if mv:
             try:
-                st.session_state["df_validation"] = pd.read_csv(mv) if mv.name.endswith(".csv") else pd.read_excel(mv)
-                st.success(f"{len(st.session_state['df_validation'])} {t('rows')}")
+                df_loaded = pd.read_csv(mv) if mv.name.endswith(".csv") else pd.read_excel(mv)
+                st.session_state["df_validation"] = df_loaded
+                st.success(f"{len(df_loaded)} {t('rows')}")
             except Exception as e: st.error(f"{str(e)[:60]}")
     with c2:
         mb = st.file_uploader(t("bulk_file") + ":", type=["csv","xlsx"], key="main_bulk_uploader")
         if mb:
             try:
-                st.session_state["df_bulk"] = pd.read_csv(mb) if mb.name.endswith(".csv") else pd.read_excel(mb)
-                st.success(f"{len(st.session_state['df_bulk'])} {t('rows')}")
+                df_loaded = pd.read_csv(mb) if mb.name.endswith(".csv") else pd.read_excel(mb)
+                st.session_state["df_bulk"] = df_loaded
+                st.success(f"{len(df_loaded)} {t('rows')}")
             except Exception as e: st.error(f"{str(e)[:60]}")
     with c3:
         me = st.file_uploader(t("extra_file") + ":", type=["csv","xlsx"], key="main_extra_uploader")
         if me:
             try:
-                st.session_state["df_extra"] = pd.read_csv(me) if me.name.endswith(".csv") else pd.read_excel(me)
-                st.info(f"{len(st.session_state['df_extra'])} {t('rows')}")
+                df_loaded = pd.read_csv(me) if me.name.endswith(".csv") else pd.read_excel(me)
+                st.session_state["df_extra"] = df_loaded
+                st.info(f"{len(df_loaded)} {t('rows')}")
             except Exception as e: st.error(f"{str(e)[:60]}")
+
+    if VALIDATOR_OK:
+        df_to_validate = None
+        for key in ["df_validation", "df_bulk", "df_extra"]:
+            if key in st.session_state and st.session_state[key] is not None:
+                if hasattr(st.session_state[key], "empty") and not st.session_state[key].empty:
+                    df_to_validate = st.session_state[key]
+                    break
+
+        if df_to_validate is not None:
+            st.markdown("---")
+            st.markdown("#### 🔍 " + ("فحص جودة البيانات" if is_ar() else "Data Quality Check"))
+
+            if st.button("🔍 " + ("فحص الملف" if is_ar() else "Validate File"),
+                         type="secondary", key="run_validator_btn"):
+                with st.spinner("Analyzing data..."):
+                    st.session_state["validation_report"] = validate_dataframe(df_to_validate, mode="mining")
+
+            if "validation_report" in st.session_state:
+                report = st.session_state["validation_report"]
+                score = report["score"]
+                color = get_quality_color(score)
+                label = get_quality_label_ar(score)
+
+                st.markdown(f"""
+                <div style="background:linear-gradient(135deg,{color}22,{color}11);
+                            border:2px solid {color};border-radius:12px;padding:20px;
+                            margin:12px 0;text-align:center;">
+                    <div style="font-size:0.9em;color:#666;">
+                        {"جودة البيانات" if is_ar() else "Data Quality"}
+                    </div>
+                    <div style="font-size:3em;font-weight:700;color:{color};margin:8px 0;">
+                        {score}/100
+                    </div>
+                    <div style="font-size:1.2em;font-weight:600;color:{color};">
+                        {label}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Rows", report["n_rows"])
+                c2.metric("Cols", report["n_cols"])
+                c3.metric("❌ Errors", len(report["errors"]))
+                c4.metric("⚠️ Warnings", len(report["warnings"]))
+
+                if report["errors"]:
+                    st.markdown("---")
+                    st.markdown("#### ❌ " + ("أخطاء حرجة" if is_ar() else "Critical Errors"))
+                    for err in report["errors"]:
+                        msg = err["message_ar"] if is_ar() else err["message_en"]
+                        st.error(f"• {msg}")
+
+                if report["warnings"]:
+                    st.markdown("---")
+                    st.markdown("#### ⚠️ " + ("تحذيرات" if is_ar() else "Warnings"))
+                    for w in report["warnings"]:
+                        msg = w["message_ar"] if is_ar() else w["message_en"]
+                        st.warning(f"• {msg}")
+
+                if report["info"]:
+                    with st.expander("ℹ️ " + ("ملاحظات" if is_ar() else "Info")):
+                        for i in report["info"]:
+                            msg = i["message_ar"] if is_ar() else i["message_en"]
+                            st.info(f"• {msg}")
+
+                st.markdown("---")
+                if report["is_valid"]:
+                    st.success("✅ " + ("البيانات جاهزة للتحليل" if is_ar() else "Data is ready for analysis"))
+                else:
+                    st.error("❌ " + ("يجب إصلاح الأخطاء قبل المتابعة" if is_ar() else "Fix errors before proceeding"))
+
     sample = pd.DataFrame({"site_name":["Site1","Site2"],"depth_m":[12.0,15.0],"recharge_mm":[20.0,18.0],"slope_pct":[3.0,4.0],"conductivity":[2.5,3.0],"aquifer":["massive_sandstone","sand_and_gravel"],"soil":["sand","sandy_loam"],"vadose":["sand_gravel","sandstone"],"cn_water_mg_l":[0.10,0.09],"hg_water_mg_l":[0.008,0.007],"actual_contaminated":[1,1]})
     st.download_button("📥 Template / القالب", data=sample.to_csv(index=False).encode("utf-8-sig"), file_name="template.csv", mime="text/csv", key="download_template_btn")
 
@@ -945,7 +1028,7 @@ if MODE_KEY == "system":
             sm = mm in [t("both"), t("markers")]
             with st.spinner(t("calculating")):
                 mapa, stats, df_sites = build_heatmap_verified(show_heat=sh, show_markers=sm)
-            st_folium(mapa, height=mh, key="map_folium_v583", use_container_width=True)
+            st_folium(mapa, height=mh, key="map_folium_v584", use_container_width=True)
             st.markdown("---")
             st.markdown(f"#### {t('statistics')}")
             c1, c2, c3, c4, c5 = st.columns(5)
@@ -1356,7 +1439,7 @@ if MODE_KEY == "system":
                             st.success(f"{len(df_p)} {t('sites')}")
                         except Exception as e: st.error(str(e))
                 if "auto_maps_fig" in st.session_state:
-                    st.plotly_chart(st.session_state["auto_maps_fig"], use_container_width=True, key="auto_maps_chart_v583")
+                    st.plotly_chart(st.session_state["auto_maps_fig"], use_container_width=True, key="auto_maps_chart_v584")
                     html = st.session_state["auto_maps_fig"].to_html(include_plotlyjs='cdn')
                     st.download_button("📥 HTML", data=html.encode("utf-8"),
                         file_name="auto_maps.html", mime="text/html", key="download_maps_html_btn")
@@ -1508,7 +1591,7 @@ if MODE_KEY == "system":
                             fig.add_trace(go.Scatter(x=fprs, y=tprs, mode='lines+markers', line=dict(color='#5c2c16', width=2), marker=dict(size=4), name='DRASTIC-Tox'))
                             fig.add_trace(go.Scatter(x=[1-res["specificity"]], y=[res["sensitivity"]], mode='markers', marker=dict(size=18, color='red', symbol='star'), name=f"{t('threshold_label')} ({res['optimal_threshold']})"))
                             fig.update_layout(xaxis_title="FPR", yaxis_title="TPR", height=500)
-                            st.plotly_chart(fig, use_container_width=True, key="roc_chart_v583")
+                            st.plotly_chart(fig, use_container_width=True, key="roc_chart_v584")
                         except Exception as e: st.warning(str(e))
                         st.markdown("---")
                         st.warning(f"n = {res['n_sites']} | {t('threshold_label')}: {res['optimal_threshold']}")
@@ -1965,4 +2048,4 @@ elif MODE_KEY == "modflow" and MODFLOW_OK:
                 c3.metric("Mean", f"{res['head_mean']:.2f} m")
 
 st.markdown("---")
-st.markdown(f"""<div style="text-align:center;color:#666;padding:10px;"><b>{t("app_title")} v58.3</b> - PILOT VERSION<br><span style="font-size:0.85em;">{t("screening_only")}</span></div>""", unsafe_allow_html=True)
+st.markdown(f"""<div style="text-align:center;color:#666;padding:10px;"><b>{t("app_title")} v58.4</b> - PILOT VERSION<br><span style="font-size:0.85em;">{t("screening_only")}</span></div>""", unsafe_allow_html=True)
