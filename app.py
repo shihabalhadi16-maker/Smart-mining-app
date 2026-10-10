@@ -70,16 +70,6 @@ except ImportError:
     fetch_soilgrids = classify_aquifer_from_soil = None
     classify_soil_from_texture = estimate_recharge_from_rainfall = None
 
-# ═══════════════════════════════════════════════════════════════
-# ✅ NEW: Water Guardian Import
-# ═══════════════════════════════════════════════════════════════
-try:
-    from water_guardian import render_water_guardian
-    WG_OK = True
-except ImportError:
-    WG_OK = False
-    render_water_guardian = None
-
 def t(key, **kwargs):
     lang = st.session_state.get("lang", "ar")
     return _t(key, lang)
@@ -215,8 +205,7 @@ def safe_sum(df, column, default=0):
     if df is None or column not in df.columns:
         return default
     try:
-        col = df[column]
-        return int(col.sum())
+        return int(df[column].sum())
     except Exception:
         return default
 
@@ -655,9 +644,7 @@ else: preset = {}; n_states = n_sites_total = n_sites_verified = n_agri_states =
 
 INDUSTRIAL_SITES = load_industrial_sites_csv()
 if "lang" not in st.session_state: st.session_state["lang"] = "ar"
-
-if "use_log_transform" not in st.session_state:
-    st.session_state["use_log_transform"] = True
+if "use_log_transform" not in st.session_state: st.session_state["use_log_transform"] = True
 
 _lang_opts = {"🇸🇦 العربية": "ar", "🇬🇧 English": "en"}
 _cur = "🇸🇦 العربية" if st.session_state["lang"] == "ar" else "🇬🇧 English"
@@ -792,8 +779,7 @@ data_validator: {'OK' if VALIDATOR_OK else 'NO'}<br>
 pdf_generator: {'OK' if PDF_OK else 'NO'}<br>
 excel_exporter: {'OK' if EXCEL_OK else 'NO'}<br>
 gis_raster: {'OK' if RASTER_OK else 'NO'}<br>
-live_apis: {'OK' if LIVE_API_OK else 'NO'}<br>
-<b>water_guardian: {'OK' if WG_OK else 'NO'}</b>
+live_apis: {'OK' if LIVE_API_OK else 'NO'}
 </p>
 <h4>{t('constraints')}:</h4>
 <ul style="font-size:0.85em;">
@@ -843,60 +829,42 @@ with st.expander(f"📤 {t('upload_files')}", expanded=False):
         if df_to_validate is not None:
             st.markdown("---")
             st.markdown("#### 🔍 " + ("فحص جودة البيانات" if is_ar() else "Data Quality Check"))
-
             if st.button("🔍 " + ("فحص الملف" if is_ar() else "Validate File"),
                          type="secondary", key="run_validator_btn"):
                 with st.spinner("Analyzing data..."):
                     st.session_state["validation_report"] = validate_dataframe(df_to_validate, mode="mining")
-
             if "validation_report" in st.session_state:
                 report = st.session_state["validation_report"]
                 score = report["score"]
                 color = get_quality_color(score)
                 label = get_quality_label_ar(score)
-
                 st.markdown(f"""
                 <div style="background:linear-gradient(135deg,{color}22,{color}11);
                             border:2px solid {color};border-radius:12px;padding:20px;
                             margin:12px 0;text-align:center;">
-                    <div style="font-size:0.9em;color:#666;">
-                        {"جودة البيانات" if is_ar() else "Data Quality"}
-                    </div>
-                    <div style="font-size:3em;font-weight:700;color:{color};margin:8px 0;">
-                        {score}/100
-                    </div>
-                    <div style="font-size:1.2em;font-weight:600;color:{color};">
-                        {label}
-                    </div>
+                    <div style="font-size:0.9em;color:#666;">{"جودة البيانات" if is_ar() else "Data Quality"}</div>
+                    <div style="font-size:3em;font-weight:700;color:{color};margin:8px 0;">{score}/100</div>
+                    <div style="font-size:1.2em;font-weight:600;color:{color};">{label}</div>
                 </div>
                 """, unsafe_allow_html=True)
-
                 c1, c2, c3, c4 = st.columns(4)
-                c1.metric("Rows", report["n_rows"])
-                c2.metric("Cols", report["n_cols"])
-                c3.metric("❌ Errors", len(report["errors"]))
-                c4.metric("⚠️ Warnings", len(report["warnings"]))
-
+                c1.metric("Rows", report["n_rows"]); c2.metric("Cols", report["n_cols"])
+                c3.metric("❌ Errors", len(report["errors"])); c4.metric("⚠️ Warnings", len(report["warnings"]))
                 if report["errors"]:
-                    st.markdown("---")
-                    st.markdown("#### ❌ " + ("أخطاء حرجة" if is_ar() else "Critical Errors"))
+                    st.markdown("---"); st.markdown("#### ❌ " + ("أخطاء حرجة" if is_ar() else "Critical Errors"))
                     for err in report["errors"]:
                         msg = err["message_ar"] if is_ar() else err["message_en"]
                         st.error(f"• {msg}")
-
                 if report["warnings"]:
-                    st.markdown("---")
-                    st.markdown("#### ⚠️ " + ("تحذيرات" if is_ar() else "Warnings"))
+                    st.markdown("---"); st.markdown("#### ⚠️ " + ("تحذيرات" if is_ar() else "Warnings"))
                     for w in report["warnings"]:
                         msg = w["message_ar"] if is_ar() else w["message_en"]
                         st.warning(f"• {msg}")
-
                 if report["info"]:
                     with st.expander("ℹ️ " + ("ملاحظات" if is_ar() else "Info")):
                         for i in report["info"]:
                             msg = i["message_ar"] if is_ar() else i["message_en"]
                             st.info(f"• {msg}")
-
                 st.markdown("---")
                 if report["is_valid"]:
                     st.success("✅ " + ("البيانات جاهزة للتحليل" if is_ar() else "Data is ready for analysis"))
@@ -915,7 +883,8 @@ if MODE_KEY == "system":
         t("tab_sensitivity"), t("tab_toxicity"), t("tab_gis"),
         t("tab_monte_carlo"), t("tab_advanced"), t("tab_development"),
         t("tab_auto_maps"), t("tab_calibration"), t("tab_threshold"),
-        "⚙️ Profiles", "🔬 External Validation", "🗺️ GIS Raster", "🌐 Live Data"
+        "⚙️ Profiles", "🔬 External Validation", "🗺️ GIS Raster", "🌐 Live Data",
+        "💧 حارس المياه"
     ])
 
     with tabs[0]:
@@ -1148,85 +1117,52 @@ if MODE_KEY == "system":
                 if PDF_OK:
                     try:
                         pdf_bytes = generate_pdf_report(
-                            site_info={
-                                "name": site_key_current,
-                                "state": mt_key,
-                                "coords": "Sudan",
-                                "depth": cv.get("depth", "N/A"),
-                                "recharge": cv.get("recharge", "N/A"),
-                                "slope": cv.get("slope", "N/A"),
-                                "conductivity": cv.get("conductivity", "N/A"),
-                                "cn": cn, "hg": hg,
-                            },
-                            drastic=idx,
-                            drastic_t=dt_res["drastic_t"],
+                            site_info={"name": site_key_current,"state": mt_key,"coords": "Sudan",
+                                "depth": cv.get("depth", "N/A"),"recharge": cv.get("recharge", "N/A"),
+                                "slope": cv.get("slope", "N/A"),"conductivity": cv.get("conductivity", "N/A"),
+                                "cn": cn, "hg": hg},
+                            drastic=idx, drastic_t=dt_res["drastic_t"],
                             level=t(dt_res["level"]),
                             recommendation=t(current_risk["action"]) if current_risk else "—",
-                            cn_score=dt_res["cn_score"],
-                            hg_score=dt_res["hg_score"],
-                            base_bonus=dt_res["base_bonus"],
-                            source_factor=dt_res["source_factor"],
-                            toxicity_bonus=dt_res["toxicity_bonus"],
-                            cn_value=cn,
-                            hg_value=hg,
-                        )
+                            cn_score=dt_res["cn_score"], hg_score=dt_res["hg_score"],
+                            base_bonus=dt_res["base_bonus"], source_factor=dt_res["source_factor"],
+                            toxicity_bonus=dt_res["toxicity_bonus"], cn_value=cn, hg_value=hg)
                         if pdf_bytes:
-                            st.download_button("📄 تحميل PDF",
-                                data=pdf_bytes,
-                                file_name=f"report_{site_key_current}.pdf",
-                                mime="application/pdf",
+                            st.download_button("📄 تحميل PDF", data=pdf_bytes,
+                                file_name=f"report_{site_key_current}.pdf", mime="application/pdf",
                                 key="download_pdf_btn")
-                        else:
-                            st.info("تثبيت fpdf2 مطلوب لتوليد PDF")
-                    except Exception as e:
-                        st.warning(f"تعذر توليد PDF: {str(e)[:80]}")
-                else:
-                    st.info("📄 PDF: يتطلب تثبيت fpdf2 و pdf_generator.py")
+                        else: st.info("تثبيت fpdf2 مطلوب")
+                    except Exception as e: st.warning(f"تعذر PDF: {str(e)[:80]}")
+                else: st.info("📄 PDF: يتطلب fpdf2")
             with c2:
                 if EXCEL_OK:
                     try:
                         spsa_data = st.session_state.get("spsa_result", None)
                         mc_data = st.session_state.get("mc_result", None)
                         excel_bytes = generate_excel_report(
-                            site_info={
-                                "name": site_key_current,
-                                "state": mt_key,
-                                "coords": "Sudan",
-                                "depth": cv.get("depth", "N/A"),
-                                "recharge": cv.get("recharge", "N/A"),
-                                "slope": cv.get("slope", "N/A"),
-                                "conductivity": cv.get("conductivity", "N/A"),
-                                "cn": cn, "hg": hg,
-                                "aquifer": cv.get("aquifer", "—"),
-                                "soil": cv.get("soil", "—"),
-                                "vadose": cv.get("vadose", "—"),
+                            site_info={"name": site_key_current,"state": mt_key,"coords": "Sudan",
+                                "depth": cv.get("depth", "N/A"),"recharge": cv.get("recharge", "N/A"),
+                                "slope": cv.get("slope", "N/A"),"conductivity": cv.get("conductivity", "N/A"),
+                                "cn": cn, "hg": hg,"aquifer": cv.get("aquifer", "—"),
+                                "soil": cv.get("soil", "—"),"vadose": cv.get("vadose", "—"),
                                 "D_rating": get_d_rating(cv.get("depth", 15)),
                                 "R_rating": get_r_rating(cv.get("recharge", 100)),
                                 "A_rating": get_a_rating(cv.get("aquifer", "massive_sandstone")),
                                 "S_rating": get_s_rating(cv.get("soil", "sand")),
                                 "T_rating": get_t_rating(cv.get("slope", 4)),
                                 "I_rating": get_i_rating(cv.get("vadose", "sand_gravel")),
-                                "C_rating": get_c_rating(cv.get("conductivity", 5)),
-                            },
+                                "C_rating": get_c_rating(cv.get("conductivity", 5))},
                             drastic_result=dt_res,
                             risk_info=current_risk if current_risk else classify(idx),
-                            mining_type=mt_key,
-                            spsa_result=spsa_data,
-                            mc_result=mc_data,
-                        )
+                            mining_type=mt_key, spsa_result=spsa_data, mc_result=mc_data)
                         if excel_bytes:
-                            st.download_button("📊 تحميل Excel",
-                                data=excel_bytes,
+                            st.download_button("📊 تحميل Excel", data=excel_bytes,
                                 file_name=f"report_{site_key_current}.xlsx",
                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                 key="download_excel_btn")
-                        else:
-                            st.info("openpyxl مطلوب لتوليد Excel")
-                    except Exception as e:
-                        st.warning(f"تعذر توليد Excel: {str(e)[:80]}")
-                else:
-                    st.info("📊 Excel: يتطلب excel_exporter.py")
-            st.caption("PDF و Excel يحتويان على ملخص كامل + التوصيات")
+                        else: st.info("openpyxl مطلوب")
+                    except Exception as e: st.warning(f"تعذر Excel: {str(e)[:80]}")
+                else: st.info("📊 Excel: يتطلب excel_exporter.py")
 
     with tabs[5]:
         st.markdown(f'<div class="section-header"><h3>{t("heatmap_title")}</h3></div>', unsafe_allow_html=True)
@@ -1236,21 +1172,17 @@ if MODE_KEY == "system":
             c1, c2 = st.columns(2)
             with c1: mm = st.radio(t("view_mode"), [t("both"), t("markers"), t("heat")], key="map_mode_radio", horizontal=True)
             with c2: mh = st.slider(t("height"), 400, 900, 600, 50, key="map_height_slider")
-            sh = mm in [t("both"), t("heat")]
-            sm = mm in [t("both"), t("markers")]
+            sh = mm in [t("both"), t("heat")]; sm = mm in [t("both"), t("markers")]
             with st.spinner(t("calculating")):
                 mapa, stats, df_sites = build_heatmap_verified(show_heat=sh, show_markers=sm)
             st_folium(mapa, height=mh, key="map_folium_v60", use_container_width=True)
             st.markdown("---")
-            st.markdown(f"#### {t('statistics')}")
             c1, c2, c3, c4, c5 = st.columns(5)
             c1.metric(t("low"), stats["low"]); c2.metric(t("medium"), stats["medium"])
             c3.metric(t("high"), stats["high"]); c4.metric(t("very_high"), stats["very_high"])
             c5.metric(t("total"), sum(stats.values()))
-            st.markdown("---")
             st.dataframe(df_sites, use_container_width=True)
-            st.download_button(t("download_sites"),
-                data=df_sites.to_csv(index=False).encode("utf-8-sig"),
+            st.download_button(t("download_sites"), data=df_sites.to_csv(index=False).encode("utf-8-sig"),
                 file_name="verified_sites.csv", mime="text/csv", key="download_sites_btn")
 
     with tabs[6]:
@@ -1259,37 +1191,27 @@ if MODE_KEY == "system":
         if "cv" not in st.session_state: st.warning(t("site_selection"))
         else:
             sub_sens = st.tabs([t("spsa_tab"), t("variation_tab")])
-
             with sub_sens[0]:
                 st.markdown(f"#### {t('spsa_title')}")
                 st.markdown(f'<div class="research-note"><b>{t("reference")}:</b> Napolitano &amp; Fabbri (1996)<br><b>{t("formula")}:</b> Si = (Wi × Ri / DI) × 100</div>', unsafe_allow_html=True)
                 st.info(t("spsa_explanation"))
-
                 if st.button("🚀 " + t("run_spsa"), type="primary", key="run_spsa_btn"):
                     with st.spinner(t("calculating")):
                         st.session_state["spsa_result"] = spsa_analysis(st.session_state["cv"])
-
                 if "spsa_result" in st.session_state:
                     spsa = st.session_state["spsa_result"]
                     st.success(f"🏆 {t('most_influential')}: **{spsa['most_influential']}** | {t('base_index')}: **{spsa['base_index']}**")
-                    st.markdown("---")
                     rows = []
                     for p in spsa["parameters"]:
-                        rows.append({
-                            t("parameter"): p["param"], t("weight_wi"): p["weight"],
+                        rows.append({t("parameter"): p["param"], t("weight_wi"): p["weight"],
                             t("rating_ri"): p["rating"], t("weighted"): p["weighted_score"],
                             t("theoretical_pct"): f"{p['theoretical_pct']}%",
                             t("effective_pct"): f"{p['effective_pct']}%",
-                            t("difference"): f"{p['difference']:+.2f}%",
-                        })
+                            t("difference"): f"{p['difference']:+.2f}%"})
                     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-                    st.markdown("---")
-                    st.markdown(f"#### {t('interpretation')}")
                     for p in spsa["parameters"][:3]:
-                        if p["difference"] > 0:
-                            st.info(f"**{p['param']}**: {t('more_important')} (+{p['difference']:.2f}%)")
-                        elif p["difference"] < 0:
-                            st.warning(f"**{p['param']}**: {t('less_important')} ({p['difference']:.2f}%)")
+                        if p["difference"] > 0: st.info(f"**{p['param']}**: {t('more_important')} (+{p['difference']:.2f}%)")
+                        elif p["difference"] < 0: st.warning(f"**{p['param']}**: {t('less_important')} ({p['difference']:.2f}%)")
                     try:
                         import plotly.graph_objects as go
                         fig = go.Figure()
@@ -1300,9 +1222,7 @@ if MODE_KEY == "system":
                         fig.add_trace(go.Bar(name=t("effective_pct"), x=params, y=eff, marker_color='#5c2c16'))
                         fig.update_layout(barmode='group', height=400, xaxis_title=t("parameter"), yaxis_title="%")
                         st.plotly_chart(fig, use_container_width=True, key="spsa_chart")
-                    except Exception:
-                        pass
-
+                    except Exception: pass
             with sub_sens[1]:
                 st.markdown(f"#### {t('variation_title')}")
                 st.info(t("variation_explanation"))
@@ -1328,7 +1248,6 @@ if MODE_KEY == "system":
             hgw = cv.get("hg_water_mg_l",0.011); cnw = cv.get("cn_water_mg_l",0.025)
             c1, c2 = st.columns(2)
             c1.metric("CN", f"{cnw} mg/L"); c2.metric("Hg", f"{hgw} mg/L")
-            st.markdown(f"#### {t('additional_inputs')}")
             c1, c2 = st.columns(2)
             with c1: hgs = st.number_input(t("hg_in_soil"), 0.0, 100.0, 0.5, 0.1, key="tox_hgs_input")
             with c2: cns = st.number_input(t("cn_in_soil"), 0.0, 100.0, 5.0, 0.5, key="tox_cns_input")
@@ -1343,38 +1262,14 @@ if MODE_KEY == "system":
                     st.session_state["tox_result"] = weighted_toxicity(hgw, hgs, cnw, cns, mining_type=mt_tox)
             if "tox_result" in st.session_state:
                 tox = st.session_state["tox_result"]
-                st.markdown("---")
-                st.markdown(f"#### {t('toxicity_metrics')}")
                 c1, c2, c3 = st.columns(3)
-                c1.metric(t("cn_score"), tox["cn_score"])
-                c2.metric(t("hg_score"), tox["hg_score"])
+                c1.metric(t("cn_score"), tox["cn_score"]); c2.metric(t("hg_score"), tox["hg_score"])
                 c3.metric(t("base_bonus"), tox["base_bonus"])
                 c1, c2 = st.columns(2)
                 c1.metric(t("source_factor") + " (SF)", tox["source_factor"])
                 c2.metric(t("soil_factor"), tox["soil_factor"])
-                st.markdown("---")
-                st.markdown(f"#### {t('two_metrics_explained')}")
                 c1, c2 = st.columns(2)
-                with c1:
-                    st.markdown(f"""<div class="cal-result-card" style="background:linear-gradient(135deg,#e3f2fd,#bbdefb);">
-                        <div class="cal-result-label">{t('drastic_tox_bonus')}</div>
-                        <div class="cal-result-value">{tox['drastic_tox_bonus']}</div>
-                        <div style="font-size:0.8em;color:#0d47a1;margin-top:8px;">
-                            {t('used_in_report')} (Base × SF)
-                        </div>
-                    </div>""", unsafe_allow_html=True)
-                with c2:
-                    st.markdown(f"""<div class="cal-result-card" style="background:linear-gradient(135deg,#fff3e0,#ffe0b2);">
-                        <div class="cal-result-label">{t('toxicity_index')}</div>
-                        <div class="cal-result-value">{tox['index']}</div>
-                        <div style="font-size:0.8em;color:#e65100;margin-top:8px;">
-                            Bonus × Soil Factor
-                        </div>
-                    </div>""", unsafe_allow_html=True)
-                st.markdown("---")
-                c1, c2 = st.columns(2)
-                c1.metric(t("category"), t(tox["category"]))
-                c2.metric(t("action"), t(tox["action"]))
+                c1.metric(t("category"), t(tox["category"])); c2.metric(t("action"), t(tox["action"]))
 
     with tabs[8]:
         st.markdown(f'<div class="section-header"><h3>{t("gis_title")}</h3></div>', unsafe_allow_html=True)
@@ -1389,15 +1284,13 @@ if MODE_KEY == "system":
                 else: df_show = df_all
                 st.caption(f"{len(df_show)} {t('sites')}")
                 st.dataframe(df_show, use_container_width=True)
-                st.download_button("📥 CSV",
-                    data=df_show.to_csv(index=False).encode("utf-8-sig"),
+                st.download_button("📥 CSV", data=df_show.to_csv(index=False).encode("utf-8-sig"),
                     file_name="sites_filtered.csv", mime="text/csv", key="download_gis_csv_btn")
             except Exception as e: st.error(str(e))
 
     with tabs[9]:
         st.markdown(f'<div class="section-header"><h3>{t("mc_title")}</h3></div>', unsafe_allow_html=True)
-        if "ci" not in st.session_state:
-            st.warning(t("site_selection"))
+        if "ci" not in st.session_state: st.warning(t("site_selection"))
         else:
             ni = st.slider(t("simulations"), 100, 5000, 1000, 100, key="mc_n_iter_slider")
             vp = st.slider(t("variation"), 5, 30, 15, 5, key="mc_var_pct_slider")
@@ -1405,29 +1298,22 @@ if MODE_KEY == "system":
                 mt_mc = st.session_state.get("mining_type", "traditional")
                 cal_w = CALIBRATED_WEIGHTS if (CALIBRATED_WEIGHTS and CALIBRATED_WEIGHTS.get("mining_type") == mt_mc) else None
                 st.session_state["mc_result"] = monte_carlo_analysis(
-                    st.session_state["cv"], ni, vp/100.0,
-                    mining_type=mt_mc, calibrated_weights=cal_w)
+                    st.session_state["cv"], ni, vp/100.0, mining_type=mt_mc, calibrated_weights=cal_w)
             if "mc_result" in st.session_state:
                 mc = st.session_state["mc_result"]
-                st.markdown("---")
                 st.markdown(f"#### DRASTIC")
                 c1, c2, c3, c4 = st.columns(4)
                 c1.metric(t("mean"), mc["mean"]); c2.metric(t("std"), mc["std"])
                 c3.metric(t("ci_90"), f"{mc['ci_90'][0]}-{mc['ci_90'][1]}")
                 c4.metric("P>140", f"{mc['prob_over_140']}%")
-                st.markdown("---")
-                st.markdown(f"#### DRASTIC-Tox (مع Bonus)")
+                st.markdown(f"#### DRASTIC-Tox")
                 c1, c2, c3, c4 = st.columns(4)
                 c1.metric(t("mean"), mc["tox_mean"]); c2.metric(t("std"), mc["tox_std"])
                 c3.metric(t("ci_90"), f"{mc['tox_ci_90'][0]}-{mc['tox_ci_90'][1]}")
                 c4.metric("P>140", f"{mc['tox_prob_over_140']}%")
-                c1, c2 = st.columns(2)
-                c1.metric("P>180", f"{mc['tox_prob_over_180']}%")
-                c2.metric("Range", f"{mc['tox_min']}-{mc['tox_max']}")
 
     with tabs[10]:
         st.markdown(f'<div class="section-header"><h3>{t("advanced_title")}</h3></div>', unsafe_allow_html=True)
-        st.info(t("advanced_hint"))
         if not SKLEARN_OK: st.error(t("no_sklearn"))
         else:
             df_val = st.session_state.get("df_validation")
@@ -1471,7 +1357,6 @@ if MODE_KEY == "system":
                                 st.session_state["adv_results"] = {"m_d":m_d,"b_d":b_d,"l_d":l_d,"m_dt":m_dt,"b_dt":b_dt,"l_dt":l_dt}
                         if "adv_results" in st.session_state:
                             r = st.session_state["adv_results"]
-                            st.markdown("---")
                             c1, c2 = st.columns(2)
                             with c1:
                                 st.markdown(f"#### DRASTIC")
@@ -1508,7 +1393,6 @@ if MODE_KEY == "system":
             sub = st.tabs([t("gray_zone"), t("calibration_ab"), t("model_comparison")])
             with sub[0]:
                 st.markdown(f"#### {t('gray_zone')}")
-                st.warning(t("gray_warning"))
                 gray_rows = []
                 for sname, sdata in GRAY_ZONE_SITES.items():
                     for sk, sd in sdata.get("sites", {}).items():
@@ -1516,7 +1400,6 @@ if MODE_KEY == "system":
                             "CN":sd["cn_water_mg_l"],"Hg":sd["hg_water_mg_l"],
                             "Status":t("contaminated") if sd["actual_contaminated"] == 1 else t("clean")})
                 st.dataframe(pd.DataFrame(gray_rows), use_container_width=True, hide_index=True)
-                st.markdown("---")
                 mo = st.radio(t("select"), [t("verified_only_11"), t("with_gray_17")], key="gray_merge_radio")
                 inc_gray = "17" in mo
                 if st.button("🔄 " + t("load_data"), type="primary", key="load_combined_btn"):
@@ -1537,7 +1420,7 @@ if MODE_KEY == "system":
                     st.success(f"{len(df_c)} {t('sites')}"); st.rerun()
                 if "df_combined" in st.session_state:
                     df_s = st.session_state["df_combined"]
-                    st.markdown("---"); st.dataframe(df_s, use_container_width=True)
+                    st.dataframe(df_s, use_container_width=True)
                     c1, c2, c3, c4 = st.columns(4)
                     c1.metric(t("total_sites"), len(df_s))
                     c2.metric(t("verified_sites"), safe_sum(df_s, "verified", 0))
@@ -1573,7 +1456,6 @@ if MODE_KEY == "system":
                         res = st.session_state["cal_result"]
                         if "error" in res: st.error(res["error"])
                         else:
-                            st.markdown("---")
                             c1, c2 = st.columns(2)
                             with c1:
                                 st.markdown(f"#### {t('best_kappa')}")
@@ -1611,7 +1493,6 @@ if MODE_KEY == "system":
             df_s = get_loaded_df("df_combined","df_validation")
             if df_s is None: st.warning(t("no_file"))
             else:
-                st.write(f"{len(df_s)} {t('sites')}")
                 if st.button("🎨 " + t("run"), type="primary", key="gen_maps_btn"):
                     with st.spinner(t("calculating")):
                         try:
@@ -1619,7 +1500,6 @@ if MODE_KEY == "system":
                             if "coords" in df_m.columns and "lon" not in df_m.columns:
                                 df_m["lat"] = df_m["coords"].apply(lambda c: c[0] if isinstance(c,(tuple,list)) and len(c)>=2 else None)
                                 df_m["lon"] = df_m["coords"].apply(lambda c: c[1] if isinstance(c,(tuple,list)) and len(c)>=2 else None)
-                            if "lon" not in df_m.columns: st.error("No coordinates"); st.stop()
                             if "DRASTIC" not in df_m.columns:
                                 dv = []
                                 for _, row in df_m.iterrows():
@@ -1648,7 +1528,6 @@ if MODE_KEY == "system":
                             df_p = prepare_df_for_maps(df_m, (get_d_rating,get_r_rating,get_a_rating,get_s_rating,get_t_rating,get_i_rating,get_c_rating))
                             fig = generate_auto_maps(df_p, show_sudan=True)
                             st.session_state["auto_maps_fig"] = fig
-                            st.success(f"{len(df_p)} {t('sites')}")
                         except Exception as e: st.error(str(e))
                 if "auto_maps_fig" in st.session_state:
                     st.plotly_chart(st.session_state["auto_maps_fig"], use_container_width=True, key="auto_maps_chart_v60")
@@ -1658,7 +1537,6 @@ if MODE_KEY == "system":
 
     with tabs[13]:
         st.markdown(f'<div class="section-header"><h3>{t("auto_calibration")}</h3></div>', unsafe_allow_html=True)
-        st.markdown(f"""<div class="research-note"><b>{t('references')}:</b><br>• Konate et al. (2025)<br>• Karan et al. (2018)<br>• Landis &amp; Koch (1977)</div>""", unsafe_allow_html=True)
         if not AUTOCAL_OK: st.error("auto_calibration.py")
         elif not SKLEARN_OK: st.error(t("no_sklearn"))
         else:
@@ -1675,16 +1553,11 @@ if MODE_KEY == "system":
                     st.success(f"{t('file_has')} {len(df_c)} {t('sites')}")
                     if WM_OK:
                         ceiling = detect_ceiling_effect(df_c, SCOPE_KEY if SCOPE_KEY != "all" else "traditional")
-                        if ceiling:
-                            st.warning("Ceiling Effect detected in CN scores — calibrated alpha may be unreliable.")
-                    st.markdown("---")
-                    st.markdown(f"#### {t('calibration_settings')}")
+                        if ceiling: st.warning("Ceiling Effect detected — calibrated alpha may be unreliable.")
                     c1, c2, c3 = st.columns(3)
                     with c1: mc = st.selectbox(t("mining_pattern"), ["traditional","industrial","mixed"], key="cal_mining_type_select")
                     with c2: ns = st.slider(t("search_precision"), 10, 30, 15, 5, key="cal_n_steps_slider")
                     with c3: th = st.number_input(t("drastic_tox_threshold"), 50, 280, 144, 10, key="cal_threshold_input")
-                    st.caption(f"{t('combinations')}: {ns**3:,}")
-                    st.markdown("---")
                     b1, b2, b3 = st.columns(3)
                     with b1: rc = st.button("🚀 " + t("run_auto_calibration"), type="primary", key="run_auto_cal_btn", use_container_width=True)
                     with b2: rcm = st.button("📊 " + t("compare"), key="run_compare_btn", use_container_width=True)
@@ -1706,12 +1579,10 @@ if MODE_KEY == "system":
                             if WM_OK:
                                 pk = save_calibrated_profile(mc, result, len(df_c))
                                 st.success(f"{t('kappa')} = {result['best_kappa']} — Saved: {pk}")
-                            else:
-                                st.success(f"{t('kappa')} = {result['best_kappa']}")
+                            else: st.success(f"{t('kappa')} = {result['best_kappa']}")
                             st.rerun()
                     if "comparison_result" in st.session_state:
                         cmp = st.session_state["comparison_result"]
-                        st.markdown("---")
                         c1, c2, c3 = st.columns(3)
                         with c1: st.metric(t("default_kappa"), cmp["default_kappa"])
                         with c2: st.metric(t("calibrated_kappa"), cmp["best_kappa"] or "-",
@@ -1721,31 +1592,14 @@ if MODE_KEY == "system":
                         res = st.session_state["auto_cal_result"]
                         ms = st.session_state.get("auto_cal_mining_type","traditional")
                         interp = res.get("kappa_interpretation", {})
-                        st.markdown("---")
                         lbl = WEIGHTS[ms]["ar"] if is_ar() else WEIGHTS[ms]["en"]
                         st.markdown(f"### {t('result')} - {lbl}")
-                        kc = "kappa-excellent" if interp.get("level") == "ممتاز" else "kappa-good" if interp.get("level") == "جيد" else "kappa-moderate" if interp.get("level") == "متوسط" else "kappa-fair" if interp.get("level") == "مقبول" else "kappa-poor"
+                        kc = "kappa-excellent" if interp.get("level") == "ممتاز" else "kappa-good" if interp.get("level") == "جيد" else "kappa-moderate" if interp.get("level") == "متوسط" else "kappa-poor"
                         st.markdown(f'<div class="kappa-box {kc}"><div style="font-size:0.9em;opacity:0.9;">{t("kappa")}</div><div style="font-size:3em;font-weight:700;margin:8px 0;">{res["best_kappa"]}</div><div style="font-size:1.3em;font-weight:600;">{interp.get("level","-")} - {interp.get("en","-")}</div></div>', unsafe_allow_html=True)
-                        st.markdown(f"#### {t('optimal_weights')}")
-                        c1, c2, c3, c4 = st.columns(4)
-                        with c1: st.markdown(f'<div class="cal-result-card"><div class="cal-result-label">alpha (CN)</div><div class="cal-result-value">{res["best_alpha"]}</div></div>', unsafe_allow_html=True)
-                        with c2: st.markdown(f'<div class="cal-result-card"><div class="cal-result-label">beta (Hg)</div><div class="cal-result-value">{res["best_beta"]}</div></div>', unsafe_allow_html=True)
-                        with c3: st.markdown(f'<div class="cal-result-card"><div class="cal-result-label">SF</div><div class="cal-result-value">{res["best_SF"]}</div></div>', unsafe_allow_html=True)
-                        with c4: st.markdown(f'<div class="cal-result-card"><div class="cal-result-label">{t("recall_pct")}</div><div class="cal-result-value">{res["best_recall"]}%</div></div>', unsafe_allow_html=True)
-                        st.markdown("---")
-                        st.markdown(f"#### {t('top_10')}")
-                        tr_ = res.get("all_results", [])[:10]
-                        if tr_:
-                            dt = pd.DataFrame(tr_).rename(columns={"alpha":"alpha (CN)","beta":"beta (Hg)","SF":"SF","kappa":t("kappa"),"recall":t("recall")})
-                            dt.insert(0, t("rank"), range(1, len(dt)+1))
-                            st.dataframe(dt, use_container_width=True, hide_index=True)
-                        st.markdown("---")
-                        st.warning(t("calibration_warning"))
 
     with tabs[14]:
         st.markdown(f'<div class="section-header"><h3>{t("optimal_threshold_title")}</h3></div>', unsafe_allow_html=True)
         st.markdown(f"""<div class="research-note"><b>{t('references')}:</b><br>• Youden (1950)<br>• Landis &amp; Koch (1977)</div>""", unsafe_allow_html=True)
-        st.info(t("threshold_hint"))
         if not AUTOCAL_OK: st.error("auto_calibration.py")
         elif not SKLEARN_OK: st.error(t("no_sklearn"))
         else:
@@ -1758,7 +1612,7 @@ if MODE_KEY == "system":
                 mto = st.selectbox(t("mining_pattern"), ["traditional","industrial","mixed"], key="opt_mining_type_select")
                 uc = False
                 if CALIBRATED_WEIGHTS and CALIBRATED_WEIGHTS.get("mining_type") == mto:
-                    uc = st.checkbox(f"{t('use_calibrated_weights')} (Kappa = {CALIBRATED_WEIGHTS.get('kappa','-')})", value=True, key="use_calibrated_for_opt_chk")
+                    uc = st.checkbox(f"{t('use_calibrated_weights')}", value=True, key="use_calibrated_for_opt_chk")
                 if st.button("🚀 " + t("compute_threshold"), type="primary", key="run_opt_threshold_btn"):
                     with st.spinner(t("calculating")):
                         try:
@@ -1772,59 +1626,22 @@ if MODE_KEY == "system":
                     res = st.session_state["opt_threshold_result"]
                     if "error" in res: st.error(res["error"])
                     else:
-                        lbl = WEIGHTS[res["mining_type"]]["ar"] if is_ar() else WEIGHTS[res["mining_type"]]["en"]
-                        st.markdown("---")
-                        st.markdown(f"### {t('optimal_threshold_title')} - {lbl}")
                         c1, c2, c3, c4 = st.columns(4)
-                        with c1: st.markdown(f'<div class="cal-result-card" style="background:linear-gradient(135deg,#e8f5e9,#c8e6c9);"><div class="cal-result-label">{t("threshold")}</div><div class="cal-result-value">{res["optimal_threshold"]}</div><div class="cal-result-label">{t("youden_index")}</div></div>', unsafe_allow_html=True)
-                        with c2: st.markdown(f'<div class="cal-result-card"><div class="cal-result-label">J</div><div class="cal-result-value">{res["J_max"]}</div></div>', unsafe_allow_html=True)
-                        with c3: st.markdown(f'<div class="cal-result-card"><div class="cal-result-label">{t("sensitivity")}</div><div class="cal-result-value">{res["sensitivity"]}</div></div>', unsafe_allow_html=True)
-                        with c4: st.markdown(f'<div class="cal-result-card"><div class="cal-result-label">{t("specificity")}</div><div class="cal-result-value">{res["specificity"]}</div></div>', unsafe_allow_html=True)
-                        st.markdown("---")
-                        st.markdown(f"#### {t('comparison_default')}")
-                        cmp_df = pd.DataFrame({
-                            "Metric":[t("threshold"),"Youden J",t("sensitivity"),t("specificity")],
-                            "Default (140)":[res["default_threshold"],res["default_J"],res["default_sensitivity"],res["default_specificity"]],
-                            "Optimal":[res["optimal_threshold"],res["J_max"],res["sensitivity"],res["specificity"]]})
-                        st.dataframe(cmp_df, use_container_width=True, hide_index=True)
-                        imp = res["J_max"] - res["default_J"]
-                        if imp > 0.2: st.success(f"{t('excellent_improvement')}: +{imp:.3f}")
-                        elif imp > 0.05: st.info(f"{t('good_improvement')}: +{imp:.3f}")
-                        elif imp > 0: st.warning(f"{t('minor_improvement')}: +{imp:.3f}")
-                        else: st.error(f"{t('default_better')}: {abs(imp):.3f}")
-                        st.markdown("---")
-                        st.markdown(f"#### {t('roc_curve')}")
-                        try:
-                            import plotly.graph_objects as go
-                            roc = res["roc_data"]
-                            fprs = [p["fpr"] for p in roc]; tprs = [p["tpr"] for p in roc]
-                            fig = go.Figure()
-                            fig.add_trace(go.Scatter(x=[0,1], y=[0,1], mode='lines', line=dict(color='gray', dash='dash'), name=t("random")))
-                            fig.add_trace(go.Scatter(x=fprs, y=tprs, mode='lines+markers', line=dict(color='#5c2c16', width=2), marker=dict(size=4), name='DRASTIC-Tox'))
-                            fig.add_trace(go.Scatter(x=[1-res["specificity"]], y=[res["sensitivity"]], mode='markers', marker=dict(size=18, color='red', symbol='star'), name=f"{t('threshold_label')} ({res['optimal_threshold']})"))
-                            fig.update_layout(xaxis_title="FPR", yaxis_title="TPR", height=500)
-                            st.plotly_chart(fig, use_container_width=True, key="roc_chart_v60")
-                        except Exception as e: st.warning(str(e))
-                        st.markdown("---")
-                        st.warning(f"n = {res['n_sites']} | {t('threshold_label')}: {res['optimal_threshold']}")
-                        if st.button("✅ " + t("apply_threshold"), type="primary", key="apply_opt_threshold_btn"):
-                            st.session_state["custom_threshold"] = res["optimal_threshold"]
-                            st.success(f"{t('applied_threshold')}: {res['optimal_threshold']}")
+                        c1.metric(t("threshold"), res["optimal_threshold"])
+                        c2.metric("Youden J", res["J_max"])
+                        c3.metric(t("sensitivity"), res["sensitivity"])
+                        c4.metric(t("specificity"), res["specificity"])
 
     with tabs[15]:
         st.markdown('<div class="section-header"><h3>⚙️ Weight Profiles Manager</h3></div>', unsafe_allow_html=True)
-        if not WM_OK:
-            st.error("weight_manager.py not installed")
+        if not WM_OK: st.error("weight_manager.py not installed")
         else:
-            st.info("Select weight profile. Changes are saved permanently.")
-            mining_filter = st.radio("Mining Type:",
-                ["traditional", "industrial", "mixed"],
+            mining_filter = st.radio("Mining Type:", ["traditional", "industrial", "mixed"],
                 format_func=lambda x: {"traditional":"⛏️ Traditional","industrial":"🏭 Industrial","mixed":"🔀 Mixed"}[x],
                 key="profile_filter", horizontal=True)
             profiles = get_all_profiles()
             active = get_active_profile(mining_filter)
             filtered = {k:v for k,v in profiles.items() if v.get("mining_type") == mining_filter}
-            st.markdown("---")
             st.markdown(f"#### Available Profiles: {len(filtered)}")
             for key, prof in filtered.items():
                 is_active = (active and prof["alpha"] == active.get("alpha")
@@ -1835,116 +1652,63 @@ if MODE_KEY == "system":
                     border_color = "#4caf50" if is_active else "#e0d4b8"
                     bg_color = "#f1f8e9" if is_active else "#faf8f3"
                     src_badge = "Literature" if prof.get("source_type") == "literature" else "Calibrated"
-                    warning_html = f'<div style="background:#fff3e0;border-left:3px solid #ff9800;padding:6px 10px;margin-top:8px;font-size:0.8em;color:#e65100;">{prof.get("warning_ar","")}</div>' if prof.get('warning_ar') else ""
-                    active_html = '<div style="background:#e8f5e9;padding:4px 8px;border-radius:4px;display:inline-block;margin-top:6px;font-size:0.8em;color:#2e7d32;font-weight:bold;">ACTIVE</div>' if is_active else ""
-                    kappa_html = f'<p style="font-size:0.85em;color:#e65100;margin:6px 0;"><b>Kappa:</b> {prof["kappa"]} | <b>n:</b> {prof["n_sites"]}</p>' if prof.get('kappa') else ""
                     st.markdown(f"""
                     <div style="background:{bg_color};border:2px solid {border_color};border-radius:10px;padding:16px;margin:8px 0;">
-                        <div style="display:flex;justify-content:space-between;align-items:center;">
-                            <h4 style="color:#5c2c16;margin:0;">{prof.get('name_ar', key)}</h4>
-                            <span style="font-size:0.75em;background:#e8eaf6;color:#3f51b5;padding:2px 8px;border-radius:4px;">{src_badge}</span>
-                        </div>
-                        <p style="font-size:0.85em;color:#666;margin:6px 0;"><b>Source:</b> {prof.get('source','N/A')}</p>
-                        <div style="display:flex;gap:20px;margin-top:8px;font-size:1.05em;">
-                            <span><b>alpha</b> = <b>{prof['alpha']}</b></span>
-                            <span><b>beta</b> = <b>{prof['beta']}</b></span>
-                            <span><b>SF</b> = <b>{prof['SF']}</b></span>
-                        </div>
-                        <p style="font-size:0.8em;color:#666;margin:6px 0;">{prof.get('description_ar','')}</p>
-                        {kappa_html}
-                        {warning_html}
-                        {active_html}
+                        <h4 style="color:#5c2c16;margin:0;">{prof.get('name_ar', key)}</h4>
+                        <p><b>alpha</b>={prof['alpha']} | <b>beta</b>={prof['beta']} | <b>SF</b>={prof['SF']}</p>
                     </div>
                     """, unsafe_allow_html=True)
                 with col2:
                     if not is_active:
                         if st.button("Activate", key=f"act_{key}", use_container_width=True):
-                            set_active_profile(key)
-                            st.success("Activated")
-                            st.rerun()
-                    else:
-                        st.success("Active")
-            st.markdown("---")
-            st.markdown("#### Active Profile (JSON)")
-            if active: st.json(active)
+                            set_active_profile(key); st.success("Activated"); st.rerun()
+                    else: st.success("Active")
 
     with tabs[16]:
         st.markdown(f'<div class="section-header"><h3>🔬 External Validation</h3></div>', unsafe_allow_html=True)
-        st.markdown(f"""<div class="research-note">
-        <b>Purpose:</b> Proper external validation using train/test split + K-Fold CV.<br>
-        <b>References:</b> Efron (1979) · Kohavi (1995) · Landis &amp; Koch (1977)
-        </div>""", unsafe_allow_html=True)
-
-        if not EXT_VAL_OK:
-            st.error("external_validation.py not installed")
-        elif not SKLEARN_OK:
-            st.error("scikit-learn required")
+        if not EXT_VAL_OK: st.error("external_validation.py not installed")
+        elif not SKLEARN_OK: st.error("scikit-learn required")
         else:
             df_ext = get_loaded_df("df_validation", "df_combined", "df_bulk")
-            if df_ext is None:
-                st.warning("Upload validation file first (Tab 11 → Load Data)")
+            if df_ext is None: st.warning("Upload validation file first")
             else:
-                req_cols = ["depth_m","recharge_mm","slope_pct","conductivity",
-                            "aquifer","soil","vadose","cn_water_mg_l","hg_water_mg_l",
-                            "actual_contaminated"]
+                req_cols = ["depth_m","recharge_mm","slope_pct","conductivity","aquifer","soil","vadose","cn_water_mg_l","hg_water_mg_l","actual_contaminated"]
                 miss = [c for c in req_cols if c not in df_ext.columns]
-                if miss:
-                    st.error(f"Missing columns: {miss}")
+                if miss: st.error(f"Missing: {miss}")
                 else:
                     st.success(f"Data loaded: {len(df_ext)} sites")
-                    st.markdown("---")
                     c1, c2, c3 = st.columns(3)
-                    with c1:
-                        mt_ext = st.selectbox("Mining Type",
-                            ["traditional","industrial","mixed"], key="ext_mining_type")
-                    with c2:
-                        test_pct = st.slider("Test Size (%)", 20, 50, 30, 5, key="ext_test_size")
-                    with c3:
-                        n_folds = st.slider("K-Folds", 3, 10, 5, 1, key="ext_k_folds")
-
+                    with c1: mt_ext = st.selectbox("Mining Type", ["traditional","industrial","mixed"], key="ext_mining_type")
+                    with c2: test_pct = st.slider("Test Size (%)", 20, 50, 30, 5, key="ext_test_size")
+                    with c3: n_folds = st.slider("K-Folds", 3, 10, 5, 1, key="ext_k_folds")
                     c1, c2 = st.columns(2)
-                    with c1:
-                        th_d_ext = st.number_input("DRASTIC threshold", 50, 200, 100, 5, key="ext_th_d")
-                    with c2:
-                        th_dt_ext = st.number_input("DRASTIC-Tox threshold", 50, 280,
-                            int(get_optimal_threshold(mt_ext)), 5, key="ext_th_dt")
-
+                    with c1: th_d_ext = st.number_input("DRASTIC threshold", 50, 200, 100, 5, key="ext_th_d")
+                    with c2: th_dt_ext = st.number_input("DRASTIC-Tox threshold", 50, 280,
+                        int(get_optimal_threshold(mt_ext)), 5, key="ext_th_dt")
                     if st.button("🚀 Run External Validation", type="primary", key="run_ext_val_btn"):
-                        with st.spinner("Running train/test split + K-Fold CV..."):
+                        with st.spinner("Running..."):
                             cal_w = CALIBRATED_WEIGHTS if (CALIBRATED_WEIGHTS and
                                 CALIBRATED_WEIGHTS.get("mining_type") == mt_ext) else None
                             st.session_state["ext_val_result"] = _ext_val_fn(
-                                df_ext, mining_type=mt_ext,
-                                threshold_d=th_d_ext, threshold_dt=th_dt_ext,
+                                df_ext, mining_type=mt_ext, threshold_d=th_d_ext, threshold_dt=th_dt_ext,
                                 test_size=test_pct/100.0, n_folds=n_folds,
-                                calc_index_fn=calc_index,
-                                calc_drastic_t_fn=calc_drastic_t,
+                                calc_index_fn=calc_index, calc_drastic_t_fn=calc_drastic_t,
                                 get_d_rating_fn=get_d_rating, get_r_rating_fn=get_r_rating,
                                 get_a_rating_fn=get_a_rating, get_s_rating_fn=get_s_rating,
                                 get_t_rating_fn=get_t_rating, get_i_rating_fn=get_i_rating,
                                 get_c_rating_fn=get_c_rating,
-                                calibrated_weights=cal_w,
-                                sklearn_ok=SKLEARN_OK)
-
+                                calibrated_weights=cal_w, sklearn_ok=SKLEARN_OK)
                     if "ext_val_result" in st.session_state:
                         r = st.session_state["ext_val_result"]
-                        if "error" in r:
-                            st.error(r["error"])
+                        if "error" in r: st.error(r["error"])
                         else:
-                            st.markdown("---")
-                            st.markdown("#### Dataset Summary")
                             c1, c2, c3 = st.columns(3)
                             c1.metric("Total Sites", r["n_total"])
                             c2.metric("Contaminated", r["n_contaminated"])
                             c3.metric("Clean", r["n_clean"])
-
                             if "n_train" in r:
-                                st.markdown("---")
-                                st.markdown(f"#### Train/Test Split ({100-r['test_size_pct']}/{r['test_size_pct']})")
                                 c1, c2 = st.columns(2)
-                                c1.metric("Training Set", r["n_train"])
-                                c2.metric("Test Set", r["n_test"])
-                                st.markdown("##### Held-out Test Set Performance")
+                                c1.metric("Training Set", r["n_train"]); c2.metric("Test Set", r["n_test"])
                                 c1, c2 = st.columns(2)
                                 with c1:
                                     st.markdown("**DRASTIC**")
@@ -1952,516 +1716,447 @@ if MODE_KEY == "system":
                                     st.metric("ROC-AUC", r.get("test_auc_drastic", "N/A"))
                                 with c2:
                                     st.markdown("**DRASTIC-Tox**")
-                                    kd = None
-                                    if r.get("test_kappa_drastic") is not None and r.get("test_kappa_drastic_tox") is not None:
-                                        kd = r["test_kappa_drastic_tox"] - r["test_kappa_drastic"]
-                                    st.metric("Kappa", r.get("test_kappa_drastic_tox", "N/A"),
-                                              delta=f"{kd:+.3f}" if kd is not None else None)
+                                    st.metric("Kappa", r.get("test_kappa_drastic_tox", "N/A"))
                                     st.metric("ROC-AUC", r.get("test_auc_drastic_tox", "N/A"))
-
                             if "cv_n_folds" in r and r["cv_n_folds"] > 0:
-                                st.markdown("---")
-                                st.markdown(f"#### Stratified {r['cv_n_folds']}-Fold Cross-Validation")
+                                st.markdown(f"#### Stratified {r['cv_n_folds']}-Fold CV")
                                 c1, c2 = st.columns(2)
                                 with c1:
                                     st.markdown("**DRASTIC**")
-                                    st.metric("Kappa (mean ± std)",
-                                              f"{r['cv_kappa_drastic_mean']} ± {r['cv_kappa_drastic_std']}")
-                                    st.metric("ROC-AUC (mean)", r['cv_auc_drastic_mean'])
+                                    st.metric("Kappa", f"{r['cv_kappa_drastic_mean']} ± {r['cv_kappa_drastic_std']}")
+                                    st.metric("ROC-AUC", r['cv_auc_drastic_mean'])
                                 with c2:
                                     st.markdown("**DRASTIC-Tox**")
-                                    st.metric("Kappa (mean ± std)",
-                                              f"{r['cv_kappa_drastic_tox_mean']} ± {r['cv_kappa_drastic_tox_std']}")
-                                    st.metric("ROC-AUC (mean)", r['cv_auc_drastic_tox_mean'])
-                                with st.expander("📊 Fold-by-fold Kappa"):
-                                    fold_df = pd.DataFrame({
-                                        "Fold": list(range(1, len(r["fold_kappas_drastic"]) + 1)),
-                                        "DRASTIC Kappa": r["fold_kappas_drastic"],
-                                        "DRASTIC-Tox Kappa": r["fold_kappas_drastic_tox"],
-                                    })
-                                    st.dataframe(fold_df, use_container_width=True, hide_index=True)
-
+                                    st.metric("Kappa", f"{r['cv_kappa_drastic_tox_mean']} ± {r['cv_kappa_drastic_tox_std']}")
+                                    st.metric("ROC-AUC", r['cv_auc_drastic_tox_mean'])
                             if "baseline_logreg_kappa" in r:
-                                st.markdown("---")
                                 st.markdown("#### Baseline ML Models")
-                                st.caption("Trained on DRASTIC-Tox as sole feature (fair comparison)")
-                                baseline_df = pd.DataFrame({
-                                    "Model": ["DRASTIC-Tox (fixed threshold)",
-                                              "Logistic Regression", "Random Forest"],
-                                    "Kappa": [r.get("test_kappa_drastic_tox", "N/A"),
-                                              r["baseline_logreg_kappa"],
-                                              r["baseline_rf_kappa"]],
-                                    "ROC-AUC": [r.get("test_auc_drastic_tox", "N/A"),
-                                                r["baseline_logreg_auc"],
-                                                r["baseline_rf_auc"]],
-                                })
-                                st.dataframe(baseline_df, use_container_width=True, hide_index=True)
-
-                            if "pr_auc_drastic" in r:
-                                st.markdown("---")
-                                st.markdown("#### Enhanced Metrics (Test Set)")
-                                enhanced_df = pd.DataFrame({
-                                    "Metric": ["PR-AUC", "Brier Score"],
-                                    "DRASTIC": [r["pr_auc_drastic"], r["brier_drastic"]],
-                                    "DRASTIC-Tox": [r["pr_auc_drastic_tox"], r["brier_drastic_tox"]],
-                                })
-                                st.dataframe(enhanced_df, use_container_width=True, hide_index=True)
-                                st.caption("PR-AUC: higher is better · Brier: lower is better")
-
-                            st.markdown("---")
-                            export_df = pd.DataFrame([r])
-                            st.download_button("📥 Download Results (CSV)",
-                                data=export_df.to_csv(index=False).encode("utf-8-sig"),
-                                file_name="external_validation.csv",
-                                mime="text/csv", key="download_ext_val_btn")
-
-                            st.warning("⚠️ With small n, test set is small. Interpret with caution and report CI.")
+                                st.dataframe(pd.DataFrame({
+                                    "Model": ["DRASTIC-Tox", "Logistic Regression", "Random Forest"],
+                                    "Kappa": [r.get("test_kappa_drastic_tox", "N/A"), r["baseline_logreg_kappa"], r["baseline_rf_kappa"]],
+                                    "ROC-AUC": [r.get("test_auc_drastic_tox", "N/A"), r["baseline_logreg_auc"], r["baseline_rf_auc"]],
+                                }), use_container_width=True, hide_index=True)
 
     with tabs[17]:
         st.markdown(f'<div class="section-header"><h3>🗺️ GIS Raster Interpolation</h3></div>', unsafe_allow_html=True)
-        st.markdown(f"""<div class="research-note">
-        <b>Purpose:</b> Convert point risk data into continuous raster surfaces.<br>
-        <b>Methods:</b> IDW (always available) · Kriging (requires pykrige) · GeoTIFF (requires rasterio)
-        </div>""", unsafe_allow_html=True)
-
-        if not RASTER_OK:
-            st.error("gis_raster.py not installed")
+        if not RASTER_OK: st.error("gis_raster.py not installed")
         else:
             df_raster = get_loaded_df("df_combined", "df_validation", "df_bulk")
-
-            if df_raster is None or ("coords" not in df_raster.columns and "lat" not in df_raster.columns):
+            if df_raster is None:
                 if DS_OK:
                     try:
                         rows = []
                         for _st_name, _st_data in STATES_DATABASE.items():
                             for _sk, _sd in _st_data.get("sites", {}).items():
                                 _c = _sd.get("coords")
-                                if not _c or len(_c) < 2:
-                                    continue
-                                rows.append({
-                                    "site_name": _sd.get("name_ar", _sk),
-                                    "site_key": _sk,
-                                    "state": _st_name,
-                                    "lat": float(_c[0]),
-                                    "lon": float(_c[1]),
-                                    "depth_m": _sd.get("depth_m"),
-                                    "recharge_mm": _sd.get("recharge_mm"),
-                                    "slope_pct": _sd.get("slope_pct"),
-                                    "conductivity": _sd.get("conductivity"),
-                                    "aquifer": _sd.get("aquifer"),
-                                    "soil": _sd.get("soil"),
-                                    "vadose": _sd.get("vadose"),
-                                    "cn_water_mg_l": _sd.get("cn_water_mg_l"),
-                                    "hg_water_mg_l": _sd.get("hg_water_mg_l"),
+                                if not _c or len(_c) < 2: continue
+                                rows.append({"site_name": _sd.get("name_ar", _sk),"site_key": _sk,"state": _st_name,
+                                    "lat": float(_c[0]),"lon": float(_c[1]),"depth_m": _sd.get("depth_m"),
+                                    "recharge_mm": _sd.get("recharge_mm"),"slope_pct": _sd.get("slope_pct"),
+                                    "conductivity": _sd.get("conductivity"),"aquifer": _sd.get("aquifer"),
+                                    "soil": _sd.get("soil"),"vadose": _sd.get("vadose"),
+                                    "cn_water_mg_l": _sd.get("cn_water_mg_l"),"hg_water_mg_l": _sd.get("hg_water_mg_l"),
                                     "actual_contaminated": _sd.get("actual_contaminated"),
                                     "mining_type": _sd.get("mining_type", "traditional"),
-                                    "verified": _sd.get("verified", False),
-                                })
+                                    "verified": _sd.get("verified", False)})
                         df_raster = pd.DataFrame(rows) if rows else None
-                    except Exception as _e:
-                        st.error(f"Failed to load built-in sites: {_e}")
-                        df_raster = None
-
+                    except Exception as _e: st.error(f"Failed: {_e}")
             if df_raster is not None and not df_raster.empty:
                 if "coords" in df_raster.columns and ("lat" not in df_raster.columns or "lon" not in df_raster.columns):
                     df_raster = df_raster.copy()
                     def _extract_coord(c, idx):
-                        if isinstance(c, (tuple, list)) and len(c) >= 2:
-                            return c[idx]
+                        if isinstance(c, (tuple, list)) and len(c) >= 2: return c[idx]
                         if isinstance(c, str):
                             try:
                                 import ast
                                 parsed = ast.literal_eval(c)
-                                if isinstance(parsed, (tuple, list)) and len(parsed) >= 2:
-                                    return parsed[idx]
-                            except Exception:
-                                pass
+                                if isinstance(parsed, (tuple, list)) and len(parsed) >= 2: return parsed[idx]
+                            except Exception: pass
                         return None
                     df_raster["lat"] = df_raster["coords"].apply(lambda c: _extract_coord(c, 0))
                     df_raster["lon"] = df_raster["coords"].apply(lambda c: _extract_coord(c, 1))
-
-            if df_raster is None or df_raster.empty:
-                st.warning("No data available. Upload a file or load verified sites.")
-            else:
-                if "lat" not in df_raster.columns or "lon" not in df_raster.columns:
-                    st.error("Coordinates (lat/lon) not found in data")
-                elif df_raster["lat"].isna().all() or df_raster["lon"].isna().all():
-                    st.error("Coordinates are all empty/null")
-                else:
+                if "lat" in df_raster.columns and "lon" in df_raster.columns and not df_raster["lat"].isna().all():
                     st.success(f"Data loaded: {len(df_raster)} sites")
-
-                    st.markdown("---")
                     c1, c2, c3 = st.columns(3)
-
                     with c1:
-                        param_choices = {
-                            "DRASTIC-Tox": "DRASTIC_Tox",
-                            "DRASTIC": "DRASTIC",
-                            "CN (mg/L)": "cn_water_mg_l",
-                            "Hg (mg/L)": "hg_water_mg_l",
-                            "Depth (m)": "depth_m",
-                            "Recharge (mm/yr)": "recharge_mm",
-                            "Conductivity (m/day)": "conductivity",
-                        }
-                        param_label = st.selectbox("Parameter", list(param_choices.keys()),
-                            key="raster_param_select")
+                        param_choices = {"DRASTIC-Tox": "DRASTIC_Tox", "DRASTIC": "DRASTIC",
+                            "CN (mg/L)": "cn_water_mg_l", "Hg (mg/L)": "hg_water_mg_l",
+                            "Depth (m)": "depth_m", "Recharge (mm/yr)": "recharge_mm",
+                            "Conductivity (m/day)": "conductivity"}
+                        param_label = st.selectbox("Parameter", list(param_choices.keys()), key="raster_param_select")
                         param_col = param_choices[param_label]
-
-                    with c2:
-                        method = st.selectbox("Interpolation Method",
-                            ["IDW", "Kriging"], key="raster_method_select")
-
-                    with c3:
-                        resolution = st.slider("Grid Resolution", 30, 200, 80, 10,
-                            key="raster_resolution_slider")
-
+                    with c2: method = st.selectbox("Interpolation", ["IDW", "Kriging"], key="raster_method_select")
+                    with c3: resolution = st.slider("Resolution", 30, 200, 80, 10, key="raster_resolution_slider")
                     if method == "IDW":
-                        c1, c2 = st.columns(2)
-                        with c1:
-                            power = st.slider("IDW Power", 1.0, 5.0, 2.0, 0.5,
-                                key="raster_idw_power_slider")
-                        with c2:
-                            st.caption("Higher power → more localized influence")
+                        power = st.slider("IDW Power", 1.0, 5.0, 2.0, 0.5, key="raster_idw_power_slider")
                         variogram = "linear"
                     else:
                         power = 2.0
-                        c1, c2 = st.columns(2)
-                        with c1:
-                            variogram = st.selectbox("Variogram Model",
-                                ["linear", "power", "gaussian", "spherical", "exponential"],
-                                key="raster_variogram_select")
-                        with c2:
-                            st.caption("Requires pykrige")
-
+                        variogram = st.selectbox("Variogram", ["linear", "power", "gaussian", "spherical", "exponential"], key="raster_variogram_select")
                     points = []
                     for _, row in df_raster.iterrows():
                         try:
-                            lat = float(row["lat"])
-                            lon = float(row["lon"])
-
+                            lat = float(row["lat"]); lon = float(row["lon"])
                             if param_col == "DRASTIC_Tox":
-                                if "DRASTIC_Tox" not in df_raster.columns:
-                                    ix = calc_index(
-                                        get_d_rating(float(row["depth_m"])),
-                                        get_r_rating(float(row["recharge_mm"])),
-                                        get_a_rating(str(row["aquifer"])),
-                                        get_s_rating(str(row["soil"])),
-                                        get_t_rating(float(row["slope_pct"])),
-                                        get_i_rating(str(row["vadose"])),
-                                        get_c_rating(float(row["conductivity"])))
-                                    val = calc_drastic_t(
-                                        ix,
-                                        float(row.get("cn_water_mg_l", 0.0)),
-                                        float(row.get("hg_water_mg_l", 0.0)),
-                                        mining_type=st.session_state.get("mining_type", "traditional"))["drastic_t"]
-                                else:
-                                    val = float(row["DRASTIC_Tox"])
+                                ix = calc_index(get_d_rating(float(row["depth_m"])), get_r_rating(float(row["recharge_mm"])),
+                                    get_a_rating(str(row["aquifer"])), get_s_rating(str(row["soil"])),
+                                    get_t_rating(float(row["slope_pct"])), get_i_rating(str(row["vadose"])),
+                                    get_c_rating(float(row["conductivity"])))
+                                val = calc_drastic_t(ix, float(row.get("cn_water_mg_l", 0.0)),
+                                    float(row.get("hg_water_mg_l", 0.0)), mining_type=st.session_state.get("mining_type", "traditional"))["drastic_t"]
                             elif param_col == "DRASTIC":
-                                if "DRASTIC" not in df_raster.columns:
-                                    val = calc_index(
-                                        get_d_rating(float(row["depth_m"])),
-                                        get_r_rating(float(row["recharge_mm"])),
-                                        get_a_rating(str(row["aquifer"])),
-                                        get_s_rating(str(row["soil"])),
-                                        get_t_rating(float(row["slope_pct"])),
-                                        get_i_rating(str(row["vadose"])),
-                                        get_c_rating(float(row["conductivity"])))
-                                else:
-                                    val = float(row["DRASTIC"])
-                            else:
-                                val = float(row[param_col])
-
+                                val = calc_index(get_d_rating(float(row["depth_m"])), get_r_rating(float(row["recharge_mm"])),
+                                    get_a_rating(str(row["aquifer"])), get_s_rating(str(row["soil"])),
+                                    get_t_rating(float(row["slope_pct"])), get_i_rating(str(row["vadose"])),
+                                    get_c_rating(float(row["conductivity"])))
+                            else: val = float(row[param_col])
                             points.append((lat, lon, val))
-                        except Exception:
-                            continue
-
-                    if len(points) < 3:
-                        st.warning(f"Need at least 3 valid points, got {len(points)}")
-                    else:
+                        except Exception: continue
+                    if len(points) >= 3:
                         st.caption(f"Valid points: {len(points)}")
-
                         if st.button("🎨 Generate Raster", type="primary", key="gen_raster_btn"):
                             with st.spinner(f"Interpolating via {method}..."):
                                 if method == "Kriging":
-                                    result = kriging_interpolation(points, resolution=resolution,
-                                        variogram_model=variogram)
+                                    result = kriging_interpolation(points, resolution=resolution, variogram_model=variogram)
                                     if "error" in result:
-                                        st.warning(f"Kriging failed, using IDW instead: {result['error']}")
                                         result = idw_interpolation(points, resolution=resolution, power=power)
-                                else:
-                                    result = idw_interpolation(points, resolution=resolution, power=power)
+                                else: result = idw_interpolation(points, resolution=resolution, power=power)
                                 st.session_state["raster_result"] = result
-
                         if "raster_result" in st.session_state:
                             result = st.session_state["raster_result"]
-                            if "error" in result:
-                                st.error(result["error"])
-                            else:
-                                st.markdown("---")
-                                st.markdown(f"#### {param_label} — {result['method']} Raster")
-
+                            if "error" not in result:
                                 stats = compute_raster_statistics(result)
                                 c1, c2, c3, c4 = st.columns(4)
-                                c1.metric("Min", round(stats["min"], 1))
-                                c2.metric("Mean", round(stats["mean"], 1))
-                                c3.metric("Max", round(stats["max"], 1))
-                                c4.metric("Std Dev", round(stats["std"], 2))
-
-                                c1, c2, c3, c4 = st.columns(4)
-                                c1.metric("Median", round(stats["median"], 1))
-                                c2.metric("P25", round(stats["p25"], 1))
-                                c3.metric("P75", round(stats["p75"], 1))
-                                c4.metric("Coverage (km²)", stats["coverage_km2"])
-
-                                st.markdown("---")
-                                st.markdown("#### Risk Classification")
-                                classes = classify_raster(result,
-                                    thresholds=[100, 140, 180] if "DRASTIC" in param_col else None)
-                                c1, c2, c3, c4 = st.columns(4)
-                                c1.metric("🟢 Low", f"{classes['low']['percent']}%",
-                                    help=f"{classes['low']['count']} cells")
-                                c2.metric("🟡 Medium", f"{classes['medium']['percent']}%",
-                                    help=f"{classes['medium']['count']} cells")
-                                c3.metric("🟠 High", f"{classes['high']['percent']}%",
-                                    help=f"{classes['high']['count']} cells")
-                                c4.metric("🔴 Very High", f"{classes['very_high']['percent']}%",
-                                    help=f"{classes['very_high']['count']} cells")
-
-                                st.markdown("---")
-                                st.markdown("#### Interactive Raster Map")
-                                colorscale = "RdYlGn_r" if "DRASTIC" in param_col else "Viridis"
-                                fig = create_raster_plotly(result,
-                                    title=f"{param_label} — {result['method']}",
-                                    colorscale=colorscale)
-                                if fig:
-                                    st.plotly_chart(fig, use_container_width=True,
-                                        key="raster_plotly_chart")
-                                else:
-                                    st.warning("Plotly not available")
-
-                                st.markdown("---")
-                                c1, c2 = st.columns(2)
-
-                                with c1:
-                                    try:
-                                        geotiff_bytes = None
-                                        import tempfile
-                                        with tempfile.NamedTemporaryFile(suffix=".tif", delete=False) as tmp:
-                                            tmp_path = tmp.name
-
-                                        gt_result = export_geotiff(result, tmp_path)
-                                        if gt_result["success"]:
-                                            with open(tmp_path, "rb") as f:
-                                                geotiff_bytes = f.read()
-                                            try:
-                                                os.unlink(tmp_path)
-                                            except Exception:
-                                                pass
-
-                                            st.download_button(
-                                                "🗺️ تحميل GeoTIFF",
-                                                data=geotiff_bytes,
-                                                file_name=f"raster_{param_col}.tif",
-                                                mime="image/tiff",
-                                                key="download_geotiff_btn")
-                                        else:
-                                            st.info(f"GeoTIFF: {gt_result['message']}")
-                                    except Exception as e:
-                                        st.info(f"GeoTIFF: {str(e)[:80]}")
-
-                                with c2:
-                                    if fig:
-                                        html = fig.to_html(include_plotlyjs='cdn')
-                                        st.download_button(
-                                            "📥 تحميل HTML",
-                                            data=html.encode("utf-8"),
-                                            file_name=f"raster_{param_col}.html",
-                                            mime="text/html",
-                                            key="download_raster_html_btn")
+                                c1.metric("Min", round(stats["min"], 1)); c2.metric("Mean", round(stats["mean"], 1))
+                                c3.metric("Max", round(stats["max"], 1)); c4.metric("Std Dev", round(stats["std"], 2))
+                                fig = create_raster_plotly(result, title=f"{param_label} — {result['method']}", colorscale="RdYlGn_r")
+                                if fig: st.plotly_chart(fig, use_container_width=True, key="raster_plotly_chart")
 
     with tabs[18]:
         st.markdown(f'<div class="section-header"><h3>🌐 Live API Data</h3></div>', unsafe_allow_html=True)
-        st.markdown(f"""<div class="research-note">
-        <b>Purpose:</b> Fetch real-time and historical environmental data from public APIs.<br>
-        <b>Sources:</b> NASA POWER · Open-Meteo · Open-Elevation · ISRIC SoilGrids<br>
-        <b>All APIs are free and require NO keys.</b>
-        </div>""", unsafe_allow_html=True)
-
-        if not LIVE_API_OK:
-            st.error("live_apis.py not installed")
+        if not LIVE_API_OK: st.error("live_apis.py not installed")
         else:
             c1, c2 = st.columns(2)
-            with c1:
-                use_current = st.checkbox("Use current site coordinates",
-                    value=True, key="live_use_current_chk")
-            with c2:
-                st.caption("Or enter coordinates manually below")
-
+            with c1: use_current = st.checkbox("Use current site coordinates", value=True, key="live_use_current_chk")
+            with c2: st.caption("Or enter manually below")
             if use_current and "current_site_data" in st.session_state:
                 _sd = st.session_state["current_site_data"]
                 _coords = _sd.get("coords", (15.5, 32.5))
-                live_lat = float(_coords[0])
-                live_lon = float(_coords[1])
+                live_lat = float(_coords[0]); live_lon = float(_coords[1])
                 st.success(f"Using: **{_sd.get('name_ar', 'Current Site')}** ({live_lat:.4f}, {live_lon:.4f})")
             else:
                 c1, c2 = st.columns(2)
-                with c1:
-                    live_lat = st.number_input("Latitude", -90.0, 90.0, 15.6, 0.01,
-                        format="%.4f", key="live_lat_input")
-                with c2:
-                    live_lon = st.number_input("Longitude", -180.0, 180.0, 32.5, 0.01,
-                        format="%.4f", key="live_lon_input")
-
-            st.markdown("---")
-
+                with c1: live_lat = st.number_input("Latitude", -90.0, 90.0, 15.6, 0.01, format="%.4f", key="live_lat_input")
+                with c2: live_lon = st.number_input("Longitude", -180.0, 180.0, 32.5, 0.01, format="%.4f", key="live_lon_input")
             c1, c2, c3, c4 = st.columns(4)
             with c1:
                 if st.button("☁️ NASA POWER", type="primary", key="fetch_nasa_btn"):
-                    with st.spinner("Fetching climate data..."):
-                        st.session_state["live_nasa"] = fetch_nasa_power(live_lat, live_lon, years=3)
+                    with st.spinner("Fetching..."): st.session_state["live_nasa"] = fetch_nasa_power(live_lat, live_lon, years=3)
             with c2:
                 if st.button("🌧️ Open-Meteo", type="primary", key="fetch_meteo_btn"):
-                    with st.spinner("Fetching precipitation..."):
-                        st.session_state["live_meteo"] = fetch_open_meteo_precipitation(live_lat, live_lon, years=5)
+                    with st.spinner("Fetching..."): st.session_state["live_meteo"] = fetch_open_meteo_precipitation(live_lat, live_lon, years=5)
             with c3:
                 if st.button("⛰️ Elevation", type="primary", key="fetch_elev_btn"):
-                    with st.spinner("Fetching elevation grid..."):
-                        st.session_state["live_elev"] = fetch_elevation_grid(live_lat, live_lon, radius_km=5)
+                    with st.spinner("Fetching..."): st.session_state["live_elev"] = fetch_elevation_grid(live_lat, live_lon, radius_km=5)
             with c4:
                 if st.button("🪨 Soil", type="primary", key="fetch_soil_btn"):
-                    with st.spinner("Fetching soil properties..."):
-                        st.session_state["live_soil"] = fetch_soilgrids(live_lat, live_lon)
-
-            st.markdown("---")
-
+                    with st.spinner("Fetching..."): st.session_state["live_soil"] = fetch_soilgrids(live_lat, live_lon)
             if "live_nasa" in st.session_state:
                 r = st.session_state["live_nasa"]
-                if "error" in r:
-                    st.error(f"NASA POWER: {r['error']}")
-                else:
-                    st.markdown("#### ☁️ NASA POWER — Climate Data")
+                if "error" not in r:
+                    st.markdown("#### ☁️ NASA POWER")
                     c1, c2, c3, c4 = st.columns(4)
-                    c1.metric("Annual Rainfall", f"{r.get('rainfall_mm_annual', 'N/A')} mm")
-                    c2.metric("Temperature", f"{r.get('temperature_c', 'N/A')} °C")
+                    c1.metric("Rainfall", f"{r.get('rainfall_mm_annual', 'N/A')} mm")
+                    c2.metric("Temp", f"{r.get('temperature_c', 'N/A')} °C")
                     c3.metric("Humidity", f"{r.get('humidity_pct', 'N/A')} %")
-                    c4.metric("Wind Speed", f"{r.get('wind_speed_ms', 'N/A')} m/s")
-                    c1, c2 = st.columns(2)
-                    c1.metric("Temp Max", f"{r.get('temperature_max_c', 'N/A')} °C")
-                    c2.metric("Temp Min", f"{r.get('temperature_min_c', 'N/A')} °C")
-                    st.caption(f"Source: {r.get('source')} | Averaged over {r.get('n_years')} years")
-
+                    c4.metric("Wind", f"{r.get('wind_speed_ms', 'N/A')} m/s")
             if "live_meteo" in st.session_state:
                 r = st.session_state["live_meteo"]
-                if "error" in r:
-                    st.error(f"Open-Meteo: {r['error']}")
-                else:
-                    st.markdown("#### 🌧️ Open-Meteo — Historical Precipitation")
+                if "error" not in r:
+                    st.markdown("#### 🌧️ Open-Meteo")
                     c1, c2, c3 = st.columns(3)
                     c1.metric("Annual Rainfall", f"{r.get('annual_rainfall_mm', 'N/A')} mm")
                     c2.metric("Dry Months", f"{r.get('n_dry_months', 'N/A')} / 12")
                     c3.metric("Mean Temp", f"{r.get('temperature_mean_c', 'N/A')} °C")
-                    if "monthly_avg_mm" in r:
-                        with st.expander("📊 Monthly Breakdown"):
-                            month_names = ["Jan","Feb","Mar","Apr","May","Jun",
-                                           "Jul","Aug","Sep","Oct","Nov","Dec"]
-                            monthly_df = pd.DataFrame({
-                                "Month": month_names,
-                                "Avg (mm)": [r["monthly_avg_mm"].get(str(i), 0) for i in range(1, 13)]
-                            })
-                            st.dataframe(monthly_df, use_container_width=True, hide_index=True)
-                    st.caption(f"Source: {r.get('source')} | Averaged over {r.get('n_years')} years")
-
             if "live_elev" in st.session_state:
                 r = st.session_state["live_elev"]
-                if "error" in r:
-                    st.error(f"Elevation: {r['error']}")
-                else:
-                    st.markdown("#### ⛰️ Open-Elevation — Terrain")
+                if "error" not in r:
+                    st.markdown("#### ⛰️ Elevation")
                     c1, c2, c3 = st.columns(3)
                     c1.metric("Elevation", f"{r.get('elevation_m', 'N/A')} m")
-                    c2.metric("Estimated Slope", f"{r.get('slope_pct', 'N/A')} %")
-                    c3.metric("Relief (5km radius)", f"{r.get('elevation_range_m', 'N/A')} m")
-                    st.caption(f"Source: {r.get('source')}")
-
+                    c2.metric("Slope", f"{r.get('slope_pct', 'N/A')} %")
+                    c3.metric("Relief", f"{r.get('elevation_range_m', 'N/A')} m")
             if "live_soil" in st.session_state:
                 r = st.session_state["live_soil"]
-                if "error" in r:
-                    st.error(f"SoilGrids: {r['error']}")
-                else:
-                    st.markdown("#### 🪨 ISRIC SoilGrids — Soil Properties")
+                if "error" not in r:
+                    st.markdown("#### 🪨 SoilGrids")
                     c1, c2, c3 = st.columns(3)
                     c1.metric("Sand", f"{r.get('sand_pct', 'N/A')} %")
                     c2.metric("Clay", f"{r.get('clay_pct', 'N/A')} %")
                     c3.metric("Silt", f"{r.get('silt_pct', 'N/A')} %")
-                    c1, c2 = st.columns(2)
-                    c1.metric("Organic Carbon", f"{r.get('soc_g_kg', 'N/A')} g/kg")
-                    c2.metric("Bulk Density", f"{r.get('bulk_density_kg_m3', 'N/A')} kg/m³")
-                    st.caption(f"Source: {r.get('source')}")
 
-            has_data = ("live_nasa" in st.session_state and "error" not in st.session_state.get("live_nasa", {})) or \
-                       ("live_meteo" in st.session_state and "error" not in st.session_state.get("live_meteo", {}))
+    # ═══════════════════════════════════════════════════════════
+    # TAB 19: 💧 حارس المياه — Water Guardian
+    # ═══════════════════════════════════════════════════════════
+    with tabs[19]:
+        st.markdown("""
+        <div style="background:linear-gradient(135deg,#184e77,#34a0a4);color:white;
+        padding:20px;border-radius:10px;text-align:center;margin-bottom:20px;">
+            <h2 style="margin:0;">💧 حارس المياه</h2>
+            <p style="margin:5px 0;opacity:0.95;">منصة ذكية لتقييم جودة مياه الري | USSL + FAO</p>
+        </div>
+        """, unsafe_allow_html=True)
 
-            if has_data:
-                st.markdown("---")
-                st.markdown("#### 🔄 Auto-fill DRASTIC Parameters")
-                st.caption("Uses fetched data to suggest recharge, slope, aquifer, and soil values.")
+        # دوال التصنيف
+        def _wg_ec(ec):
+            if ec < 0.25: return ("C1", "excellent", 10)
+            if ec < 0.75: return ("C2", "good", 8)
+            if ec < 2.25: return ("C3", "fair", 6)
+            if ec < 4.00: return ("C4", "poor", 4)
+            return ("C4+", "unsuitable", 1)
 
-                if st.button("🎯 Generate Suggested Values", type="primary", key="autofill_btn"):
-                    suggestions = {}
+        def _wg_sar(sar):
+            if sar < 10: return ("S1", "low", 10)
+            if sar < 18: return ("S2", "medium", 8)
+            if sar < 26: return ("S3", "high", 5)
+            return ("S4", "very_high", 3)
 
-                    rain = None
-                    if "live_meteo" in st.session_state and "annual_rainfall_mm" in st.session_state["live_meteo"]:
-                        rain = st.session_state["live_meteo"]["annual_rainfall_mm"]
-                    elif "live_nasa" in st.session_state and "rainfall_mm_annual" in st.session_state["live_nasa"]:
-                        rain = st.session_state["live_nasa"]["rainfall_mm_annual"]
+        def _wg_no3(no3):
+            if no3 < 5: return ("آمنة", "safe", 10)
+            if no3 < 15: return ("مقبولة", "acceptable", 7)
+            if no3 < 30: return ("مرتفعة", "high", 4)
+            return ("خطيرة", "critical", 1)
 
-                    slope = None
-                    if "live_elev" in st.session_state and "slope_pct" in st.session_state["live_elev"]:
-                        slope = st.session_state["live_elev"]["slope_pct"]
+        def _wg_cl(cl):
+            if cl < 4: return ("آمنة", "safe", 10)
+            if cl < 10: return ("متوسطة", "medium", 7)
+            if cl < 20: return ("مرتفعة", "high", 4)
+            return ("خطيرة", "critical", 1)
 
-                    soil_type = "sandy_loam"
-                    if "live_soil" in st.session_state:
-                        soil_r = st.session_state["live_soil"]
-                        soil_type = classify_soil_from_texture(
-                            soil_r.get("sand_pct"),
-                            soil_r.get("clay_pct"),
-                            soil_r.get("silt_pct"))
-                        suggestions["aquifer"] = classify_aquifer_from_soil(
-                            soil_r.get("sand_pct"),
-                            soil_r.get("clay_pct"))
+        def _wg_hco3(hco3):
+            if hco3 < 1.5: return ("آمنة", "safe", 10)
+            if hco3 < 4: return ("مقبولة", "acceptable", 7)
+            if hco3 < 8: return ("مرتفعة", "high", 4)
+            return ("خطيرة", "critical", 1)
 
-                    suggestions["soil"] = soil_type
+        def _wg_iwqi(ec, sar, no3, cl, hco3):
+            w = {"EC": 0.35, "SAR": 0.25, "NO3": 0.20, "Cl": 0.12, "HCO3": 0.08}
+            s = {"EC": _wg_ec(ec)[2], "SAR": _wg_sar(sar)[2], "NO3": _wg_no3(no3)[2],
+                 "Cl": _wg_cl(cl)[2], "HCO3": _wg_hco3(hco3)[2]}
+            return round(sum(s[k] * w[k] for k in w) * 10, 1), s
 
-                    if rain and slope is not None:
-                        suggestions["recharge_mm"] = estimate_recharge_from_rainfall(rain, soil_type, slope)
-                    elif rain:
-                        suggestions["recharge_mm"] = estimate_recharge_from_rainfall(rain, soil_type, 5.0)
+        def _wg_lbl(i):
+            if i >= 80: return ("🟢 ممتازة", "excellent", "green")
+            if i >= 65: return ("🟢 جيدة", "good", "lightgreen")
+            if i >= 50: return ("🟡 مقبولة", "fair", "orange")
+            if i >= 35: return ("🟠 ضعيفة", "poor", "red")
+            return ("🔴 غير صالحة", "unsuitable", "darkred")
 
-                    if slope is not None:
-                        suggestions["slope_pct"] = slope
+        def _wg_sugar(ec, sar, cl, hco3):
+            s, n = 10, []
+            if ec > 3.0: s -= 5; n.append("ملوحة عالية جداً")
+            elif ec > 1.7: s -= 3; n.append("ملوحة مرتفعة")
+            elif ec > 1.0: s -= 1; n.append("ملوحة طفيفة")
+            if sar > 15: s -= 3; n.append("SAR مرتفع جداً")
+            elif sar > 8: s -= 1.5; n.append("SAR مرتفع")
+            if cl > 20: s -= 3; n.append("كلوريد مرتفع")
+            elif cl > 10: s -= 1.5; n.append("كلوريد مرتفع نسبياً")
+            if hco3 > 8: s -= 1.5; n.append("بيكربونات مرتفعة")
+            s = max(1, s)
+            return ("🟢 مناسب جداً" if s >= 8 else "🟢 مناسب" if s >= 6 else "🟡 مقبول" if s >= 4 else "🔴 غير مناسب", "", s, n)
 
-                    st.session_state["live_suggestions"] = suggestions
+        def _wg_peanut(ec, sar, cl, hco3):
+            s, n = 10, []
+            if ec > 2.5: s -= 5; n.append("ملوحة عالية جداً")
+            elif ec > 1.5: s -= 3; n.append("ملوحة مرتفعة")
+            elif ec > 0.8: s -= 1; n.append("ملوحة طفيفة")
+            if sar > 8: s -= 3; n.append("SAR مرتفع")
+            elif sar > 3: s -= 1.5; n.append("SAR مرتفع نسبياً")
+            if cl > 10: s -= 3; n.append("كلوريد مرتفع")
+            elif cl > 4: s -= 1.5; n.append("كلوريد مرتفع نسبياً")
+            if hco3 > 6: s -= 1; n.append("بيكربونات مرتفعة")
+            s = max(1, s)
+            return ("🟢 مناسب جداً" if s >= 8 else "🟢 مناسب" if s >= 6 else "🟡 مقبول" if s >= 4 else "🔴 غير مناسب", "", s, n)
 
-                if "live_suggestions" in st.session_state:
-                    s = st.session_state["live_suggestions"]
-                    st.markdown("##### Suggested DRASTIC Parameters")
-                    c1, c2, c3, c4 = st.columns(4)
-                    c1.metric("R — Recharge", f"{s.get('recharge_mm', '—')} mm/yr")
-                    c2.metric("T — Slope", f"{s.get('slope_pct', '—')} %")
-                    c3.metric("A — Aquifer", str(s.get("aquifer", "—"))[:20])
-                    c4.metric("S — Soil", str(s.get("soil", "—"))[:20])
+        def _wg_gum(ec, sar, cl, hco3):
+            s, n = 10, []
+            if ec > 10: s -= 4; n.append("ملوحة عالية جداً")
+            elif ec > 6: s -= 2; n.append("ملوحة مرتفعة")
+            elif ec > 3: s -= 0.5; n.append("ملوحة طفيفة")
+            if sar > 20: s -= 2; n.append("SAR مرتفع")
+            elif sar > 12: s -= 1; n.append("SAR مرتفع نسبياً")
+            if cl > 30: s -= 2; n.append("كلوريد مرتفع جداً")
+            elif cl > 20: s -= 1; n.append("كلوريد مرتفع نسبياً")
+            if hco3 > 8: s -= 0.5; n.append("بيكربونات مرتفعة")
+            s = max(1, s)
+            return ("🟢 مناسب جداً" if s >= 8 else "🟢 مناسب" if s >= 6 else "🟡 مقبول" if s >= 4 else "🔴 غير مناسب", "", s, n)
 
-                    st.info("💡 Copy these values to the **Manual Entry** tab to create a new site with real data.")
+        _wg_crops = {
+            "excellent": ["قمح", "ذرة", "برسيم", "خضروات", "طماطم", "بصل", "بطاطس", "🌾 قصب السكر", "🥜 الفول السوداني", "🌳 الصمغ العربي"],
+            "good": ["قمح", "ذرة", "برسيم", "بصل", "بطاطس", "فول", "🌾 قصب السكر", "🌳 الصمغ العربي"],
+            "fair": ["ذرة", "برسيم", "شعير", "قطن", "سمسم", "🌳 الصمغ العربي"],
+            "poor": ["شعير", "قطن", "نخيل", "زيتون", "🌳 الصمغ العربي"],
+            "unsuitable": ["لا يُنصح بالزراعة"],
+        }
 
-# ═══════════════════════════════════════════════════════════════
-# ✅ AGRICULTURAL MODE — Water Guardian Integration
-# ═══════════════════════════════════════════════════════════════
-elif MODE_KEY == "agricultural":
-    if WG_OK:
-        render_water_guardian()
-    else:
-        st.error("⚠️ water_guardian.py غير موجود")
-        st.info("تأكد من رفع ملف water_guardian.py إلى GitHub في نفس المجلد.")
+        _wg_info = {
+            "قصب السكر": {"icon": "🌾", "sci": "Saccharum officinarum", "fao": "Semi-tolerant", "EC_max": 1.7, "SAR_max": 8, "Cl_max": 10, "regions": "النيل الأزرق، سنار، كنانة"},
+            "الفول السوداني": {"icon": "🥜", "sci": "Arachis hypogaea", "fao": "Sensitive", "EC_max": 1.5, "SAR_max": 3, "Cl_max": 4, "regions": "كردفان، دارفور"},
+            "الصمغ العربي": {"icon": "🌳", "sci": "Acacia senegal", "fao": "Tolerant", "EC_max": 6.0, "SAR_max": 12, "Cl_max": 20, "regions": "كردفان، دارفور، سنار"},
+        }
+
+        _wg_wells = {
+            "بئر الجزيرة": {"ec": 0.9, "sar": 4.5, "no3": 8.0, "cl": 3.0, "hco3": 2.5},
+            "بئر سنار": {"ec": 0.5, "sar": 2.5, "no3": 4.0, "cl": 2.0, "hco3": 1.5},
+            "بئر الكوة": {"ec": 2.8, "sar": 8.5, "no3": 18.0, "cl": 8.0, "hco3": 4.5},
+            "بئر بارا": {"ec": 4.5, "sar": 12.0, "no3": 25.0, "cl": 15.0, "hco3": 6.0},
+            "بئر كسلا": {"ec": 1.8, "sar": 6.0, "no3": 12.0, "cl": 5.0, "hco3": 3.0},
+            "بئر شندي": {"ec": 0.6, "sar": 3.0, "no3": 5.0, "cl": 2.5, "hco3": 2.0},
+            "بئر طوكر": {"ec": 5.5, "sar": 14.0, "no3": 35.0, "cl": 22.0, "hco3": 7.5},
+        }
+
+        for _k, _v in {"wg_well": "بئر الجزيرة", "wg_ec": 0.9, "wg_sar": 4.5,
+                       "wg_no3": 8.0, "wg_cl": 3.0, "wg_hco3": 2.5}.items():
+            if _k not in st.session_state: st.session_state[_k] = _v
+
+        _wgt1, _wgt2, _wgt3 = st.tabs(["💧 تقييم بئر", "🌾 المحاصيل الاستراتيجية", "📚 المراجع"])
+
+        with _wgt1:
+            _c1, _c2 = st.columns([1, 2])
+            with _c1:
+                st.markdown("### 🔍 اختيار البئر")
+                _sel = st.selectbox("آبار نموذجية:", list(_wg_wells.keys()), key="wg_well_sel")
+                if _sel != st.session_state.wg_well:
+                    _d = _wg_wells[_sel]
+                    st.session_state.wg_well = _sel
+                    st.session_state.wg_ec = _d["ec"]
+                    st.session_state.wg_sar = _d["sar"]
+                    st.session_state.wg_no3 = _d["no3"]
+                    st.session_state.wg_cl = _d["cl"]
+                    st.session_state.wg_hco3 = _d["hco3"]
+                    st.rerun()
+                st.markdown("### 🧪 بيانات المياه")
+                _ec = st.slider("EC (dS/m):", 0.1, 8.0, float(st.session_state.wg_ec), 0.1, key="wg_ec_s")
+                _sar = st.slider("SAR:", 0.0, 30.0, float(st.session_state.wg_sar), 0.1, key="wg_sar_s")
+                _no3 = st.slider("NO₃ (mg/L):", 0.0, 50.0, float(st.session_state.wg_no3), 0.5, key="wg_no3_s")
+                _cl = st.slider("Cl (meq/L):", 0.0, 30.0, float(st.session_state.wg_cl), 0.5, key="wg_cl_s")
+                _hco3 = st.slider("HCO₃ (meq/L):", 0.0, 12.0, float(st.session_state.wg_hco3), 0.1, key="wg_hco3_s")
+                st.session_state.wg_ec = _ec
+                st.session_state.wg_sar = _sar
+                st.session_state.wg_no3 = _no3
+                st.session_state.wg_cl = _cl
+                st.session_state.wg_hco3 = _hco3
+            with _c2:
+                _iwqi, _sc = _wg_iwqi(_ec, _sar, _no3, _cl, _hco3)
+                _lbl, _lvl, _ = _wg_lbl(_iwqi)
+                _crops = _wg_crops[_lvl]
+                st.markdown(f"### 📊 {st.session_state.wg_well}")
+                _k1, _k2, _k3 = st.columns(3)
+                _k1.metric("IWQI", f"{_iwqi}/100")
+                _k2.metric("التصنيف", _lbl)
+                _k3.metric("المحاصيل", len(_crops) if _lvl != "unsuitable" else 0)
+                st.markdown("### 🌾 المحاصيل المناسبة")
+                if _lvl == "unsuitable":
+                    st.error("❌ المياه غير صالحة")
+                else:
+                    _cols = st.columns(min(len(_crops), 4))
+                    for _i, _c in enumerate(_crops):
+                        _cols[_i % len(_cols)].success(f"✅ {_c}")
+                with st.expander("🔬 تفاصيل المعايير"):
+                    st.dataframe(pd.DataFrame([
+                        {"المعيار": "EC", "القيمة": f"{_ec}", "التصنيف": _wg_ec(_ec)[0], "الدرجة": f"{_sc['EC']}/10"},
+                        {"المعيار": "SAR", "القيمة": f"{_sar}", "التصنيف": _wg_sar(_sar)[0], "الدرجة": f"{_sc['SAR']}/10"},
+                        {"المعيار": "NO₃", "القيمة": f"{_no3}", "التصنيف": _wg_no3(_no3)[0], "الدرجة": f"{_sc['NO3']}/10"},
+                        {"المعيار": "Cl", "القيمة": f"{_cl}", "التصنيف": _wg_cl(_cl)[0], "الدرجة": f"{_sc['Cl']}/10"},
+                        {"المعيار": "HCO₃", "القيمة": f"{_hco3}", "التصنيف": _wg_hco3(_hco3)[0], "الدرجة": f"{_sc['HCO3']}/10"},
+                    ]), use_container_width=True, hide_index=True)
+
+        with _wgt2:
+            st.markdown("### 🌾 المحاصيل الاستراتيجية السودانية")
+            _crop = st.selectbox("المحصول:", list(_wg_info.keys()),
+                                 format_func=lambda x: f"{_wg_info[x]['icon']} {x}",
+                                 key="wg_crop_sel")
+            _cc1, _cc2 = st.columns([1, 2])
+            with _cc1:
+                _c_ec = st.slider("EC (dS/m):", 0.1, 10.0, 1.0, 0.1, key="wg_c_ec")
+                _c_sar = st.slider("SAR:", 0.0, 25.0, 5.0, 0.5, key="wg_c_sar")
+                _c_cl = st.slider("Cl (meq/L):", 0.0, 40.0, 5.0, 0.5, key="wg_c_cl")
+                _c_hco3 = st.slider("HCO₃ (meq/L):", 0.0, 15.0, 3.0, 0.5, key="wg_c_hco3")
+                _info = _wg_info[_crop]
+                st.info(f"""
+**{_info['sci']}**
+- FAO: **{_info['fao']}**
+- EC الأقصى: **{_info['EC_max']} dS/m**
+- SAR الأقصى: **{_info['SAR_max']}**
+- Cl الأقصى: **{_info['Cl_max']} meq/L**
+- مناطق: {_info['regions']}
+""")
+            with _cc2:
+                if _crop == "قصب السكر":
+                    _lvl, _, _scv, _notes = _wg_sugar(_c_ec, _c_sar, _c_cl, _c_hco3)
+                elif _crop == "الفول السوداني":
+                    _lvl, _, _scv, _notes = _wg_peanut(_c_ec, _c_sar, _c_cl, _c_hco3)
+                else:
+                    _lvl, _, _scv, _notes = _wg_gum(_c_ec, _c_sar, _c_cl, _c_hco3)
+                st.markdown(f"### {_info['icon']} {_crop}")
+                _k1, _k2 = st.columns(2)
+                _k1.metric("التصنيف", _lvl)
+                _k2.metric("الدرجة", f"{_scv}/10")
+                st.progress(_scv / 10)
+                if _notes:
+                    for _n in _notes: st.warning(f"⚠️ {_n}")
+                else: st.success("✅ المياه مناسبة")
+
+        with _wgt3:
+            st.markdown("""
+### 📚 المراجع
+
+- **USSL (1954)** — USDA Handbook 60
+- **FAO 29 (Ayers & Westcot, 1985)**
+- **WHO (2022)**
+- **Meireles et al. (2010)** — IWQI
+
+### 🧪 الأوزان
+| المؤشر | الوزن |
+|--------|-------|
+| EC | 35% |
+| SAR | 25% |
+| NO₃ | 20% |
+| Cl | 12% |
+| HCO₃ | 8% |
+
+### 🌾 المحاصيل الاستراتيجية
+| المحصول | FAO | EC الأقصى |
+|---------|-----|-----------|
+| قصب السكر | Semi-tolerant | 1.7 |
+| الفول السوداني | Sensitive | 1.5 |
+| الصمغ العربي | Tolerant | 6.0 |
+""")
+
+elif MODE_KEY == "agricultural" and ADV_OK:
+    st.markdown(f"""<div class="header-container header-agri"><div class="header-title">{t("agricultural_title")}</div><div class="header-subtitle">DRASTIC-Agri + SAR + Na% + EC</div></div>""", unsafe_allow_html=True)
+    if DS_OK:
+        try:
+            ag_s = get_agricultural_data_summary()
+            st.info(f"{ag_s['total_states']} / {ag_s['total_sites']}")
+            c1, c2 = st.columns([1, 2])
+            with c1: ags = st.selectbox(t("state"), get_agri_states_list(), key="agri_state_select")
+            with c2: st.markdown(f'<div class="info-card" style="margin-top:28px;">{AGRICULTURAL_DATA[ags]["description"]}</div>', unsafe_allow_html=True)
+            agk = st.selectbox(t("site"), get_agri_sites_list(ags), key="agri_site_select")
+            agd = get_agri_site_data(ags, agk)
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Crop", agd.get("crop_type","N/A"))
+            c2.metric("Irrigation", agd.get("irrigation_method","N/A"))
+            c3.metric("EC", f"{agd['ec_ds_m']} dS/m")
+            sar = calculate_sar(agd['na_meq_l'], agd['ca_meq_l'], agd['mg_meq_l'])
+            nap = calculate_na_percent(agd['na_meq_l'], agd['ca_meq_l'], agd['mg_meq_l'], agd['k_meq_l'])
+            ecr = calculate_ec_quality(agd['ec_ds_m'])
+            ov = classify_irrigation_water(sar, nap, ecr)
+            c1, c2, c3 = st.columns(3)
+            c1.metric("SAR", sar.get("sar","N/A"))
+            c2.metric("Na%", f"{nap.get('na_percent','N/A')}%")
+            c3.metric("Class", ov.get("class","N/A"))
+        except Exception as e: st.error(str(e))
 
 elif MODE_KEY == "verification" and ADV_OK:
     st.markdown(f'<div class="section-header"><h3>{t("verification_title")}</h3></div>', unsafe_allow_html=True)
@@ -2504,20 +2199,15 @@ elif MODE_KEY == "verification" and ADV_OK:
                         else: dp_l.append(calc_drastic_t(ix, cw, hw, mining_type=mt)["drastic_t"])
                         act_l.append(int(row["actual_contaminated"]))
                     except Exception: pass
-                st.markdown("---")
                 c1, c2 = st.columns(2)
                 with c1:
                     st.markdown("#### DRASTIC")
                     md = calculate_confusion_matrix(d_l, act_l, th_d)
-                    st.metric(t("kappa"), md["kappa"])
-                    st.metric(t("recall"), f"{md['recall']}%")
-                    st.metric(t("accuracy"), f"{md.get('accuracy','N/A')}%")
+                    st.metric(t("kappa"), md["kappa"]); st.metric(t("recall"), f"{md['recall']}%")
                 with c2:
                     st.markdown("#### DRASTIC-Tox")
                     mp = calculate_confusion_matrix(dp_l, act_l, th_dt)
-                    st.metric(t("kappa"), mp["kappa"])
-                    st.metric(t("recall"), f"{mp['recall']}%")
-                    st.metric(t("accuracy"), f"{mp.get('accuracy','N/A')}%")
+                    st.metric(t("kappa"), mp["kappa"]); st.metric(t("recall"), f"{mp['recall']}%")
         except Exception as e: st.error(str(e))
 
 elif MODE_KEY == "transport" and ADV_OK:
@@ -2571,24 +2261,11 @@ elif MODE_KEY == "independent" and ADV_OK:
                                         get_c_rating(float(row["conductivity"]))))
                                     except Exception: dv.append(0)
                                 df_i["DRASTIC"] = dv
-                            if "DRASTIC_Tox" not in df_i.columns and "cn_water_mg_l" in df_i.columns and "hg_water_mg_l" in df_i.columns:
-                                dtv = []; mti = st.session_state.get("mining_type", "traditional")
-                                for _, row in df_i.iterrows():
-                                    try:
-                                        ix = calc_index(get_d_rating(float(row["depth_m"])), get_r_rating(float(row["recharge_mm"])),
-                                            get_a_rating(str(row["aquifer"])), get_s_rating(str(row["soil"])),
-                                            get_t_rating(float(row["slope_pct"])), get_i_rating(str(row["vadose"])),
-                                            get_c_rating(float(row["conductivity"])))
-                                        dtv.append(calc_drastic_t(ix, float(row.get("cn_water_mg_l",0)),
-                                            float(row.get("hg_water_mg_l",0)), mining_type=mti)["drastic_t"])
-                                    except Exception: dtv.append(0)
-                                df_i["DRASTIC_Tox"] = dtv
                             st.session_state["ind_val_result"] = independent_validation(df_i, "DRASTIC", "actual_contaminated", test_size=0.3)
                         except Exception as e: st.error(str(e))
                 if "ind_val_result" in st.session_state:
                     r = st.session_state["ind_val_result"]
-                    if "error" in r: st.error(r["error"])
-                    else:
+                    if "error" not in r:
                         c1, c2, c3, c4 = st.columns(4)
                         c1.metric("alpha", r.get("best_alpha","N/A"))
                         c2.metric("beta", r.get("best_beta","N/A"))
