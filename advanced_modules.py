@@ -1,4 +1,5 @@
-"""وحدات متقدمة - نظام التعدين السوداني v54.0
+"""
+وحدات متقدمة - نظام التعدين السوداني v60.0
 =====================================
 يحتوي على:
 1. Validation Metrics (Confusion Matrix, Kappa, MCC)
@@ -7,7 +8,14 @@
 4. Transport Modeling
 5. Independent Validation (70/30 Split)
 6. Satellite Data (ERA5)
-7. Agricultural Module (NEW)
+7. Agricultural Module
+
+الإصلاحات في v60.0:
+- إضافة max_cap مرن للوحدات (230 أو 300)
+- تحسين التوثيق
+- إصلاح اختيار نوع الاستخدام (drinking/irrigation/industrial)
+- إضافة validation للإحداثيات في satellite data
+- تحسين الأخطاء
 """
 import numpy as np
 import pandas as pd
@@ -19,7 +27,19 @@ from itertools import product
 # ============ 1. Validation Metrics ============
 # ============================================================
 def calculate_confusion_matrix(predicted, actual, threshold=140):
-    """حساب مصفوفة الالتباس والمقاييس الإحصائية"""
+    """
+    حساب مصفوفة الالتباس والمقاييس الإحصائية
+
+    Parameters
+    ----------
+    predicted : array-like — القيم المتوقعة
+    actual : array-like — القيم الفعلية (0 أو 1)
+    threshold : float — العتبة للتصنيف
+
+    Returns
+    -------
+    dict — المقاييس الإحصائية
+    """
     predicted = np.array(predicted)
     actual = np.array(actual)
     pred_class = (predicted >= threshold).astype(int)
@@ -118,8 +138,16 @@ def generate_validation_report(metrics):
 # ============ 2. DRASTIC-P ============
 # ============================================================
 def calculate_cyanide_risk_index(cn_w, cn_s, dist, seepage):
-    """CRI - مؤشر السيانيد"""
-    CN_W, CN_S = 0.05, 10.0
+    """
+    CRI - مؤشر السيانيد
+
+    يحسب خطر السيانيد من:
+    - تركيز السيانيد في الماء (cn_w)
+    - تركيز السيانيد في التربة (cn_s)
+    - المسافة من المصدر
+    - معامل التسرب
+    """
+    CN_W, CN_S = 0.05, 10.0  # WHO water limit, soil screening value
     w_r = cn_w / CN_W
     s_r = cn_s / CN_S
     d_f = max(0.1, min(1.0, 100.0 / max(1, dist)))
@@ -134,10 +162,14 @@ def calculate_cyanide_risk_index(cn_w, cn_s, dist, seepage):
 
 
 def calculate_mercury_risk_index(hg_w, hg_s, bio, use="drinking"):
-    """MRI - مؤشر الزئبق"""
+    """
+    MRI - مؤشر الزئبق
+
+    use : drinking / irrigation / industrial
+    """
     limits = {"drinking": {"water": 0.0007, "soil": 1.0},
               "irrigation": {"water": 0.0007, "soil": 1.0},
-              "industrial": {"water": 0.05, "soil": 5.0}}
+              "industrial": {"water": 0.005, "soil": 5.0}}  # ✅ تم التصحيح من 0.05 → 0.005
     lim = limits.get(use, limits["drinking"])
     w_r = hg_w / lim["water"]
     s_r = hg_s / lim["soil"]
@@ -151,10 +183,17 @@ def calculate_mercury_risk_index(hg_w, hg_s, bio, use="drinking"):
 
 
 def calculate_modified_drastic(base, cri=0, mri=0, amd=0,
-                                alpha=0.50, beta=0.50, gamma=0.10):
-    """DRASTIC-P = DRASTIC × (1 + α×CRI + β×MRI + γ×AMD)"""
+                                alpha=0.50, beta=0.50, gamma=0.10,
+                                max_cap=230):
+    """
+    DRASTIC-P = DRASTIC × (1 + α×CRI + β×MRI + γ×AMD)
+
+    Parameters
+    ----------
+    max_cap : float — الحد الأقصى (230 للـ DRASTIC الكلاسيكي، 300 للـ DRASTIC-Tox)
+    """
     modifier = 1.0 + (alpha * cri) + (beta * mri) + (gamma * amd)
-    modified = min(230, base * modifier)
+    modified = min(max_cap, base * modifier)
     inc = ((modified - base) / base * 100) if base > 0 else 0
     if modified >= 180: level, color = "مرتفع جدا", "red"
     elif modified >= 140: level, color = "مرتفع", "orange"
@@ -164,7 +203,7 @@ def calculate_modified_drastic(base, cri=0, mri=0, amd=0,
             "modifier_factor": round(modifier, 3),
             "increase_pct": round(inc, 1), "cri": cri, "mri": mri,
             "amd_risk": amd, "level": level, "color": color,
-            "alpha": alpha, "beta": beta}
+            "alpha": alpha, "beta": beta, "max_cap": max_cap}
 
 
 # ============================================================
@@ -398,16 +437,38 @@ def generate_independent_validation_report(result):
 # ============ 6. Satellite Data ============
 # ============================================================
 def fetch_satellite_data(lat, lon, years=3):
-    """جلب بيانات الأقمار الصناعية من Open-Meteo (ERA5)"""
+    """
+    جلب بيانات الأقمار الصناعية من Open-Meteo (ERA5)
+
+    ✅ إصلاح v60.0: التحقق من صحة الإحداثيات
+    """
     import requests
+
+    # ✅ التحقق من الإحداثيات
+    try:
+        lat_f = float(lat)
+        lon_f = float(lon)
+        if not (-90 <= lat_f <= 90):
+            return {"rainfall_mm": None, "temperature_c": None,
+                    "aridity": "خطأ إحداثيات", "ndvi_estimated": None,
+                    "source": "Latitude must be -90 to 90"}
+        if not (-180 <= lon_f <= 180):
+            return {"rainfall_mm": None, "temperature_c": None,
+                    "aridity": "خطأ إحداثيات", "ndvi_estimated": None,
+                    "source": "Longitude must be -180 to 180"}
+    except (ValueError, TypeError):
+        return {"rainfall_mm": None, "temperature_c": None,
+                "aridity": "خطأ إحداثيات", "ndvi_estimated": None,
+                "source": "Invalid latitude/longitude"}
+
     try:
         end = datetime.now().strftime('%Y-%m-%d')
         start = (datetime.now() - timedelta(days=365 * years)).strftime('%Y-%m-%d')
 
         url = "https://archive-api.open-meteo.com/v1/archive"
         params = {
-            "latitude": float(lat),
-            "longitude": float(lon),
+            "latitude": lat_f,
+            "longitude": lon_f,
             "start_date": start,
             "end_date": end,
             "daily": ["precipitation_sum", "temperature_2m_mean"],
@@ -464,7 +525,12 @@ def fetch_satellite_data(lat, lon, years=3):
 # ============ 7. Agricultural Module ============
 # ============================================================
 def calculate_sar(na, ca, mg):
-    """حساب نسبة امتصاص الصوديوم (SAR)"""
+    """
+    حساب نسبة امتصاص الصوديوم (SAR)
+
+    USSL 1954:
+    S1: 0-10 | S2: 10-18 | S3: 18-26 | S4: >26
+    """
     try:
         na = float(na); ca = float(ca); mg = float(mg)
         if ca + mg <= 0:
@@ -512,19 +578,24 @@ def calculate_na_percent(na, ca, mg, k=0):
 
 
 def calculate_ec_quality(ec):
-    """تصنيف جودة المياه حسب التوصيلية الكهربائية (EC)"""
+    """
+    تصنيف جودة المياه حسب التوصيلية الكهربائية (EC)
+
+    ✅ USSL 1954 — محدث بدقة:
+    C1: < 0.25 | C2: 0.25-0.75 | C3: 0.75-2.25 | C4: 2.25-4.0 | C4+: >4.0
+    """
     try:
         ec = float(ec)
         if ec < 0.25:
-            level, color, action = "ممتاز", "green", "آمن للري"
+            level, color, action = "C1 - ممتاز", "green", "آمن للري"
         elif ec < 0.75:
-            level, color, action = "جيد", "green", "آمن"
+            level, color, action = "C2 - جيد", "green", "آمن"
         elif ec < 2.25:
-            level, color, action = "مقبول", "yellow", "مراقبة"
+            level, color, action = "C3 - مقبول", "yellow", "مراقبة"
         elif ec < 4.0:
-            level, color, action = "مشكوك", "orange", "يحتاج معالجة"
+            level, color, action = "C4 - مشكوك", "orange", "يحتاج معالجة"
         else:
-            level, color, action = "غير مناسب", "red", "غير صالح للري"
+            level, color, action = "C4+ - غير مناسب", "red", "غير صالح للري"
         return {"ec": ec, "level": level, "color": color, "action": action}
     except Exception:
         return {"ec": None, "level": "خطأ", "color": "gray",
@@ -536,7 +607,7 @@ def calculate_nitrate_risk_index(no3_mg_l, fertilizer_use=0.5,
     """حساب مؤشر مخاطر النترات (NRI)"""
     try:
         no3 = float(no3_mg_l)
-        LIMIT = 50.0
+        LIMIT = 50.0  # WHO 2022
         ratio = no3 / LIMIT if LIMIT > 0 else 0
         nri = ratio * fertilizer_use * land_use_factor
         depth_factor = max(0.1, min(1.0, 15.0 / max(1, depth_m)))
@@ -563,8 +634,13 @@ def calculate_agricultural_drastic(base_drastic, no3_mg_l,
                                      fertilizer_use=0.5,
                                      land_use_factor=0.5,
                                      depth_m=15,
-                                     alpha_agri=0.50):
-    """DRASTIC-Agri = DRASTIC × (1 + α × NRI)"""
+                                     alpha_agri=0.50,
+                                     max_cap=300):
+    """
+    DRASTIC-Agri = DRASTIC × (1 + α × NRI)
+
+    ✅ إصلاح v60.0: max_cap = 300 (متوافق مع DRASTIC-Tox)
+    """
     nri_result = calculate_nitrate_risk_index(
         no3_mg_l, fertilizer_use, land_use_factor, depth_m)
     nri = nri_result.get("nri", 0)
@@ -572,7 +648,7 @@ def calculate_agricultural_drastic(base_drastic, no3_mg_l,
         nri = 0
 
     modifier = 1.0 + (alpha_agri * nri)
-    drastic_agri = min(230, base_drastic * modifier)
+    drastic_agri = min(max_cap, base_drastic * modifier)
 
     if drastic_agri >= 180: level, color = "مرتفع جدا", "red"
     elif drastic_agri >= 140: level, color = "مرتفع", "orange"
@@ -588,7 +664,8 @@ def calculate_agricultural_drastic(base_drastic, no3_mg_l,
                               if base_drastic > 0 else 0, 1),
         "level": level, "color": color,
         "nri_details": nri_result,
-        "alpha_agri": alpha_agri
+        "alpha_agri": alpha_agri,
+        "max_cap": max_cap
     }
 
 
