@@ -85,7 +85,7 @@ def wg_classify_iwqi(iwqi):
 
 
 # ==========================================
-# 2. المحاصيل (عادية + استراتيجية)
+# 2. المحاصيل
 # ==========================================
 
 WG_CROP_SUITABILITY = {
@@ -105,7 +105,6 @@ WG_CROP_REQUIREMENTS = {
         "fao_sensitivity": "Semi-tolerant (MS)",
         "EC_max": 1.7, "SAR_max": 8, "Cl_max": 10,
         "regions_sudan": "النيل الأزرق، سنار، النيل الأبيض، كسلا",
-        "economic_importance": "عالية — مشاريع كنانة، عسلاية، النيل الأبيض",
     },
     "الفول السوداني": {
         "icon": "🥜",
@@ -113,7 +112,6 @@ WG_CROP_REQUIREMENTS = {
         "fao_sensitivity": "Sensitive (S)",
         "EC_max": 1.5, "SAR_max": 3, "Cl_max": 4,
         "regions_sudan": "شمال كردفان، جنوب كردفان، دارفور، النيل الأزرق",
-        "economic_importance": "عالية — محصول تصديري + زيت نباتي",
     },
     "الصمغ العربي": {
         "icon": "🌳",
@@ -121,13 +119,11 @@ WG_CROP_REQUIREMENTS = {
         "fao_sensitivity": "Tolerant (T)",
         "EC_max": 6.0, "SAR_max": 12, "Cl_max": 20,
         "regions_sudan": "كردفان، دارفور، سنار، النيل الأزرق",
-        "economic_importance": "حيوية — السودان ينتج 80% من الإنتاج العالمي",
     },
 }
 
 
 def wg_classify_sugarcane(ec, sar, cl, hco3):
-    """تقييم خاص لقصب السكر — FAO 29"""
     score, notes = 10, []
     if ec > 3.0: score -= 5; notes.append("ملوحة عالية جداً — خسارة إنتاج > 50%")
     elif ec > 1.7: score -= 3; notes.append("ملوحة مرتفعة — خسارة إنتاج متوقعة")
@@ -145,7 +141,6 @@ def wg_classify_sugarcane(ec, sar, cl, hco3):
 
 
 def wg_classify_peanut(ec, sar, cl, hco3):
-    """تقييم خاص للفول السوداني — FAO 29"""
     score, notes = 10, []
     if ec > 2.5: score -= 5; notes.append("ملوحة عالية جداً — محصول سيفشل")
     elif ec > 1.5: score -= 3; notes.append("ملوحة مرتفعة — خسارة إنتاج")
@@ -163,7 +158,6 @@ def wg_classify_peanut(ec, sar, cl, hco3):
 
 
 def wg_classify_gum_arabic(ec, sar, cl, hco3):
-    """تقييم خاص للصمغ العربي — Acacia senegal"""
     score, notes = 10, []
     if ec > 10: score -= 4; notes.append("ملوحة عالية جداً — ضعف النمو")
     elif ec > 6: score -= 2; notes.append("ملوحة مرتفعة — نمو متوسط")
@@ -302,9 +296,7 @@ def render_water_guardian():
         "💧 تقييم بئر", "📊 تقييم جماعي", "🌾 المحاصيل الاستراتيجية", "📚 المراجع"
     ])
 
-    # ==========================
-    # TAB 1: تقييم فردي
-    # ==========================
+    # TAB 1
     with wg_tab1:
         col1, col2 = st.columns([1, 2])
 
@@ -315,7 +307,6 @@ def render_water_guardian():
                 key="wg_well_sel"
             )
 
-            # تحديث عند التغيير
             if selected != st.session_state.wg_well:
                 d = WG_PRESET_WELLS[selected]
                 st.session_state.wg_well = selected
@@ -338,7 +329,6 @@ def render_water_guardian():
             hco3 = st.slider("5. البيكربونات HCO₃ (meq/L):", 0.0, 12.0,
                              float(st.session_state.wg_hco3), 0.1, key="wg_hco3_s")
 
-            # حفظ القيم
             st.session_state.wg_ec = ec
             st.session_state.wg_sar = sar
             st.session_state.wg_no3 = no3
@@ -379,7 +369,6 @@ def render_water_guardian():
                 ])
                 st.dataframe(df_details, use_container_width=True, hide_index=True)
 
-            # التقرير
             st.markdown("---")
             c1, c2 = st.columns([2, 1])
             with c1:
@@ -430,9 +419,7 @@ HCO₃: {hco3} meq/L
                                    mime="text/plain", use_container_width=True,
                                    key="wg_export_btn")
 
-    # ==========================
-    # TAB 2: تقييم جماعي
-    # ==========================
+    # TAB 2
     with wg_tab2:
         st.markdown("### 📤 تقييم مجموعة آبار")
         st.caption("الأعمدة المطلوبة: Well_Name, Latitude, Longitude, EC, SAR, Nitrate, Chloride, Bicarbonate")
@@ -492,9 +479,7 @@ HCO₃: {hco3} meq/L
             except Exception as e:
                 st.error(f"خطأ: {e}")
 
-    # ==========================
-    # TAB 3: المحاصيل الاستراتيجية
-    # ==========================
+    # TAB 3
     with wg_tab3:
         st.markdown("### 🌾 المحاصيل الاستراتيجية السودانية")
         st.caption("قصب السكر، الفول السوداني، الصمغ العربي — تقييم خاص")
@@ -560,9 +545,7 @@ EC: {c_ec} dS/m | SAR: {c_sar} | Cl: {c_cl} | HCO₃: {c_hco3}
                                f"crop_{selected_crop}.txt", "text/plain",
                                use_container_width=True, key="wg_crop_dl")
 
-    # ==========================
-    # TAB 4: المراجع
-    # ==========================
+    # TAB 4
     with wg_tab4:
         st.markdown("""
 ### 📚 المراجع والمعايير
