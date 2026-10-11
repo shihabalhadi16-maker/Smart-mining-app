@@ -1,5 +1,5 @@
 """
-GIS Raster Support — DRASTIC-Tox v58.7
+GIS Raster Support — DRASTIC-Tox v61
 Author: Shihab Alhadi + Sarah Akasha
 University of Khartoum, Faculty of Engineering
 
@@ -14,17 +14,22 @@ Provides:
     - export_geotiff(raster, bounds, path)
     - create_raster_plotly(raster, bounds, title)
     - compute_raster_statistics(raster)
+    - classify_raster(raster)
 
-Patch v58.9.2 (2025-10):
-    - Fixed Coverage calculation (spherical formula)
-    - Added Sudan bounds clipping
-    - Added outlier detection (optional, non-breaking)
+v61 Changes:
+  * FIXED: GeoTIFF was being written vertically flipped.
+    In-memory raster has row 0 = lat_min (south), but GeoTIFF
+    convention is row 0 = north (lat_max). Now uses np.flipud()
+    before writing.
+  * Added Sudan bounds clipping (v58.9.2)
+  * Fixed spherical Coverage calculation (v58.9.2)
+  * Added outlier detection (v58.9.2)
 """
 import numpy as np
 
 
 # ============================================================
-# ⭐ ADDED — Sudan geographic constants (v58.9.2)
+# Sudan geographic constants
 # ============================================================
 SUDAN_BOUNDS = {
     "min_lon": 21.8,
@@ -37,7 +42,7 @@ EARTH_RADIUS_KM = 6371.0
 
 
 # ============================================================
-# ⭐ ADDED — Helper functions (v58.9.2)
+# Helpers
 # ============================================================
 def _validate_points(points):
     """Validate points, return (valid_points, warnings)."""
@@ -80,9 +85,6 @@ def _compute_spherical_area_km2(lon_min, lon_max, lat_min, lat_max):
     return abs(float(area_km2))
 
 
-# ============================================================
-# ORIGINAL CODE — unchanged
-# ============================================================
 def _has_pykrige():
     try:
         from pykrige.ok import OrdinaryKriging
@@ -99,6 +101,9 @@ def _has_rasterio():
         return False
 
 
+# ============================================================
+# Interpolation
+# ============================================================
 def idw_interpolation(points, resolution=100, power=2.0, padding=0.05):
     """
     Inverse Distance Weighting interpolation.
@@ -117,12 +122,12 @@ def idw_interpolation(points, resolution=100, power=2.0, padding=0.05):
     Returns
     -------
     dict with keys:
-        - raster: 2D numpy array (resolution × resolution)
-        - extent: [lon_min, lon_max, lat_min, lat_max]
-        - lons: 1D array of longitudes
-        - lats: 1D array of latitudes
-        - method: "IDW"
-        - n_points: number of input points
+        raster  : 2D numpy array  — row 0 = lat_min (SOUTH), row -1 = lat_max (NORTH)
+        extent  : [lon_min, lon_max, lat_min, lat_max]
+        lons    : 1D array of longitudes (ascending)
+        lats    : 1D array of latitudes  (ascending, south→north)
+        method  : "IDW"
+        n_points: number of input points
     """
     pts = np.array([(p[0], p[1], p[2]) for p in points if len(p) >= 3], dtype=float)
     if len(pts) == 0:
@@ -133,7 +138,6 @@ def idw_interpolation(points, resolution=100, power=2.0, padding=0.05):
     lat_min, lat_max = lats.min(), lats.max()
     lon_min, lon_max = lons.min(), lons.max()
 
-    # Add padding
     lat_range = max(lat_max - lat_min, 0.1)
     lon_range = max(lon_max - lon_min, 0.1)
     lat_min -= lat_range * padding
@@ -141,23 +145,19 @@ def idw_interpolation(points, resolution=100, power=2.0, padding=0.05):
     lon_min -= lon_range * padding
     lon_max += lon_range * padding
 
-    # ← CHANGED (v58.9.2): Clip to Sudan bounds
     lon_min, lon_max, lat_min, lat_max = _clip_to_sudan(
         lon_min, lon_max, lat_min, lat_max
     )
 
-    # Create grid
     grid_lons = np.linspace(lon_min, lon_max, resolution)
-    grid_lats = np.linspace(lat_min, lat_max, resolution)
+    grid_lats = np.linspace(lat_min, lat_max, resolution)   # ascending, S→N
     glon, glat = np.meshgrid(grid_lons, grid_lats)
 
-    # IDW calculation
     raster = np.zeros((resolution, resolution), dtype=float)
 
     for i in range(resolution):
         for j in range(resolution):
             d = np.sqrt((glat[i, j] - lats) ** 2 + (glon[i, j] - lons) ** 2)
-            # Avoid division by zero
             zero_mask = d < 1e-10
             if np.any(zero_mask):
                 raster[i, j] = vals[zero_mask].mean()
@@ -181,11 +181,8 @@ def idw_interpolation(points, resolution=100, power=2.0, padding=0.05):
 
 
 def kriging_interpolation(points, resolution=100, variogram_model="linear", padding=0.05):
-    """
-    Kriging interpolation. Requires pykrige.
-
-    Returns same structure as idw_interpolation, or {"error": ...}.
-    """
+    """Kriging interpolation. Requires pykrige.
+    Returns same structure as idw_interpolation, or {"error": ...}."""
     if not _has_pykrige():
         return {"error": "pykrige not installed — falling back to IDW"}
 
@@ -207,7 +204,6 @@ def kriging_interpolation(points, resolution=100, variogram_model="linear", padd
     lon_min -= lon_range * padding
     lon_max += lon_range * padding
 
-    # ← CHANGED (v58.9.2): Clip to Sudan bounds
     lon_min, lon_max, lat_min, lat_max = _clip_to_sudan(
         lon_min, lon_max, lat_min, lat_max
     )
@@ -241,9 +237,18 @@ def kriging_interpolation(points, resolution=100, variogram_model="linear", padd
         return {"error": f"Kriging failed: {str(e)[:100]}"}
 
 
+# ============================================================
+# GeoTIFF export  — v61 FIX: vertical flip
+# ============================================================
 def export_geotiff(raster_result, output_path, crs="EPSG:4326"):
     """
     Export raster to GeoTIFF. Requires rasterio.
+
+    v61 Fix
+    -------
+    The in-memory raster has row 0 = lat_min (south). The GeoTIFF
+    convention (and rasterio's `from_bounds`) assumes row 0 = north.
+    Without the flip, the exported image appears vertically mirrored.
 
     Parameters
     ----------
@@ -269,6 +274,12 @@ def export_geotiff(raster_result, output_path, crs="EPSG:4326"):
         lon_min, lon_max, lat_min, lat_max = raster_result["extent"]
         height, width = raster.shape
 
+        # ─── v61 FIX: flip vertically ────────────────────────
+        # In-memory:  row 0  = lat_min (south)
+        # GeoTIFF:    row 0  = lat_max (north, per `from_bounds`)
+        raster_to_write = np.flipud(raster)
+        # ─────────────────────────────────────────────────────
+
         transform = from_bounds(lon_min, lat_min, lon_max, lat_max, width, height)
 
         with rasterio.open(
@@ -281,19 +292,23 @@ def export_geotiff(raster_result, output_path, crs="EPSG:4326"):
             crs=crs,
             transform=transform,
         ) as dst:
-            dst.write(raster, 1)
+            dst.write(raster_to_write, 1)
 
         return {"success": True, "path": output_path,
-                "message": f"GeoTIFF saved ({width}×{height})"}
+                "message": f"GeoTIFF saved ({width}×{height}, v61 flip applied)"}
     except Exception as e:
         return {"success": False, "message": f"Export failed: {str(e)[:100]}"}
 
 
+# ============================================================
+# Plotly visualisation (uses in-memory orientation, no flip needed)
+# ============================================================
 def create_raster_plotly(raster_result, title="Raster Surface", colorscale="RdYlGn_r"):
     """
-    Create Plotly heatmap + contour overlay for the raster.
+    Create Plotly heatmap + contour overlay.
 
-    Returns a plotly Figure object.
+    Note: plotly's y-axis is treated as ascending (S→N), which matches
+    the in-memory raster orientation. Do NOT pass a flipped raster here.
     """
     try:
         import plotly.graph_objects as go
@@ -305,17 +320,15 @@ def create_raster_plotly(raster_result, title="Raster Surface", colorscale="RdYl
 
     fig = go.Figure()
 
-    # Heatmap
     fig.add_trace(go.Heatmap(
         z=raster,
         x=np.linspace(lon_min, lon_max, raster.shape[1]),
-        y=np.linspace(lat_min, lat_max, raster.shape[0]),
+        y=np.linspace(lat_min, lat_max, raster.shape[0]),   # ascending S→N
         colorscale=colorscale,
         colorbar=dict(title="Index"),
         hovertemplate="Lon: %{x:.3f}<br>Lat: %{y:.3f}<br>Value: %{z:.1f}<extra></extra>",
     ))
 
-    # Contour lines
     fig.add_trace(go.Contour(
         z=raster,
         x=np.linspace(lon_min, lon_max, raster.shape[1]),
@@ -340,6 +353,9 @@ def create_raster_plotly(raster_result, title="Raster Surface", colorscale="RdYl
     return fig
 
 
+# ============================================================
+# Statistics
+# ============================================================
 def compute_raster_statistics(raster_result):
     """Compute extended statistics for raster."""
     raster = raster_result["raster"]
@@ -359,7 +375,6 @@ def compute_raster_statistics(raster_result):
         "p75": pct(75),
         "p90": pct(90),
         "n_cells": int(flat.size),
-        # ← CHANGED (v58.9.2): Correct spherical coverage calculation
         "coverage_km2": round(
             _compute_spherical_area_km2(
                 raster_result["extent"][0],
@@ -369,7 +384,6 @@ def compute_raster_statistics(raster_result):
             ),
             2
         ),
-        # ⭐ ADDED (v58.9.2): extra metrics (non-breaking)
         "percent_of_sudan": round(
             _compute_spherical_area_km2(
                 raster_result["extent"][0],
@@ -385,9 +399,7 @@ def compute_raster_statistics(raster_result):
 def classify_raster(raster_result, thresholds=None):
     """
     Classify raster cells into risk levels.
-
     Default thresholds: [100, 140, 180] (Medium/High/Very High).
-    Returns dict with counts and percentages.
     """
     if thresholds is None:
         thresholds = [100, 140, 180]
@@ -396,15 +408,37 @@ def classify_raster(raster_result, thresholds=None):
     flat = raster.flatten()
     total = flat.size
 
-    low = int((flat < thresholds[0]).sum())
-    medium = int(((flat >= thresholds[0]) & (flat < thresholds[1])).sum())
-    high = int(((flat >= thresholds[1]) & (flat < thresholds[2])).sum())
+    low       = int((flat < thresholds[0]).sum())
+    medium    = int(((flat >= thresholds[0]) & (flat < thresholds[1])).sum())
+    high      = int(((flat >= thresholds[1]) & (flat < thresholds[2])).sum())
     very_high = int((flat >= thresholds[2]).sum())
 
     return {
-        "low": {"count": low, "percent": round(low / total * 100, 1)},
-        "medium": {"count": medium, "percent": round(medium / total * 100, 1)},
-        "high": {"count": high, "percent": round(high / total * 100, 1)},
+        "low":       {"count": low,       "percent": round(low       / total * 100, 1)},
+        "medium":    {"count": medium,    "percent": round(medium    / total * 100, 1)},
+        "high":      {"count": high,      "percent": round(high      / total * 100, 1)},
         "very_high": {"count": very_high, "percent": round(very_high / total * 100, 1)},
         "total": total,
-            } 
+    }
+
+
+# ============================================================
+# Self-test
+# ============================================================
+def _selftest():
+    pts = [(13.5, 33.6, 100), (13.6, 33.7, 150),
+           (13.4, 33.5, 200), (13.7, 33.8, 120)]
+    result = idw_interpolation(pts, resolution=20)
+    assert "raster" in result, result
+    assert result["raster"].shape == (20, 20)
+    # Verify extent has lat_min < lat_max
+    e = result["extent"]
+    assert e[2] < e[3], f"lat_min should be < lat_max: {e}"
+    # Verify row 0 corresponds to lat_min (south)
+    # (raster row 0 must have been built from grid_lats[0] = lat_min)
+    assert result["lats"][0] < result["lats"][-1], "lats must be ascending"
+    print("gis_raster v61 self-test passed (flip fix in place)")
+
+
+if __name__ == "__main__":
+    _selftest() 
