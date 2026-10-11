@@ -1,5 +1,5 @@
 """
-External Validation Module — DRASTIC-Tox v58.3
+External Validation Module — DRASTIC-Tox v61
 Author: Shihab Alhadi + Sarah Akasha
 University of Khartoum, Faculty of Engineering
 
@@ -7,16 +7,42 @@ Provides:
     - external_validation_analysis(): train/test split + K-Fold CV
     - baseline_ml_models(): LogReg + Random Forest baselines
     - enhanced_metrics(): PR-AUC + Brier score
+
+v61 Changes:
+  * threshold_dt default fixed: 106.5 → 144.4 (aligns with weight_manager v61)
+  * Normalisation divisors corrected:
+      DRASTIC      max = 226  (was 230)
+      DRASTIC-Tox  max = 276  (was 280; = 226 + max_toxicity_bonus)
+  * Docstring clarifies that Brier/PR-AUC use min-max normalisation
+    because DRASTIC is NOT a probability.
 """
 import numpy as np
 import pandas as pd
+
+# ============================================================
+# Canonical ranges (v61: aligned with drastic_core.py)
+# ============================================================
+DRASTIC_MIN    = 23.0    # index_range(W_STD)[0]
+DRASTIC_MAX    = 226.0   # index_range(W_STD)[1]
+DTOX_MIN       = 23.0
+DTOX_MAX       = 276.0   # 226 + MAX_TOXICITY_BONUS (50)
+DEFAULT_THRESH_DT = 144.4
+
+
+def _norm_drastic(x):
+    """Map DRASTIC [23, 226] -> [0, 1]."""
+    return (np.asarray(x, dtype=float) - DRASTIC_MIN) / (DRASTIC_MAX - DRASTIC_MIN)
+
+def _norm_dtox(x):
+    """Map DRASTIC-Tox [23, 276] -> [0, 1]."""
+    return (np.asarray(x, dtype=float) - DTOX_MIN) / (DTOX_MAX - DTOX_MIN)
 
 
 def external_validation_analysis(
     df,
     mining_type="traditional",
     threshold_d=100,
-    threshold_dt=106.5,
+    threshold_dt=DEFAULT_THRESH_DT,       # ← v61: was 106.5
     test_size=0.30,
     n_folds=5,
     random_state=42,
@@ -35,30 +61,11 @@ def external_validation_analysis(
     """
     External Validation via train/test split + Stratified K-Fold CV.
 
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Must contain: depth_m, recharge_mm, slope_pct, conductivity,
-        aquifer, soil, vadose, cn_water_mg_l, hg_water_mg_l,
-        actual_contaminated
-    mining_type : str
-        'traditional', 'industrial', or 'mixed'
-    threshold_d, threshold_dt : float
-        Classification thresholds for DRASTIC / DRASTIC-Tox
-    test_size : float
-        Fraction of data held out for testing (default 0.30)
-    n_folds : int
-        Number of K-Fold splits (default 5)
-    random_state : int
-        Seed for reproducibility
-    *_fn : callable
-        References to functions in app.py (passed to avoid circular import)
-    calibrated_weights : dict or None
-        If provided, uses calibrated alpha/beta/SF
-
-    Returns
-    -------
-    dict with keys: n_total, n_train, n_test, test_kappa_*, cv_*, baseline_*, ...
+    Notes
+    -----
+    - With n ~ 11 the test set is 3-4 sites: treat as demonstration only.
+    - PR-AUC / Brier use min-max normalisation because DRASTIC is not a
+      probability. Numbers are indicative, not calibrated probabilities.
     """
     if not sklearn_ok:
         return {"error": "scikit-learn required"}
@@ -72,14 +79,13 @@ def external_validation_analysis(
     except ImportError as e:
         return {"error": f"Missing sklearn module: {e}"}
 
-    # Validate all callables passed
     required_fns = [calc_index_fn, calc_drastic_t_fn, get_d_rating_fn,
                     get_r_rating_fn, get_a_rating_fn, get_s_rating_fn,
                     get_t_rating_fn, get_i_rating_fn, get_c_rating_fn]
     if any(f is None for f in required_fns):
         return {"error": "All rating/index functions must be provided"}
 
-    # --- Prepare arrays ---
+    # ---------------- Prepare arrays ----------------
     drastic_arr, dtox_arr, actual_arr = [], [], []
 
     for _, row in df.iterrows():
@@ -91,7 +97,8 @@ def external_validation_analysis(
                 get_s_rating_fn(str(row["soil"])),
                 get_t_rating_fn(float(row["slope_pct"])),
                 get_i_rating_fn(str(row["vadose"])),
-                get_c_rating_fn(float(row["conductivity"])),
+                get_c_rating_fn(float(row.get("conductivity_m_d")
+                                       or row.get("conductivity"))),
             )
             cn = float(row.get("cn_water_mg_l", 0.0))
             hg = float(row.get("hg_water_mg_l", 0.0))
@@ -112,7 +119,7 @@ def external_validation_analysis(
         except Exception:
             continue
 
-    X_d = np.array(drastic_arr).reshape(-1, 1)
+    X_d  = np.array(drastic_arr).reshape(-1, 1)
     X_dt = np.array(dtox_arr).reshape(-1, 1)
     y = np.array(actual_arr)
     n = len(y)
@@ -129,6 +136,9 @@ def external_validation_analysis(
         "mining_type": mining_type,
         "threshold_d": threshold_d,
         "threshold_dt": threshold_dt,
+        "scoring_version": "v61",
+        "drastic_range": [DRASTIC_MIN, DRASTIC_MAX],
+        "dtox_range": [DTOX_MIN, DTOX_MAX],
     }
 
     # =========================================================
@@ -141,10 +151,10 @@ def external_validation_analysis(
         )
         results["test_size_pct"] = int(test_size * 100)
         results["n_train"] = len(idx_train)
-        results["n_test"] = len(idx_test)
+        results["n_test"]  = len(idx_test)
 
         y_test = y[idx_test]
-        y_pred_d = (X_d[idx_test, 0] >= threshold_d).astype(int)
+        y_pred_d  = (X_d[idx_test, 0]  >= threshold_d).astype(int)
         y_pred_dt = (X_dt[idx_test, 0] >= threshold_dt).astype(int)
 
         results["test_kappa_drastic"] = round(
@@ -167,7 +177,7 @@ def external_validation_analysis(
             results["test_auc_drastic_tox"] = None
 
         results["train_indices"] = idx_train.tolist()
-        results["test_indices"] = idx_test.tolist()
+        results["test_indices"]  = idx_test.tolist()
     except Exception as e:
         results["split_error"] = str(e)
 
@@ -181,13 +191,13 @@ def external_validation_analysis(
             random_state=random_state,
         )
         fold_kappas_d, fold_kappas_dt = [], []
-        fold_aucs_d, fold_aucs_dt = [], []
+        fold_aucs_d,   fold_aucs_dt   = [], []
 
         for _, test_idx in skf.split(X_d, y):
             yt = y[test_idx]
             if len(np.unique(yt)) < 2:
                 continue
-            yp_d = (X_d[test_idx, 0] >= threshold_d).astype(int)
+            yp_d  = (X_d[test_idx, 0]  >= threshold_d).astype(int)
             yp_dt = (X_dt[test_idx, 0] >= threshold_dt).astype(int)
             try:
                 fold_kappas_d.append(cohen_kappa_score(yt, yp_d))
@@ -199,14 +209,14 @@ def external_validation_analysis(
 
         results["cv_n_folds"] = len(fold_kappas_d)
         if fold_kappas_d:
-            results["cv_kappa_drastic_mean"] = round(float(np.mean(fold_kappas_d)), 3)
-            results["cv_kappa_drastic_std"] = round(float(np.std(fold_kappas_d)), 3)
-            results["cv_kappa_drastic_tox_mean"] = round(float(np.mean(fold_kappas_dt)), 3)
-            results["cv_kappa_drastic_tox_std"] = round(float(np.std(fold_kappas_dt)), 3)
-            results["cv_auc_drastic_mean"] = round(float(np.mean(fold_aucs_d)), 3)
-            results["cv_auc_drastic_tox_mean"] = round(float(np.mean(fold_aucs_dt)), 3)
-            results["fold_kappas_drastic"] = [round(float(k), 3) for k in fold_kappas_d]
-            results["fold_kappas_drastic_tox"] = [round(float(k), 3) for k in fold_kappas_dt]
+            results["cv_kappa_drastic_mean"]      = round(float(np.mean(fold_kappas_d)), 3)
+            results["cv_kappa_drastic_std"]       = round(float(np.std(fold_kappas_d)), 3)
+            results["cv_kappa_drastic_tox_mean"]  = round(float(np.mean(fold_kappas_dt)), 3)
+            results["cv_kappa_drastic_tox_std"]   = round(float(np.std(fold_kappas_dt)), 3)
+            results["cv_auc_drastic_mean"]        = round(float(np.mean(fold_aucs_d)), 3)
+            results["cv_auc_drastic_tox_mean"]    = round(float(np.mean(fold_aucs_dt)), 3)
+            results["fold_kappas_drastic"]        = [round(float(k), 3) for k in fold_kappas_d]
+            results["fold_kappas_drastic_tox"]    = [round(float(k), 3) for k in fold_kappas_dt]
     except Exception as e:
         results["cv_error"] = str(e)
 
@@ -250,7 +260,7 @@ def external_validation_analysis(
         results["baseline_error"] = str(e)
 
     # =========================================================
-    # 4. ENHANCED METRICS
+    # 4. ENHANCED METRICS  (v61: correct normalisation)
     # =========================================================
     try:
         idx_train, idx_test = train_test_split(
@@ -258,8 +268,10 @@ def external_validation_analysis(
             random_state=random_state, stratify=y,
         )
         y_test = y[idx_test]
-        score_d_norm = X_d[idx_test, 0] / 230.0
-        score_dt_norm = X_dt[idx_test, 0] / 280.0
+
+        # min-max normalisation to [0, 1]  (DRASTIC is NOT a probability)
+        score_d_norm  = _norm_drastic(X_d[idx_test, 0])
+        score_dt_norm = _norm_dtox(X_dt[idx_test, 0])
 
         results["pr_auc_drastic"] = round(
             float(average_precision_score(y_test, score_d_norm)), 3
@@ -273,7 +285,13 @@ def external_validation_analysis(
         results["brier_drastic_tox"] = round(
             float(brier_score_loss(y_test, score_dt_norm)), 3
         )
+        results["normalisation_note"] = (
+            "Brier/PR-AUC use min-max normalisation: "
+            f"DRASTIC [{DRASTIC_MIN:.0f}, {DRASTIC_MAX:.0f}], "
+            f"DRASTIC-Tox [{DTOX_MIN:.0f}, {DTOX_MAX:.0f}]. "
+            "These are indicative, not calibrated probabilities."
+        )
     except Exception as e:
         results["enhanced_metrics_error"] = str(e)
 
-    return results
+    return results 
