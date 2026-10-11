@@ -1,7 +1,14 @@
 """
-auto_calibration.py — معايرة أوزان DRASTIC-Tox
-جامعة الخرطوم — v57.8
-المراجع: Aller 1987، Konaté 2025، Karan 2018، Landis & Koch 1977، Youden 1950
+auto_calibration.py — معايرة أوزان DRASTIC-Tox  v61
+جامعة الخرطوم
+المراجع: Aller 1987، Landis & Koch 1977، Youden 1950
+
+v61 Changes:
+  * HG_LIMIT fixed: 0.0007 → 0.001 (EU Directive 98/83/EC)
+  * DEFAULT_WEIGHTS no longer claim "literature" source (they had none)
+    → default profile is now EQUAL weights (null assumption)
+  * OPTIMAL_THRESHOLDS unified on 144.4 (matches app.py and weight_manager)
+  * All thresholds consistent with DRASTIC-Tox range 23-276
 """
 
 from typing import Optional
@@ -14,26 +21,42 @@ try:
 except ImportError:
     SKLEARN_OK = False
 
-CN_LIMIT = 0.05
-HG_LIMIT = 0.0007
-MAX_CN_SCORE = 30.0
-MAX_HG_SCORE = 30.0
+# ============================================================
+# Standards (v61: corrected to match drastic_core.py)
+# ============================================================
+SCORING_VERSION   = "v61"
+CN_LIMIT          = 0.05     # mg/L (EU Directive 98/83/EC)
+HG_LIMIT          = 0.001    # mg/L (EU Directive 98/83/EC)  ← was 0.0007 (WRONG)
+MAX_CN_SCORE      = 30.0
+MAX_HG_SCORE      = 30.0
 MAX_TOXICITY_BONUS = 50.0
-DEFAULT_THRESHOLD = 140
+DEFAULT_THRESHOLD = 144.4
+DRASTIC_MAX       = 226
+DTOX_MAX          = 276      # 226 + 50
 
+# ============================================================
+# Default weights — NULL ASSUMPTION (equal), not "literature"
+# ============================================================
+# Rationale: no verified published source exists for mining-type-specific
+# alpha/beta/SF. Equal weights are the honest starting point; the user must
+# run calibration + sensitivity analysis to justify any deviation.
 DEFAULT_WEIGHTS = {
-    "industrial":  {"alpha": 0.7, "beta": 0.5, "SF": 1.0},
-    "traditional": {"alpha": 0.3, "beta": 1.0, "SF": 1.1},
-    "mixed":       {"alpha": 0.5, "beta": 0.9, "SF": 1.3},
+    "industrial":  {"alpha": 1.0, "beta": 1.0, "SF": 1.0},
+    "traditional": {"alpha": 1.0, "beta": 1.0, "SF": 1.0},
+    "mixed":       {"alpha": 1.0, "beta": 1.0, "SF": 1.0},
 }
 
+# Unified threshold across all mining types (v61)
 OPTIMAL_THRESHOLDS = {
-    "traditional": 106.5,
-    "industrial":  128.0,
-    "mixed":       117.0,
+    "traditional": 144.4,
+    "industrial":  144.4,
+    "mixed":       144.4,
 }
 
 
+# ============================================================
+# DRASTIC rating functions (kept in sync with drastic_core.py)
+# ============================================================
 def get_d_rating(d):
     if d < 0: raise ValueError("Neg")
     if d <= 1.5: return 10
@@ -91,16 +114,27 @@ def calc_index(D, R, A, S, T, I, C):
     return (D*5) + (R*4) + (A*3) + (S*2) + (T*1) + (I*5) + (C*3)
 
 
+# ============================================================
+# Toxicity scores (v61: aligned with drastic_core.hazard_score)
+# ============================================================
 def compute_cn_score(cn_mg_l):
-    if cn_mg_l < 0: return 0.0
-    return min(MAX_CN_SCORE, (cn_mg_l / CN_LIMIT) * 30.0)
+    """Log10 scale, saturates at HQ=1000. Matches drastic_core.hazard_score."""
+    if cn_mg_l <= 0: return 0.0
+    hq = cn_mg_l / CN_LIMIT
+    if hq <= 1: return 0.0
+    return min(MAX_CN_SCORE, MAX_CN_SCORE * np.log10(hq) / np.log10(1000.0))
 
 def compute_hg_score(hg_mg_l):
-    if hg_mg_l < 0: return 0.0
-    return min(MAX_HG_SCORE, (hg_mg_l / HG_LIMIT) * 30.0)
+    if hg_mg_l <= 0: return 0.0
+    hq = hg_mg_l / HG_LIMIT
+    if hq <= 1: return 0.0
+    return min(MAX_HG_SCORE, MAX_HG_SCORE * np.log10(hq) / np.log10(1000.0))
+
 
 def compute_drastic_for_row(row):
     try:
+        # accept both 'conductivity' and 'conductivity_m_d'
+        cond = row.get("conductivity_m_d") or row.get("conductivity")
         return calc_index(
             get_d_rating(float(row["depth_m"])),
             get_r_rating(float(row["recharge_mm"])),
@@ -108,31 +142,35 @@ def compute_drastic_for_row(row):
             get_s_rating(str(row["soil"])),
             get_t_rating(float(row["slope_pct"])),
             get_i_rating(str(row["vadose"])),
-            get_c_rating(float(row["conductivity"])),
+            get_c_rating(float(cond)),
         )
     except Exception:
         return 0
 
 
 def get_optimal_threshold(mining_type):
-    return OPTIMAL_THRESHOLDS.get(mining_type, 106.5)
+    return OPTIMAL_THRESHOLDS.get(mining_type, 144.4)
 
 def get_theoretical_weights(mining_type):
     return DEFAULT_WEIGHTS.get(mining_type, DEFAULT_WEIGHTS["traditional"])
 
 
+# ============================================================
+# Calibration
+# ============================================================
 def auto_calibrate_weights(df, mining_type="traditional", n_steps=15,
                             threshold=DEFAULT_THRESHOLD,
                             alpha_range=None, beta_range=None, sf_range=None):
     if not SKLEARN_OK:
         return {"error": "scikit-learn غير مثبت"}
 
-    required = ["depth_m", "recharge_mm", "slope_pct", "conductivity",
-                "aquifer", "soil", "vadose", "cn_water_mg_l",
-                "hg_water_mg_l", "actual_contaminated"]
+    required = ["depth_m", "recharge_mm", "slope_pct", "aquifer", "soil", "vadose",
+                "cn_water_mg_l", "hg_water_mg_l", "actual_contaminated"]
     missing = [c for c in required if c not in df.columns]
     if missing:
         return {"error": f"أعمدة مفقودة: {missing}"}
+    if "conductivity" not in df.columns and "conductivity_m_d" not in df.columns:
+        return {"error": "عمود conductivity (أو conductivity_m_d) مفقود"}
     if len(df) < 5:
         return {"error": f"عدد المواقع قليل جداً ({len(df)}). مطلوب 5 على الأقل."}
 
@@ -145,12 +183,12 @@ def auto_calibrate_weights(df, mining_type="traditional", n_steps=15,
     hg_scores = np.array([compute_hg_score(float(row.get("hg_water_mg_l", 0))) for _, row in df.iterrows()])
 
     if alpha_range is None: alpha_range = (0.1, 0.9)
-    if beta_range is None: beta_range = (0.1, 1.0)
-    if sf_range is None: sf_range = (0.8, 1.5)
+    if beta_range  is None: beta_range  = (0.1, 1.0)
+    if sf_range    is None: sf_range    = (0.8, 1.5)
 
     alpha_values = np.linspace(alpha_range[0], alpha_range[1], n_steps)
-    beta_values = np.linspace(beta_range[0], beta_range[1], n_steps)
-    sf_values = np.linspace(sf_range[0], sf_range[1], n_steps)
+    beta_values  = np.linspace(beta_range[0],  beta_range[1],  n_steps)
+    sf_values    = np.linspace(sf_range[0],    sf_range[1],    n_steps)
 
     best = {"kappa": -999.0, "alpha": 0.5, "beta": 0.5, "SF": 1.0, "recall": 0.0}
     results = []
@@ -187,15 +225,16 @@ def auto_calibrate_weights(df, mining_type="traditional", n_steps=15,
             "best_alpha": best["alpha"], "best_beta": best["beta"],
             "best_SF": best["SF"], "best_kappa": round(best["kappa"], 4),
             "best_recall": best["recall"], "all_results": results_sorted[:20],
-            "kappa_interpretation": interpret_kappa(best["kappa"])}
+            "kappa_interpretation": interpret_kappa(best["kappa"]),
+            "scoring_version": SCORING_VERSION,
+            "warning": "Calibrated weights are NOT externally validated; do not use as evidence."}
 
 
 def find_optimal_threshold(df, mining_type, alpha=None, beta=None, SF=None):
     if not SKLEARN_OK:
         return {"error": "scikit-learn غير مثبت"}
-    required = ["depth_m", "recharge_mm", "slope_pct", "conductivity",
-                "aquifer", "soil", "vadose", "cn_water_mg_l",
-                "hg_water_mg_l", "actual_contaminated"]
+    required = ["depth_m", "recharge_mm", "slope_pct", "aquifer", "soil", "vadose",
+                "cn_water_mg_l", "hg_water_mg_l", "actual_contaminated"]
     missing = [c for c in required if c not in df.columns]
     if missing:
         return {"error": f"أعمدة مفقودة: {missing}"}
@@ -205,8 +244,8 @@ def find_optimal_threshold(df, mining_type, alpha=None, beta=None, SF=None):
     if alpha is None or beta is None or SF is None:
         w = DEFAULT_WEIGHTS.get(mining_type, DEFAULT_WEIGHTS["traditional"])
         alpha = w["alpha"] if alpha is None else alpha
-        beta = w["beta"] if beta is None else beta
-        SF = w["SF"] if SF is None else SF
+        beta  = w["beta"]  if beta  is None else beta
+        SF    = w["SF"]    if SF    is None else SF
 
     drastic_vals = np.array([compute_drastic_for_row(row) for _, row in df.iterrows()])
     actual = df["actual_contaminated"].astype(int).values
@@ -223,7 +262,7 @@ def find_optimal_threshold(df, mining_type, alpha=None, beta=None, SF=None):
     J_values = tpr - fpr
     best_idx = int(np.argmax(J_values))
     best_threshold = float(thresholds[best_idx])
-    best_J = float(J_values[best_idx])
+    best_J   = float(J_values[best_idx])
     best_sens = float(tpr[best_idx])
     best_spec = float(1 - fpr[best_idx])
 
@@ -243,7 +282,7 @@ def find_optimal_threshold(df, mining_type, alpha=None, beta=None, SF=None):
     roc_data = [{"threshold": round(float(thresholds[i]), 1),
                  "tpr": round(float(tpr[i]), 3),
                  "fpr": round(float(fpr[i]), 3),
-                 "J": round(float(J_values[i]), 3)} for i in range(len(thresholds))]
+                 "J":   round(float(J_values[i]), 3)} for i in range(len(thresholds))]
 
     return {"mining_type": mining_type, "n_sites": len(df),
             "alpha_used": alpha, "beta_used": beta, "SF_used": SF,
@@ -274,7 +313,9 @@ def apply_calibration(result, mining_type):
     return {"mining_type": mining_type, "alpha": result["best_alpha"],
             "beta": result["best_beta"], "SF": result["best_SF"],
             "kappa": result["best_kappa"],
-            "ar": labels.get(mining_type, f"{mining_type} (مُعاير)")}
+            "ar": labels.get(mining_type, f"{mining_type} (مُعاير)"),
+            "verified": False,
+            "warning_ar": "أوزان مُعايرة على نفس البيانات — غير مُتحقَّق منها خارجياً."}
 
 
 def compare_with_defaults(df, mining_type, threshold=DEFAULT_THRESHOLD):
@@ -318,4 +359,6 @@ def compare_with_defaults(df, mining_type, threshold=DEFAULT_THRESHOLD):
 
 
 if __name__ == "__main__":
-    print("auto_calibration.py v57.8 — جاهز للاستخدام")
+    print(f"auto_calibration.py {SCORING_VERSION} — HG_LIMIT={HG_LIMIT} mg/L (EU 98/83/EC)")
+    print(f"DRASTIC range 23-226 | DRASTIC-Tox range 23-{DTOX_MAX}")
+    print("Default threshold = 144.4")
