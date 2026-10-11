@@ -1,4 +1,11 @@
-"""نظام التعدين السوداني v60 — University of Khartoum"""
+"""نظام التعدين السوداني v61 — University of Khartoum
+
+v61 Changes:
+  - DRASTIC-Tox max corrected: 300 → 276 (= 226 + 50)
+  - Circularity check integrated in validator (via calibration_context)
+  - conductivity_m_d alias accepted everywhere
+  - Two-line fix in HTML report template
+"""
 import streamlit as st
 import subprocess, os, sys, shutil, stat, zipfile, io
 import folium
@@ -94,7 +101,7 @@ try:
 except ImportError:
     AUTOCAL_OK = False
 
-st.set_page_config(page_title="Sudan Mining System v60", page_icon="⛏️", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Sudan Mining System v61", page_icon="⛏️", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""<style>
 html,body,[class*="css"]{font-family:'Segoe UI','Tahoma',Arial;font-size:15px;}
@@ -324,7 +331,7 @@ def mitigate(idx, hdpe=False, treat=False, mon=False):
 def calc_drastic_t(base_drastic, cn_water, hg_water, distance_m=100.0, seepage=1.0, bio_acc=1.0,
                     mining_type="traditional", alpha_override=None, beta_override=None, SF_override=None,
                     use_log_transform=None, calibrated_threshold=None):
-    CN_LIMIT = 0.05; HG_LIMIT = 0.0007
+    CN_LIMIT = 0.05; HG_LIMIT = 0.001
     MAX_CN_SCORE = 30.0; MAX_HG_SCORE = 30.0; MAX_TOXICITY_BONUS = 50.0
     if alpha_override is not None:
         alpha = alpha_override
@@ -366,7 +373,7 @@ def calc_drastic_t(base_drastic, cn_water, hg_water, distance_m=100.0, seepage=1
 def weighted_toxicity(hgw, hgs, cnw, cns, mining_type="traditional",
                       alpha_override=None, beta_override=None, SF_override=None,
                       use_log_transform=None):
-    CN_LIMIT = 0.05; HG_LIMIT = 0.0007
+    CN_LIMIT = 0.05; HG_LIMIT = 0.001
     if use_log_transform is None:
         use_log_transform = st.session_state.get("use_log_transform", True)
     if use_log_transform:
@@ -475,7 +482,7 @@ def monte_carlo_analysis(pv, n_iter=1000, variation=0.15, mining_type="tradition
     alpha_s = np.clip(np.random.normal(alpha_mean, 0.05, n_iter), 0.0, 1.0)
     beta_s = np.clip(np.random.normal(beta_mean, 0.10, n_iter), 0.0, 1.0)
     SF_s = np.clip(np.random.normal(SF_mean, 0.08, n_iter), 0.5, 2.0)
-    CN_LIMIT = 0.05; HG_LIMIT = 0.0007
+    CN_LIMIT = 0.05; HG_LIMIT = 0.001
     cn_s = np.clip(np.random.lognormal(np.log(max(0.001, cn_w)) - 0.5 * 0.2 ** 2, 0.2, n_iter), 0.0, 10.0)
     hg_s = np.clip(np.random.lognormal(np.log(max(0.0001, hg_w)) - 0.5 * 0.2 ** 2, 0.2, n_iter), 0.0, 10.0)
     cn_score_s = np.minimum(30.0, (cn_s / CN_LIMIT) * 30.0)
@@ -585,12 +592,12 @@ th{{background-color:#f5eedc;color:#5c2c16;}}.metric{{font-size:1.5em;font-weigh
 <table>
 <tr><th>Site</th><td>{site_info.get('name','N/A')}</td></tr>
 <tr><th>State</th><td>{site_info.get('state','N/A')}</td></tr>
-<tr><th>DRASTIC</th><td class="metric">{drastic}/230</td></tr>
-<tr><th>DRASTIC-Tox</th><td class="metric">{drastic_t}/300</td></tr>
+<tr><th>DRASTIC</th><td class="metric">{drastic}/226</td></tr>
+<tr><th>DRASTIC-Tox</th><td class="metric">{drastic_t}/276</td></tr>
 <tr><th>Level</th><td class="metric">{level}</td></tr>
 </table>
 <p><b>{recommendation}</b></p>
-<p style="text-align:center;color:#666;">DRASTIC-Tox v60</p>
+<p style="text-align:center;color:#666;">DRASTIC-Tox v61</p>
 </body></html>"""
 
 def build_heatmap_verified(show_heat=True, show_markers=True):
@@ -603,7 +610,8 @@ def build_heatmap_verified(show_heat=True, show_markers=True):
             if not coords or len(coords) < 2: continue
             lat, lon = coords[0], coords[1]
             try:
-                drastic = calc_index(get_d_rating(site_data.get("depth_m",15)), get_r_rating(site_data.get("recharge_mm",100)), get_a_rating(site_data.get("aquifer","massive_sandstone")), get_s_rating(site_data.get("soil","sand")), get_t_rating(site_data.get("slope_pct",4)), get_i_rating(site_data.get("vadose","sand_gravel")), get_c_rating(site_data.get("conductivity",5)))
+                _cond = site_data.get("conductivity_m_d") or site_data.get("conductivity", 5)
+                drastic = calc_index(get_d_rating(site_data.get("depth_m",15)), get_r_rating(site_data.get("recharge_mm",100)), get_a_rating(site_data.get("aquifer","massive_sandstone")), get_s_rating(site_data.get("soil","sand")), get_t_rating(site_data.get("slope_pct",4)), get_i_rating(site_data.get("vadose","sand_gravel")), get_c_rating(_cond))
                 cn = site_data.get("cn_water_mg_l",0.0); hg = site_data.get("hg_water_mg_l",0.0)
                 mt = site_data.get("mining_type","traditional")
                 if CALIBRATED_WEIGHTS and CALIBRATED_WEIGHTS.get("mining_type") == mt:
@@ -618,7 +626,7 @@ def build_heatmap_verified(show_heat=True, show_markers=True):
             popup_html = f"""<div style="font-family:Arial;font-size:12px;"><h4 style="color:{color};">{site_data.get('name_ar', site_key)}</h4><b>DRASTIC:</b> {drastic}<br><b>DRASTIC-Tox:</b> <span style="color:{color};font-weight:bold;">{drastic_t}</span><br><b>CN:</b> {cn} mg/L<br><b>Hg:</b> {hg} mg/L</div>"""
             if show_markers:
                 folium.CircleMarker(location=[lat,lon], radius=radius, popup=folium.Popup(popup_html, max_width=280), tooltip=f"{site_data.get('name_ar', site_key)} - {drastic_t}", color=color, fill=True, fillColor=color, fillOpacity=0.75, weight=2).add_to(m)
-            heat_data.append([lat, lon, min(1.0, drastic_t/230.0)])
+            heat_data.append([lat, lon, min(1.0, drastic_t/276.0)])
             sites_info.append({"state":state_name,"site":site_data.get("name_ar",site_key),"lat":lat,"lon":lon,"DRASTIC":drastic,"DRASTIC-Tox":drastic_t,"CN":cn,"Hg":hg,"Level":level})
     if show_heat and heat_data:
         HeatMap(heat_data, min_opacity=0.3, max_zoom=10, radius=30, blur=20, gradient={0.0:'#388e3c',0.4:'#fbc02d',0.7:'#f57c00',1.0:'#d32f2f'}).add_to(m)
@@ -765,7 +773,7 @@ if "ci" in st.session_state: st.sidebar.success(f"{t('current_index')}: {st.sess
 st.sidebar.markdown("---")
 with st.sidebar.expander(t("about"), expanded=False):
     st.markdown(f"""<div class="about-box">
-<h4>{t('app_title')} v60</h4>
+<h4>{t('app_title')} v61</h4>
 <h4>{t('modules')}:</h4>
 <p style="font-size:0.8em;">
 weight_manager: {'OK' if WM_OK else 'NO'}<br>
@@ -789,7 +797,7 @@ live_apis: {'OK' if LIVE_API_OK else 'NO'}
 </ul>
 </div>""", unsafe_allow_html=True)
 
-st.markdown(f"""<div class="pilot-banner">{t("pilot_version")}</div><div class="header-container"><div class="header-title">{t("app_title")}</div><div class="header-subtitle">{t("university")}</div><div class="header-subtitle">{t("subtitle")}</div><div class="header-badge">{t("version")} 60 | {n_states} | {n_sites_total} {t("sites")} ({n_sites_verified} {t("verified_sites")})</div></div>""", unsafe_allow_html=True)
+st.markdown(f"""<div class="pilot-banner">{t("pilot_version")}</div><div class="header-container"><div class="header-title">{t("app_title")}</div><div class="header-subtitle">{t("university")}</div><div class="header-subtitle">{t("subtitle")}</div><div class="header-badge">{t("version")} 61 | {n_states} | {n_sites_total} {t("sites")} ({n_sites_verified} {t("verified_sites")})</div></div>""", unsafe_allow_html=True)
 
 with st.expander(f"📤 {t('upload_files')}", expanded=False):
     c1, c2, c3 = st.columns(3)
@@ -831,8 +839,25 @@ with st.expander(f"📤 {t('upload_files')}", expanded=False):
             st.markdown("#### 🔍 " + ("فحص جودة البيانات" if is_ar() else "Data Quality Check"))
             if st.button("🔍 " + ("فحص الملف" if is_ar() else "Validate File"),
                          type="secondary", key="run_validator_btn"):
+                # v61: build calibration context for circularity check
+                _cal_ctx = None
+                if WM_OK:
+                    try:
+                        _active = get_active_profile(st.session_state.get("mining_type", "traditional"))
+                        if _active:
+                            _cal_ctx = {
+                                "profile_source_type": _active.get("source_type", "default"),
+                                "n_sites_calibrated": _active.get("n_sites"),
+                                "profile_verified": _active.get("verified", False),
+                                "current_dataset_name": "uploaded_file",
+                                "calibration_dataset_name": _active.get("name_en", ""),
+                            }
+                    except Exception:
+                        _cal_ctx = None
                 with st.spinner("Analyzing data..."):
-                    st.session_state["validation_report"] = validate_dataframe(df_to_validate, mode="mining")
+                    st.session_state["validation_report"] = validate_dataframe(
+                        df_to_validate, mode="mining", calibration_context=_cal_ctx
+                    )
             if "validation_report" in st.session_state:
                 report = st.session_state["validation_report"]
                 score = report["score"]
@@ -865,6 +890,17 @@ with st.expander(f"📤 {t('upload_files')}", expanded=False):
                         for i in report["info"]:
                             msg = i["message_ar"] if is_ar() else i["message_en"]
                             st.info(f"• {msg}")
+                # v61: circularity section
+                _circ = report.get("circularity", {})
+                if _circ.get("messages"):
+                    st.markdown("---")
+                    st.markdown("#### 🔄 " + ("فحص الدوران (Circularity)" if is_ar() else "Circularity Check"))
+                    for _m in _circ["messages"]:
+                        _msg = _m["message_ar"] if is_ar() else _m["message_en"]
+                        _sev = _m.get("severity", "info")
+                        if _sev == "error": st.error(f"• {_msg}")
+                        elif _sev == "warning": st.warning(f"• {_msg}")
+                        else: st.info(f"• {_msg}")
                 st.markdown("---")
                 if report["is_valid"]:
                     st.success("✅ " + ("البيانات جاهزة للتحليل" if is_ar() else "Data is ready for analysis"))
@@ -917,7 +953,8 @@ if MODE_KEY == "system":
                 st.metric("D - " + t("depth"), f"{site_data['depth_m']} {t('m')}")
                 st.metric("R - " + t("recharge"), f"{site_data['recharge_mm']} {t('mm_yr')}")
                 st.metric("T - " + t("slope"), f"{site_data['slope_pct']} %")
-                st.metric("C - " + t("conductivity"), f"{site_data['conductivity']} {t('m_day')}")
+                _sd_cond = site_data.get('conductivity_m_d') or site_data.get('conductivity', 5)
+                st.metric("C - " + t("conductivity"), f"{_sd_cond} {t('m_day')}")
             with c2:
                 st.metric("A - " + t("aquifer"), AQ(site_data['aquifer']))
                 st.metric("S - " + t("soil"), SL(site_data['soil']))
@@ -926,23 +963,24 @@ if MODE_KEY == "system":
             c1, c2 = st.columns(2)
             c1.metric("CN", f"{site_data['cn_water_mg_l']} mg/L")
             c2.metric("Hg", f"{site_data['hg_water_mg_l']} mg/L")
-            st.caption(f"{t('limits')}: CN = 0.05 mg/L | Hg = 0.0007 mg/L")
+            st.caption(f"{t('limits')}: CN = 0.05 mg/L | Hg = 0.001 mg/L")
             try:
+                _sd_cond_val = site_data.get('conductivity_m_d') or site_data.get('conductivity', 5)
                 idx = calc_index(get_d_rating(site_data['depth_m']), get_r_rating(site_data['recharge_mm']),
                     get_a_rating(site_data['aquifer']), get_s_rating(site_data['soil']),
                     get_t_rating(site_data['slope_pct']), get_i_rating(site_data['vadose']),
-                    get_c_rating(site_data['conductivity']))
+                    get_c_rating(_sd_cond_val))
                 risk = classify(idx)
                 st.session_state["ci"] = idx
                 st.session_state["cv"] = {"depth":site_data['depth_m'],"recharge":site_data['recharge_mm'],
                     "aquifer":site_data['aquifer'],"soil":site_data['soil'],"slope":site_data['slope_pct'],
-                    "vadose":site_data['vadose'],"conductivity":site_data['conductivity'],
+                    "vadose":site_data['vadose'],"conductivity":_sd_cond_val,
                     "cn_water_mg_l":site_data['cn_water_mg_l'],"hg_water_mg_l":site_data['hg_water_mg_l']}
                 st.session_state["current_risk"] = risk
                 z1, z2, z3 = st.columns(3)
-                z1.metric("DRASTIC", f"{idx}/230")
+                z1.metric("DRASTIC", f"{idx}/226")
                 z2.metric(t("level"), t(risk["level"]))
-                z3.metric(t("percentage"), f"{round(idx/230*100,1)}%")
+                z3.metric(t("percentage"), f"{round(idx/226*100,1)}%")
                 if risk["color"] == "red": st.error(t(risk["action"]))
                 elif risk["color"] == "orange": st.warning(t(risk["action"]))
                 elif risk["color"] == "yellow": st.info(t(risk["action"]))
@@ -957,7 +995,7 @@ if MODE_KEY == "system":
                 st.markdown("---")
                 st.markdown(f"#### {t('drastic_tox')} - {mt_label}")
                 m1, m2, m3, m4 = st.columns(4)
-                m1.metric(t("drastic_tox"), f"{dt_result['drastic_t']}/300", delta=f"+{dt_result['increase_pct']}%")
+                m1.metric(t("drastic_tox"), f"{dt_result['drastic_t']}/276", delta=f"+{dt_result['increase_pct']}%")
                 m2.metric(t("bonus"), dt_result['toxicity_bonus'])
                 m3.metric("alpha (CN)", dt_result['alpha'])
                 m4.metric("beta (Hg)", dt_result['beta'])
@@ -974,7 +1012,7 @@ if MODE_KEY == "system":
                     site_info={"name":site_data.get("name_ar",site_key),"state":state,
                         "coords":f"{site_data['coords'][0]}, {site_data['coords'][1]}",
                         "depth":site_data['depth_m'],"recharge":site_data['recharge_mm'],
-                        "slope":site_data['slope_pct'],"conductivity":site_data['conductivity'],
+                        "slope":site_data['slope_pct'],"conductivity":_sd_cond_val,
                         "cn":site_data['cn_water_mg_l'],"hg":site_data['hg_water_mg_l']},
                     drastic=idx, drastic_t=dt_result["drastic_t"],
                     level=t(risk["level"]), recommendation=t(risk["action"]))
@@ -1030,13 +1068,14 @@ if MODE_KEY == "system":
                 results, d_l, dp_l, act_l = [], [], [], []
                 for i, row in df_bulk.iterrows():
                     try:
+                        _cond_row = row.get("conductivity_m_d") or row.get("conductivity", 5)
                         ix = calc_index(get_d_rating(float(row.get("depth_m",15))),
                             get_r_rating(float(row.get("recharge_mm",100))),
                             get_a_rating(str(row.get("aquifer","massive_sandstone"))),
                             get_s_rating(str(row.get("soil","sand"))),
                             get_t_rating(float(row.get("slope_pct",4))),
                             get_i_rating(str(row.get("vadose","sand_gravel"))),
-                            get_c_rating(float(row.get("conductivity",5))))
+                            get_c_rating(float(_cond_row)))
                         d_l.append(ix)
                         if has_tox:
                             cw = float(row.get("cn_water_mg_l",0.0)); hw = float(row.get("hg_water_mg_l",0.0))
@@ -1175,7 +1214,7 @@ if MODE_KEY == "system":
             sh = mm in [t("both"), t("heat")]; sm = mm in [t("both"), t("markers")]
             with st.spinner(t("calculating")):
                 mapa, stats, df_sites = build_heatmap_verified(show_heat=sh, show_markers=sm)
-            st_folium(mapa, height=mh, key="map_folium_v60", use_container_width=True)
+            st_folium(mapa, height=mh, key="map_folium_v61", use_container_width=True)
             st.markdown("---")
             c1, c2, c3, c4, c5 = st.columns(5)
             c1.metric(t("low"), stats["low"]); c2.metric(t("medium"), stats["medium"])
@@ -1330,10 +1369,11 @@ if MODE_KEY == "system":
                     d_l, dp_l, act_l = [], [], []
                     for i, row in df_val.iterrows():
                         try:
+                            _c = row.get("conductivity_m_d") or row.get("conductivity", 5)
                             ix = calc_index(get_d_rating(float(row["depth_m"])), get_r_rating(float(row["recharge_mm"])),
                                 get_a_rating(str(row["aquifer"])), get_s_rating(str(row["soil"])),
                                 get_t_rating(float(row["slope_pct"])), get_i_rating(str(row["vadose"])),
-                                get_c_rating(float(row["conductivity"])))
+                                get_c_rating(float(_c)))
                             d_l.append(ix)
                             cw = float(row.get("cn_water_mg_l",0.0)); hw = float(row.get("hg_water_mg_l",0.0))
                             if CALIBRATED_WEIGHTS and CALIBRATED_WEIGHTS.get("mining_type") == mt:
@@ -1407,10 +1447,11 @@ if MODE_KEY == "system":
                     dv, dtv = [], []
                     for _, row in df_c.iterrows():
                         try:
+                            _c = row.get("conductivity_m_d") or row.get("conductivity", 5)
                             ix = calc_index(get_d_rating(float(row["depth_m"])), get_r_rating(float(row["recharge_mm"])),
                                 get_a_rating(str(row["aquifer"])), get_s_rating(str(row["soil"])),
                                 get_t_rating(float(row["slope_pct"])), get_i_rating(str(row["vadose"])),
-                                get_c_rating(float(row["conductivity"])))
+                                get_c_rating(float(_c)))
                             dt = calc_drastic_t(ix, float(row["cn_water_mg_l"]), float(row["hg_water_mg_l"]),
                                 mining_type="traditional")["drastic_t"]
                             dv.append(ix); dtv.append(dt)
@@ -1434,10 +1475,12 @@ if MODE_KEY == "system":
                     if "DRASTIC" not in df_c.columns:
                         dv = []
                         for _, row in df_c.iterrows():
-                            try: dv.append(calc_index(get_d_rating(float(row["depth_m"])), get_r_rating(float(row["recharge_mm"])),
-                                get_a_rating(str(row["aquifer"])), get_s_rating(str(row["soil"])),
-                                get_t_rating(float(row["slope_pct"])), get_i_rating(str(row["vadose"])),
-                                get_c_rating(float(row["conductivity"]))))
+                            try:
+                                _c = row.get("conductivity_m_d") or row.get("conductivity", 5)
+                                dv.append(calc_index(get_d_rating(float(row["depth_m"])), get_r_rating(float(row["recharge_mm"])),
+                                    get_a_rating(str(row["aquifer"])), get_s_rating(str(row["soil"])),
+                                    get_t_rating(float(row["slope_pct"])), get_i_rating(str(row["vadose"])),
+                                    get_c_rating(float(_c))))
                             except Exception: dv.append(0)
                         df_c = df_c.copy(); df_c["DRASTIC"] = dv; st.session_state["df_combined"] = df_c
                     c1, c2 = st.columns(2)
@@ -1451,7 +1494,7 @@ if MODE_KEY == "system":
                         with st.spinner(t("searching")):
                             ar = list(np.arange(amin, amax + 0.05, 0.1))
                             br = list(np.arange(bmin, bmax + 0.05, 0.1))
-                            st.session_state["cal_result"] = calibrate_alpha_beta(df_c, {"DRASTIC":100,"DRASTIC-T":144}, alpha_range=ar, beta_range=br)
+                            st.session_state["cal_result"] = calibrate_alpha_beta(df_c, {"DRASTIC":100,"DRASTIC-T":144.4}, alpha_range=ar, beta_range=br)
                     if "cal_result" in st.session_state:
                         res = st.session_state["cal_result"]
                         if "error" in res: st.error(res["error"])
@@ -1503,20 +1546,23 @@ if MODE_KEY == "system":
                             if "DRASTIC" not in df_m.columns:
                                 dv = []
                                 for _, row in df_m.iterrows():
-                                    try: dv.append(calc_index(get_d_rating(float(row["depth_m"])), get_r_rating(float(row["recharge_mm"])),
-                                        get_a_rating(str(row["aquifer"])), get_s_rating(str(row["soil"])),
-                                        get_t_rating(float(row["slope_pct"])), get_i_rating(str(row["vadose"])),
-                                        get_c_rating(float(row["conductivity"]))))
+                                    try:
+                                        _c = row.get("conductivity_m_d") or row.get("conductivity", 5)
+                                        dv.append(calc_index(get_d_rating(float(row["depth_m"])), get_r_rating(float(row["recharge_mm"])),
+                                            get_a_rating(str(row["aquifer"])), get_s_rating(str(row["soil"])),
+                                            get_t_rating(float(row["slope_pct"])), get_i_rating(str(row["vadose"])),
+                                            get_c_rating(float(_c))))
                                     except Exception: dv.append(0)
                                 df_m["DRASTIC"] = dv
                             if "DRASTIC_Tox" not in df_m.columns:
                                 dtv = []
                                 for _, row in df_m.iterrows():
                                     try:
+                                        _c = row.get("conductivity_m_d") or row.get("conductivity", 5)
                                         ix = calc_index(get_d_rating(float(row["depth_m"])), get_r_rating(float(row["recharge_mm"])),
                                             get_a_rating(str(row["aquifer"])), get_s_rating(str(row["soil"])),
                                             get_t_rating(float(row["slope_pct"])), get_i_rating(str(row["vadose"])),
-                                            get_c_rating(float(row["conductivity"])))
+                                            get_c_rating(float(_c)))
                                         dtv.append(calc_drastic_t(ix, float(row.get("cn_water_mg_l",0)),
                                             float(row.get("hg_water_mg_l",0)), mining_type="traditional")["drastic_t"])
                                     except Exception: dtv.append(0)
@@ -1530,7 +1576,7 @@ if MODE_KEY == "system":
                             st.session_state["auto_maps_fig"] = fig
                         except Exception as e: st.error(str(e))
                 if "auto_maps_fig" in st.session_state:
-                    st.plotly_chart(st.session_state["auto_maps_fig"], use_container_width=True, key="auto_maps_chart_v60")
+                    st.plotly_chart(st.session_state["auto_maps_fig"], use_container_width=True, key="auto_maps_chart_v61")
                     html = st.session_state["auto_maps_fig"].to_html(include_plotlyjs='cdn')
                     st.download_button("📥 HTML", data=html.encode("utf-8"),
                         file_name="auto_maps.html", mime="text/html", key="download_maps_html_btn")
@@ -1546,9 +1592,11 @@ if MODE_KEY == "system":
                 df_c = get_loaded_df("df_validation","df_bulk","df_combined")
             if df_c is None: st.warning(t("upload_validation_first"))
             else:
-                req = ["depth_m","recharge_mm","slope_pct","conductivity","aquifer","soil","vadose","cn_water_mg_l","hg_water_mg_l","actual_contaminated"]
+                req = ["depth_m","recharge_mm","slope_pct","aquifer","soil","vadose","cn_water_mg_l","hg_water_mg_l","actual_contaminated"]
                 miss = [x for x in req if x not in df_c.columns]
                 if miss: st.error(f"Missing: {miss}")
+                elif "conductivity" not in df_c.columns and "conductivity_m_d" not in df_c.columns:
+                    st.error("Missing: conductivity")
                 else:
                     st.success(f"{t('file_has')} {len(df_c)} {t('sites')}")
                     if WM_OK:
@@ -1672,9 +1720,11 @@ if MODE_KEY == "system":
             df_ext = get_loaded_df("df_validation", "df_combined", "df_bulk")
             if df_ext is None: st.warning("Upload validation file first")
             else:
-                req_cols = ["depth_m","recharge_mm","slope_pct","conductivity","aquifer","soil","vadose","cn_water_mg_l","hg_water_mg_l","actual_contaminated"]
+                req_cols = ["depth_m","recharge_mm","slope_pct","aquifer","soil","vadose","cn_water_mg_l","hg_water_mg_l","actual_contaminated"]
                 miss = [c for c in req_cols if c not in df_ext.columns]
                 if miss: st.error(f"Missing: {miss}")
+                elif "conductivity" not in df_ext.columns and "conductivity_m_d" not in df_ext.columns:
+                    st.error("Missing: conductivity")
                 else:
                     st.success(f"Data loaded: {len(df_ext)} sites")
                     c1, c2, c3 = st.columns(3)
@@ -1798,17 +1848,19 @@ if MODE_KEY == "system":
                         try:
                             lat = float(row["lat"]); lon = float(row["lon"])
                             if param_col == "DRASTIC_Tox":
+                                _c = row.get("conductivity_m_d") or row.get("conductivity", 5)
                                 ix = calc_index(get_d_rating(float(row["depth_m"])), get_r_rating(float(row["recharge_mm"])),
                                     get_a_rating(str(row["aquifer"])), get_s_rating(str(row["soil"])),
                                     get_t_rating(float(row["slope_pct"])), get_i_rating(str(row["vadose"])),
-                                    get_c_rating(float(row["conductivity"])))
+                                    get_c_rating(float(_c)))
                                 val = calc_drastic_t(ix, float(row.get("cn_water_mg_l", 0.0)),
                                     float(row.get("hg_water_mg_l", 0.0)), mining_type=st.session_state.get("mining_type", "traditional"))["drastic_t"]
                             elif param_col == "DRASTIC":
+                                _c = row.get("conductivity_m_d") or row.get("conductivity", 5)
                                 val = calc_index(get_d_rating(float(row["depth_m"])), get_r_rating(float(row["recharge_mm"])),
                                     get_a_rating(str(row["aquifer"])), get_s_rating(str(row["soil"])),
                                     get_t_rating(float(row["slope_pct"])), get_i_rating(str(row["vadose"])),
-                                    get_c_rating(float(row["conductivity"])))
+                                    get_c_rating(float(_c)))
                             else: val = float(row[param_col])
                             points.append((lat, lon, val))
                         except Exception: continue
@@ -1907,7 +1959,6 @@ if MODE_KEY == "system":
         </div>
         """, unsafe_allow_html=True)
 
-        # دوال التصنيف
         def _wg_ec(ec):
             if ec < 0.25: return ("C1", "excellent", 10)
             if ec < 0.75: return ("C2", "good", 8)
@@ -2185,10 +2236,11 @@ elif MODE_KEY == "verification" and ADV_OK:
                 d_l, dp_l, act_l = [], [], []
                 for i, row in df_val.iterrows():
                     try:
+                        _c = row.get("conductivity_m_d") or row.get("conductivity", 5)
                         ix = calc_index(get_d_rating(float(row["depth_m"])), get_r_rating(float(row["recharge_mm"])),
                             get_a_rating(str(row["aquifer"])), get_s_rating(str(row["soil"])),
                             get_t_rating(float(row["slope_pct"])), get_i_rating(str(row["vadose"])),
-                            get_c_rating(float(row["conductivity"])))
+                            get_c_rating(float(_c)))
                         d_l.append(ix)
                         cw = float(row.get("cn_water_mg_l",0.0)); hw = float(row.get("hg_water_mg_l",0.0))
                         if CALIBRATED_WEIGHTS and CALIBRATED_WEIGHTS.get("mining_type") == mt:
@@ -2244,7 +2296,7 @@ elif MODE_KEY == "independent" and ADV_OK:
     if df_val is None: st.warning(t("upload_validation_first"))
     else:
         try:
-            req = ["depth_m","recharge_mm","slope_pct","conductivity","aquifer","soil","vadose","actual_contaminated"]
+            req = ["depth_m","recharge_mm","slope_pct","aquifer","soil","vadose","actual_contaminated"]
             miss = [c for c in req if c not in df_val.columns]
             if miss: st.error(f"Missing: {miss}")
             else:
@@ -2255,10 +2307,12 @@ elif MODE_KEY == "independent" and ADV_OK:
                             if "DRASTIC" not in df_i.columns:
                                 dv = []
                                 for _, row in df_i.iterrows():
-                                    try: dv.append(calc_index(get_d_rating(float(row["depth_m"])), get_r_rating(float(row["recharge_mm"])),
-                                        get_a_rating(str(row["aquifer"])), get_s_rating(str(row["soil"])),
-                                        get_t_rating(float(row["slope_pct"])), get_i_rating(str(row["vadose"])),
-                                        get_c_rating(float(row["conductivity"]))))
+                                    try:
+                                        _c = row.get("conductivity_m_d") or row.get("conductivity", 5)
+                                        dv.append(calc_index(get_d_rating(float(row["depth_m"])), get_r_rating(float(row["recharge_mm"])),
+                                            get_a_rating(str(row["aquifer"])), get_s_rating(str(row["soil"])),
+                                            get_t_rating(float(row["slope_pct"])), get_i_rating(str(row["vadose"])),
+                                            get_c_rating(float(_c))))
                                     except Exception: dv.append(0)
                                 df_i["DRASTIC"] = dv
                             st.session_state["ind_val_result"] = independent_validation(df_i, "DRASTIC", "actual_contaminated", test_size=0.3)
@@ -2349,4 +2403,4 @@ elif MODE_KEY == "modflow" and MODFLOW_OK:
                 c3.metric("Mean", f"{res['head_mean']:.2f} m")
 
 st.markdown("---")
-st.markdown(f"""<div style="text-align:center;color:#666;padding:10px;"><b>{t("app_title")} v60</b> - PILOT VERSION<br><span style="font-size:0.85em;">{t("screening_only")}</span></div>""", unsafe_allow_html=True)
+st.markdown(f"""<div style="text-align:center;color:#666;padding:10px;"><b>{t("app_title")} v61</b> - PILOT VERSION<br><span style="font-size:0.85em;">{t("screening_only")}</span></div>""", unsafe_allow_html=True)
