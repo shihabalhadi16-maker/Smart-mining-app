@@ -1,701 +1,303 @@
 """
-وحدات متقدمة - نظام التعدين السوداني v60.0
-=====================================
-يحتوي على:
-1. Validation Metrics (Confusion Matrix, Kappa, MCC)
-2. DRASTIC-P (Cyanide + Mercury)
-3. Dynamic Assessment
-4. Transport Modeling
-5. Independent Validation (70/30 Split)
-6. Satellite Data (ERA5)
-7. Agricultural Module
+advanced_modules.py  v61 - drop-in replacement for v60 (same public names used by app.py)
+Requires: drastic_core.py in the same folder.
 
-الإصلاحات في v60.0:
-- إضافة max_cap مرن للوحدات (230 أو 300)
-- تحسين التوثيق
-- إصلاح اختيار نوع الاستخدام (drinking/irrigation/industrial)
-- إضافة validation للإحداثيات في satellite data
-- تحسين الأخطاء
+Public functions kept: calculate_confusion_matrix, model_contaminant_transport,
+fetch_satellite_data, calculate_sar, calculate_na_percent, calculate_ec_quality,
+calculate_agricultural_drastic, classify_irrigation_water, independent_validation,
+calculate_dynamic_risk.
+Removed (superseded by drastic_core): CRI/MRI indices, multiplicative DRASTIC-P.
 """
+import math
+from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
-from itertools import product
+import drastic_core as dc
+
+HQ_REF = 1000.0
+DRASTIC_MAX = 226
+NO3_LIMIT = 50.0     # mg/L as NO3 (WHO / EU)
 
 
-# ============================================================
-# ============ 1. Validation Metrics ============
-# ============================================================
+def _score_hq(hq, max_score=30.0):
+    """Log hazard score from a hazard quotient; 0 if compliant."""
+    if hq <= 1:
+        return 0.0
+    return min(max_score, max_score * math.log10(hq) / math.log10(HQ_REF))
+
+
+def _level(idx):
+    if idx >= 180: return "مرتفع جدا", "red"
+    if idx >= 140: return "مرتفع", "orange"
+    if idx >= 100: return "متوسط", "yellow"
+    return "منخفض", "green"
+
+
+# ===================================================== 1. validation metrics
 def calculate_confusion_matrix(predicted, actual, threshold=140):
-    """
-    حساب مصفوفة الالتباس والمقاييس الإحصائية
-
-    Parameters
-    ----------
-    predicted : array-like — القيم المتوقعة
-    actual : array-like — القيم الفعلية (0 أو 1)
-    threshold : float — العتبة للتصنيف
-
-    Returns
-    -------
-    dict — المقاييس الإحصائية
-    """
-    predicted = np.array(predicted)
-    actual = np.array(actual)
-    pred_class = (predicted >= threshold).astype(int)
-
-    tp = int(np.sum((pred_class == 1) & (actual == 1)))
-    tn = int(np.sum((pred_class == 0) & (actual == 0)))
-    fp = int(np.sum((pred_class == 1) & (actual == 0)))
-    fn = int(np.sum((pred_class == 0) & (actual == 1)))
-    total = tp + tn + fp + fn
-
-    accuracy = (tp + tn) / total if total > 0 else 0
-    precision = tp / (tp + fp) if (tp + fp) > 0 else 0
-    recall = tp / (tp + fn) if (tp + fn) > 0 else 0
-    specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
-    f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0
-    npv = tn / (tn + fn) if (tn + fn) > 0 else 0
-    po = accuracy
-    pe = ((tp + fp) * (tp + fn) + (tn + fn) * (tn + fp)) / (total ** 2) if total > 0 else 0
-    kappa = ((po - pe) / (1 - pe)) if (1 - pe) > 0 else 0
-    mcc_num = (tp * tn) - (fp * fn)
-    mcc_den = np.sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
-    mcc = mcc_num / mcc_den if mcc_den > 0 else 0
-    tpr = recall
-    fpr = fp / (fp + tn) if (fp + tn) > 0 else 0
-    youden = tpr - fpr
-    balanced_acc = (recall + specificity) / 2
-
-    return {
-        "confusion_matrix": {"TP": tp, "TN": tn, "FP": fp, "FN": fn, "Total": total},
-        "accuracy": round(accuracy * 100, 2),
-        "precision": round(precision * 100, 2),
-        "recall": round(recall * 100, 2),
-        "specificity": round(specificity * 100, 2),
-        "f1_score": round(f1 * 100, 2),
-        "npv": round(npv * 100, 2),
-        "balanced_accuracy": round(balanced_acc * 100, 2),
-        "kappa": round(kappa, 4),
-        "mcc": round(mcc, 4),
-        "youden_j": round(youden, 4),
-        "threshold": threshold}
+    predicted = np.array(predicted, dtype=float)
+    actual = np.array(actual, dtype=int)
+    pc = (predicted >= threshold).astype(int)
+    tp = int(np.sum((pc == 1) & (actual == 1))); tn = int(np.sum((pc == 0) & (actual == 0)))
+    fp = int(np.sum((pc == 1) & (actual == 0))); fn = int(np.sum((pc == 0) & (actual == 1)))
+    n = tp + tn + fp + fn
+    acc = (tp + tn) / n if n else 0
+    prec = tp / (tp + fp) if tp + fp else 0
+    rec = tp / (tp + fn) if tp + fn else 0
+    spec = tn / (tn + fp) if tn + fp else 0
+    f1 = 2 * prec * rec / (prec + rec) if prec + rec else 0
+    npv = tn / (tn + fn) if tn + fn else 0
+    pe = ((tp + fp) * (tp + fn) + (tn + fn) * (tn + fp)) / (n ** 2) if n else 0
+    kappa = (acc - pe) / (1 - pe) if (1 - pe) > 0 else 0
+    den = math.sqrt((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn))
+    mcc = (tp * tn - fp * fn) / den if den > 0 else 0
+    return {"confusion_matrix": {"TP": tp, "TN": tn, "FP": fp, "FN": fn, "Total": n},
+            "accuracy": round(acc * 100, 2), "precision": round(prec * 100, 2),
+            "recall": round(rec * 100, 2), "specificity": round(spec * 100, 2),
+            "f1_score": round(f1 * 100, 2), "npv": round(npv * 100, 2),
+            "balanced_accuracy": round((rec + spec) / 2 * 100, 2),
+            "kappa": round(kappa, 4), "mcc": round(mcc, 4),
+            "youden_j": round(rec - (fp / (fp + tn) if fp + tn else 0), 4),
+            "threshold": threshold}
 
 
-def analyze_validation_by_level(predicted, actual):
-    """تحليل الدقة حسب المستوى"""
-    predicted = np.array(predicted)
-    actual = np.array(actual)
-    levels = []
-    for idx in predicted:
-        if idx < 100: levels.append("منخفض")
-        elif idx < 140: levels.append("متوسط")
-        elif idx < 180: levels.append("مرتفع")
-        else: levels.append("مرتفع جدا")
-    df = pd.DataFrame({"predicted_index": predicted, "actual": actual, "level": levels})
-    results = []
-    for level in ["منخفض", "متوسط", "مرتفع", "مرتفع جدا"]:
-        sub = df[df["level"] == level]
-        if len(sub) > 0:
-            if level in ["مرتفع", "مرتفع جدا"]:
-                correct = (sub["actual"] == 1).sum()
-            elif level == "منخفض":
-                correct = (sub["actual"] == 0).sum()
-            else:
-                correct = 0
-            results.append({"المستوى": level, "العدد": len(sub),
-                "التصنيفات الصحيحة": int(correct),
-                "نسبة الدقة": round(correct / len(sub) * 100, 1)})
-    return pd.DataFrame(results)
-
-
-def generate_validation_report(metrics):
-    """تقرير التحقق الكامل"""
-    L = ["=" * 60, "تقرير التحقق الإحصائي", "=" * 60, ""]
-    cm = metrics["confusion_matrix"]
-    L.append(f"TP: {cm['TP']} | TN: {cm['TN']} | FP: {cm['FP']} | FN: {cm['FN']}")
-    L.append("")
-    L.append(f"Accuracy:    {metrics['accuracy']} %")
-    L.append(f"Precision:   {metrics['precision']} %")
-    L.append(f"Recall:      {metrics['recall']} %")
-    L.append(f"Specificity: {metrics['specificity']} %")
-    L.append(f"F1:          {metrics['f1_score']} %")
-    L.append(f"Kappa:       {metrics['kappa']}")
-    L.append(f"MCC:         {metrics['mcc']}")
-    L.append(f"Balanced Accuracy: {metrics['balanced_accuracy']} %")
-    L.append("")
-    L.append("تفسير Kappa (Landis & Koch):")
-    k = metrics["kappa"]
-    if k >= 0.8: interp = "توافق ممتاز"
-    elif k >= 0.6: interp = "توافق جيد"
-    elif k >= 0.4: interp = "توافق متوسط"
-    else: interp = "توافق ضعيف"
-    L.append(f"  {interp}")
-    return "\n".join(L)
-
-
-# ============================================================
-# ============ 2. DRASTIC-P ============
-# ============================================================
-def calculate_cyanide_risk_index(cn_w, cn_s, dist, seepage):
-    """
-    CRI - مؤشر السيانيد
-
-    يحسب خطر السيانيد من:
-    - تركيز السيانيد في الماء (cn_w)
-    - تركيز السيانيد في التربة (cn_s)
-    - المسافة من المصدر
-    - معامل التسرب
-    """
-    CN_W, CN_S = 0.05, 10.0  # WHO water limit, soil screening value
-    w_r = cn_w / CN_W
-    s_r = cn_s / CN_S
-    d_f = max(0.1, min(1.0, 100.0 / max(1, dist)))
-    s_f = max(0.1, min(1.0, seepage))
-    cri = (w_r * 0.5 + s_r * 0.3) * d_f * s_f
-    if cri <= 0.5: level, color = "منخفض", "green"
-    elif cri <= 2.0: level, color = "متوسط", "yellow"
-    elif cri <= 5.0: level, color = "مرتفع", "orange"
-    else: level, color = "مرتفع جدا", "red"
-    return {"cri": round(cri, 3), "water_ratio": round(w_r, 2),
-            "soil_ratio": round(s_r, 2), "level": level, "color": color}
-
-
-def calculate_mercury_risk_index(hg_w, hg_s, bio, use="drinking"):
-    """
-    MRI - مؤشر الزئبق
-
-    use : drinking / irrigation / industrial
-    """
-    limits = {"drinking": {"water": 0.0007, "soil": 1.0},
-              "irrigation": {"water": 0.0007, "soil": 1.0},
-              "industrial": {"water": 0.005, "soil": 5.0}}  # ✅ تم التصحيح من 0.05 → 0.005
-    lim = limits.get(use, limits["drinking"])
-    w_r = hg_w / lim["water"]
-    s_r = hg_s / lim["soil"]
-    mri = (w_r * 0.6 + s_r * 0.4) * bio
-    if mri <= 0.5: level, color = "منخفض", "green"
-    elif mri <= 2.0: level, color = "متوسط", "yellow"
-    elif mri <= 5.0: level, color = "مرتفع", "orange"
-    else: level, color = "مرتفع جدا", "red"
-    return {"mri": round(mri, 3), "water_ratio": round(w_r, 2),
-            "soil_ratio": round(s_r, 2), "level": level, "color": color}
-
-
-def calculate_modified_drastic(base, cri=0, mri=0, amd=0,
-                                alpha=0.50, beta=0.50, gamma=0.10,
-                                max_cap=230):
-    """
-    DRASTIC-P = DRASTIC × (1 + α×CRI + β×MRI + γ×AMD)
-
-    Parameters
-    ----------
-    max_cap : float — الحد الأقصى (230 للـ DRASTIC الكلاسيكي، 300 للـ DRASTIC-Tox)
-    """
-    modifier = 1.0 + (alpha * cri) + (beta * mri) + (gamma * amd)
-    modified = min(max_cap, base * modifier)
-    inc = ((modified - base) / base * 100) if base > 0 else 0
-    if modified >= 180: level, color = "مرتفع جدا", "red"
-    elif modified >= 140: level, color = "مرتفع", "orange"
-    elif modified >= 100: level, color = "متوسط", "yellow"
-    else: level, color = "منخفض", "green"
-    return {"base_drastic": base, "modified_drastic": round(modified, 1),
-            "modifier_factor": round(modifier, 3),
-            "increase_pct": round(inc, 1), "cri": cri, "mri": mri,
-            "amd_risk": amd, "level": level, "color": color,
-            "alpha": alpha, "beta": beta, "max_cap": max_cap}
-
-
-# ============================================================
-# ============ 3. Dynamic Assessment ============
-# ============================================================
+# ===================================================== 2. dynamic (scenario only)
 def project_drastic_change(base, years=10, mining=0.05, climate=-0.02, pop=0.03):
-    """توقع تغير DRASTIC مع الزمن"""
+    """ILLUSTRATIVE scenario multipliers - no empirical calibration."""
     proj = []
-    for year in range(years + 1):
-        if year == 0:
-            proj.append({"السنة": 0, "المؤشر": round(base, 1), "الزيادة_المئوية": 0})
-            continue
-        mf = 1 + (mining * year)
-        cf = 1 + (climate * year)
-        pf = 1 + (pop * year * 0.5)
-        ni = min(230, base * mf * cf * pf)
-        inc = ((ni - base) / base * 100) if base > 0 else 0
-        proj.append({"السنة": year, "المؤشر": round(ni, 1),
-                      "الزيادة_المئوية": round(inc, 1)})
+    for y in range(years + 1):
+        v = base if y == 0 else min(DRASTIC_MAX, base * (1 + mining * y) * (1 + climate * y)
+                                    * (1 + pop * y * 0.5))
+        proj.append({"السنة": y, "المؤشر": round(v, 1),
+                     "الزيادة_المئوية": round((v - base) / base * 100, 1) if base > 0 else 0})
     return {"base_index": base, "years": years, "projections": proj,
             "final_index": proj[-1]["المؤشر"]}
 
 
-def estimate_mitigation_impact(base, years=10, mit_year=3):
-    """تقدير تأثير الحلول"""
-    rows = []
-    for year in range(years + 1):
-        mf = 1 + (0.05 * year)
-        cf = 1 + (-0.02 * year)
-        no_mit = min(230, base * mf * cf)
-        if year >= mit_year:
-            eff = max(0.3, 1 - 0.15 * min(year - mit_year + 1, 5))
-        else:
-            eff = 1.0
-        with_mit = min(230, base * mf * cf * eff)
-        diff = no_mit - with_mit
-        rows.append({"السنة": year, "بدون تخفيف": round(no_mit, 1),
-            "مع تخفيف": round(with_mit, 1), "الفرق": round(diff, 1),
-            "التخفيض %": round(diff / no_mit * 100, 1) if no_mit > 0 else 0})
-    return pd.DataFrame(rows)
-
-
 def calculate_dynamic_risk(base, years, mining, climate, pop, cri0=0, mri0=0):
-    """التقييم الديناميكي الشامل"""
+    """cri0 / mri0 are hazard quotients (conc / limit). Additive log hazard bonus."""
     dp = project_drastic_change(base, years, mining, climate, pop)
-    combined = []
-    for proj in dp["projections"]:
-        year = proj["السنة"]
-        cri = cri0 * (1 + mining * year * 2)
-        mri = mri0 * (1 + mining * year * 1.5)
-        mod = calculate_modified_drastic(proj["المؤشر"], cri, mri,
-                                          min(1.0, 0.1 * year))
-        combined.append({"السنة": year, "DRASTIC": proj["المؤشر"],
-            "CRI": round(cri, 2), "MRI": round(mri, 2),
-            "DRASTIC-Modified": mod["modified_drastic"],
-            "المستوى": mod["level"], "اللون": mod["color"]})
-    return {"drastic_projection": dp, "combined": pd.DataFrame(combined),
-            "final_modified": combined[-1]["DRASTIC-Modified"],
-            "final_level": combined[-1]["المستوى"]}
+    rows = []
+    for p in dp["projections"]:
+        y = p["السنة"]
+        cri = cri0 * (1 + mining * y * 2)
+        mri = mri0 * (1 + mining * y * 1.5)
+        total = p["المؤشر"] + min(50.0, _score_hq(cri) + _score_hq(mri))
+        lvl, col = _level(total)
+        rows.append({"السنة": y, "DRASTIC": p["المؤشر"], "CRI": round(cri, 2),
+                     "MRI": round(mri, 2), "DRASTIC-Modified": round(total, 1),
+                     "المستوى": lvl, "اللون": col})
+    return {"drastic_projection": dp, "combined": pd.DataFrame(rows),
+            "final_modified": rows[-1]["DRASTIC-Modified"], "final_level": rows[-1]["المستوى"],
+            "note": "Scenario illustration only - multipliers are assumptions."}
 
 
-# ============================================================
-# ============ 4. Transport Modeling ============
-# ============================================================
-def model_contaminant_transport(initial_conc, k_value, porosity, gradient,
-                                  distance, source_duration_years,
-                                  decay_coefficient=0.001):
-    """نمذجة انتقال الملوثات المبسطة"""
-    if porosity <= 0 or porosity >= 1:
-        raise ValueError("Porosity must be between 0 and 1")
-    if k_value <= 0:
-        raise ValueError("K must be > 0")
-
-    v = (k_value * gradient) / porosity
-    if v <= 0:
-        return {"error": "Velocity must be > 0"}
-
-    try:
-        from scipy.special import erfc
-        has_scipy = True
-    except ImportError:
-        has_scipy = False
-
-    results = []
-    for year in range(1, source_duration_years + 1):
-        time_days = year * 365.25
-        dispersivity = 10.0
-        D = v * dispersivity
-        if D <= 0:
-            D = 0.001
-        distance_traveled = v * time_days
-
-        if has_scipy and distance > 0:
-            arg = distance / (2 * np.sqrt(D * time_days))
-            factor = float(erfc(arg))
-        else:
-            if distance > 0:
-                factor = max(0.0, 1.0 - distance / max(distance_traveled, 1))
-            else:
-                factor = 1.0
-
-        decay = np.exp(-decay_coefficient * time_days / 365.25)
-        conc = initial_conc * factor * decay
-        results.append({
-            "السنة": year,
-            "التركيز (mg/L)": round(conc, 6),
-            "المسافة المقطوعة (m)": round(distance_traveled, 1),
-            "النسبة من الحد": round(conc / initial_conc * 100, 2) if initial_conc > 0 else 0
-        })
-    return {
-        "velocity_m_day": round(v, 6),
-        "velocity_m_year": round(v * 365.25, 3),
-        "results": pd.DataFrame(results)
-    }
+# ===================================================== 3. transport (Ogata-Banks)
+def model_contaminant_transport(initial_conc, k_value, porosity, gradient, distance,
+                                source_duration_years, decay_coefficient=0.001,
+                                dispersivity=10.0):
+    """1-D continuous source, Ogata-Banks (1961) with BOTH terms.
+    C/C0 = 0.5*[erfc((x-vt)/(2 sqrt(Dt))) + exp(vx/D) erfc((x+vt)/(2 sqrt(Dt)))]
+    Decay applied as exp(-lambda*t) (approximation)."""
+    if not (0 < porosity < 1): raise ValueError("Porosity must be between 0 and 1")
+    if k_value <= 0: raise ValueError("K must be > 0")
+    v = k_value * gradient / porosity
+    if v <= 0: return {"error": "Velocity must be > 0"}
+    D = max(dispersivity * v, 1e-9)
+    rows = []
+    for yr in range(1, int(source_duration_years) + 1):
+        t = yr * 365.25
+        s = 2 * math.sqrt(D * t)
+        term1 = math.erfc((distance - v * t) / s)
+        term2 = math.exp(v * distance / D) * math.erfc((distance + v * t) / s) \
+            if v * distance / D < 600 else 0.0
+        ratio = max(0.0, min(1.0, 0.5 * (term1 + term2))) * math.exp(-decay_coefficient * yr)
+        rows.append({"السنة": yr, "التركيز (mg/L)": round(initial_conc * ratio, 6),
+                     "المسافة المقطوعة (m)": round(v * t, 1),
+                     "النسبة من التركيز الأولي %": round(ratio * 100, 2)})
+    return {"velocity_m_day": round(v, 6), "velocity_m_year": round(v * 365.25, 3),
+            "results": pd.DataFrame(rows)}
 
 
-def calculate_travel_time_to_well(depth, porosity, k_value, gradient,
-                                    well_distance):
-    """حساب زمن وصول الملوث إلى البئر"""
-    v = (k_value * gradient) / porosity
-    if v <= 0:
-        return None
-    days = well_distance / v
-    years = days / 365.25
-    return {
-        "velocity_m_day": round(v, 6),
-        "travel_days": round(days, 1),
-        "travel_years": round(years, 2)
-    }
-
-
-# ============================================================
-# ============ 5. Independent Validation ============
-# ============================================================
-def independent_validation(df, drastic_col, actual_col,
-                            alpha_range=(0.2, 1.0, 0.1),
-                            beta_range=(0.2, 1.0, 0.1),
-                            test_size=0.3, random_state=42):
-    """التحقق المستقل (70/30 Split) + تحسين α و β"""
-    np.random.seed(random_state)
-    n = len(df)
-    if n < 5:
-        return {"error": "Need at least 5 samples for validation"}
-
-    indices = np.random.permutation(n)
-    test_n = max(1, int(n * test_size))
-    test_idx = indices[:test_n]
-    train_idx = indices[test_n:]
-
-    df_train = df.iloc[train_idx].copy()
-    df_test = df.iloc[test_idx].copy()
-
-    best_kappa = -1
-    best_alpha = 0.5
-    best_beta = 0.5
-
-    alphas = np.arange(alpha_range[0], alpha_range[1] + alpha_range[2], alpha_range[2])
-    betas = np.arange(beta_range[0], beta_range[1] + beta_range[2], beta_range[2])
-
-    for alpha, beta in product(alphas, betas):
-        preds = []
-        for _, row in df_train.iterrows():
-            base = float(row[drastic_col])
-            cn = float(row.get("cn_water_mg_l", 0.0))
-            hg = float(row.get("hg_water_mg_l", 0.0))
-            cri = (cn / 0.05) * 0.5
-            mri = (hg / 0.0007) * 0.6
-            modifier = 1.0 + (alpha * cri) + (beta * mri)
-            preds.append(min(230, base * modifier))
-
-        actuals = df_train[actual_col].values
-        metrics = calculate_confusion_matrix(preds, actuals, threshold=140)
-        if metrics["kappa"] > best_kappa:
-            best_kappa = metrics["kappa"]
-            best_alpha = alpha
-            best_beta = beta
-
-    test_preds = []
-    for _, row in df_test.iterrows():
-        base = float(row[drastic_col])
-        cn = float(row.get("cn_water_mg_l", 0.0))
-        hg = float(row.get("hg_water_mg_l", 0.0))
-        cri = (cn / 0.05) * 0.5
-        mri = (hg / 0.0007) * 0.6
-        modifier = 1.0 + (best_alpha * cri) + (best_beta * mri)
-        test_preds.append(min(230, base * modifier))
-
-    test_actuals = df_test[actual_col].values
-    test_metrics = calculate_confusion_matrix(test_preds, test_actuals, threshold=140)
-
-    return {
-        "best_alpha": round(best_alpha, 2),
-        "best_beta": round(best_beta, 2),
-        "train_kappa": round(best_kappa, 4),
-        "test_kappa": test_metrics["kappa"],
-        "test_accuracy": test_metrics["accuracy"],
-        "test_recall": test_metrics["recall"],
-        "test_metrics": test_metrics,
-        "n_train": len(df_train),
-        "n_test": len(df_test),
-        "alpha_range": (alpha_range[0], alpha_range[1]),
-        "beta_range": (beta_range[0], beta_range[1])
-    }
-
-
-def generate_independent_validation_report(result):
-    """تقرير التحقق المستقل"""
-    L = ["=" * 60, "تقرير التحقق المستقل", "=" * 60, ""]
-    L.append(f"عدد مواقع التدريب: {result['n_train']}")
-    L.append(f"عدد مواقع الاختبار: {result['n_test']}")
-    L.append("")
-    L.append(f"أفضل α: {result['best_alpha']}")
-    L.append(f"أفضل β: {result['best_beta']}")
-    L.append("")
-    L.append(f"Kappa (تدريب): {result['train_kappa']}")
-    L.append(f"Kappa (اختبار): {result['test_kappa']}")
-    L.append(f"Accuracy (اختبار): {result['test_accuracy']} %")
-    L.append(f"Recall (اختبار): {result['test_recall']} %")
-    L.append("")
-    k_test = result['test_kappa']
-    if k_test >= 0.8: interp = "✅ ممتاز - النموذج قابل للتعميم"
-    elif k_test >= 0.6: interp = "✅ جيد - النموذج قابل للاعتماد"
-    elif k_test >= 0.4: interp = "⚠️ متوسط - يحتاج تحسين"
-    else: interp = "❌ ضعيف - يحتاج إعادة معايرة"
-    L.append(f"التقييم: {interp}")
-    L.append("=" * 60)
-    return "\n".join(L)
-
-
-# ============================================================
-# ============ 6. Satellite Data ============
-# ============================================================
+# ===================================================== 4. satellite / reanalysis
 def fetch_satellite_data(lat, lon, years=3):
-    """
-    جلب بيانات الأقمار الصناعية من Open-Meteo (ERA5)
-
-    ✅ إصلاح v60.0: التحقق من صحة الإحداثيات
-    """
+    """ERA5 REANALYSIS via Open-Meteo (not satellite imagery). Network code: untested offline."""
     import requests
-
-    # ✅ التحقق من الإحداثيات
+    bad = lambda msg: {"rainfall_mm": None, "temperature_c": None, "aridity": "خطأ",
+                       "ndvi_estimated": None, "source": msg}
     try:
-        lat_f = float(lat)
-        lon_f = float(lon)
-        if not (-90 <= lat_f <= 90):
-            return {"rainfall_mm": None, "temperature_c": None,
-                    "aridity": "خطأ إحداثيات", "ndvi_estimated": None,
-                    "source": "Latitude must be -90 to 90"}
-        if not (-180 <= lon_f <= 180):
-            return {"rainfall_mm": None, "temperature_c": None,
-                    "aridity": "خطأ إحداثيات", "ndvi_estimated": None,
-                    "source": "Longitude must be -180 to 180"}
+        la, lo = float(lat), float(lon)
     except (ValueError, TypeError):
-        return {"rainfall_mm": None, "temperature_c": None,
-                "aridity": "خطأ إحداثيات", "ndvi_estimated": None,
-                "source": "Invalid latitude/longitude"}
-
+        return bad("Invalid latitude/longitude")
+    if not (-90 <= la <= 90 and -180 <= lo <= 180):
+        return bad("Coordinates out of range")
     try:
-        end = datetime.now().strftime('%Y-%m-%d')
-        start = (datetime.now() - timedelta(days=365 * years)).strftime('%Y-%m-%d')
-
-        url = "https://archive-api.open-meteo.com/v1/archive"
-        params = {
-            "latitude": lat_f,
-            "longitude": lon_f,
-            "start_date": start,
-            "end_date": end,
-            "daily": ["precipitation_sum", "temperature_2m_mean"],
-            "timezone": "Africa/Khartoum"
-        }
-
-        r = requests.get(url, params=params, timeout=60)
+        end = datetime.now() - timedelta(days=7)
+        start = end - timedelta(days=int(365.25 * years))
+        r = requests.get("https://archive-api.open-meteo.com/v1/archive", timeout=60, params={
+            "latitude": la, "longitude": lo, "start_date": start.strftime("%Y-%m-%d"),
+            "end_date": end.strftime("%Y-%m-%d"), "timezone": "Africa/Khartoum",
+            "daily": ["precipitation_sum", "temperature_2m_mean", "et0_fao_evapotranspiration"]})
         if r.status_code != 200:
-            return {"rainfall_mm": None, "temperature_c": None,
-                    "aridity": "غير محدد", "ndvi_estimated": None,
-                    "source": f"HTTP {r.status_code}"}
-
-        data = r.json()
-        daily = data.get("daily", {})
-        rain_data = daily.get("precipitation_sum", [])
-        temp_data = daily.get("temperature_2m_mean", [])
-
-        rv = [x for x in rain_data if x is not None]
-        tv = [x for x in temp_data if x is not None]
-
-        rain = round(sum(rv) / years, 1) if rv else None
-        temp = round(sum(tv) / len(tv), 1) if tv else None
-
-        aridity = "غير محدد"
-        if rain is not None:
-            if rain < 100: aridity = "صحراوي"
-            elif rain < 250: aridity = "شبه جاف"
-            elif rain < 500: aridity = "شبه رطب"
-            else: aridity = "رطب"
-
-        ndvi = None
-        if rain is not None:
-            ndvi = round(min(0.7, max(0.05, rain / 1000.0)), 3)
-
-        return {"rainfall_mm": rain, "temperature_c": temp,
-                "aridity": aridity, "ndvi_estimated": ndvi,
-                "source": "ERA5 (ECMWF) via Open-Meteo",
-                "n_years": years, "n_days": len(rv)}
-    except requests.exceptions.Timeout:
-        return {"rainfall_mm": None, "temperature_c": None,
-                "aridity": "انتهت المهلة", "ndvi_estimated": None,
-                "source": "Timeout (60s)"}
-    except requests.exceptions.ConnectionError:
-        return {"rainfall_mm": None, "temperature_c": None,
-                "aridity": "خطأ اتصال", "ndvi_estimated": None,
-                "source": "Connection Error"}
+            return bad(f"HTTP {r.status_code}")
+        d = r.json().get("daily", {})
+        clean = lambda k: [x for x in d.get(k, []) if x is not None]
+        rain, temp, et0 = clean("precipitation_sum"), clean("temperature_2m_mean"), clean("et0_fao_evapotranspiration")
+        yrs = max(len(rain) / 365.25, 1e-9)
+        p_ann = round(sum(rain) / yrs, 1) if rain else None
+        pet_ann = sum(et0) / (len(et0) / 365.25) if et0 else None
+        ai = round(p_ann / pet_ann, 3) if (p_ann is not None and pet_ann) else None
+        if ai is None: arid = "غير محدد"
+        elif ai < 0.05: arid = "شديد الجفاف"
+        elif ai < 0.2: arid = "جاف"
+        elif ai < 0.5: arid = "شبه جاف"
+        elif ai < 0.65: arid = "شبه رطب جاف"
+        else: arid = "رطب"
+        return {"rainfall_mm": p_ann, "temperature_c": round(sum(temp) / len(temp), 1) if temp else None,
+                "aridity": arid, "aridity_index": ai, "ndvi_estimated": None,
+                "source": "ERA5 reanalysis via Open-Meteo (UNEP aridity index = P/PET)",
+                "n_days": len(rain)}
     except Exception as e:
-        return {"rainfall_mm": None, "temperature_c": None,
-                "aridity": "غير محدد", "ndvi_estimated": None,
-                "source": f"خطأ: {str(e)[:50]}"}
+        return bad(f"خطأ: {str(e)[:60]}")
 
 
-# ============================================================
-# ============ 7. Agricultural Module ============
-# ============================================================
+# ===================================================== 5. irrigation water
 def calculate_sar(na, ca, mg):
-    """
-    حساب نسبة امتصاص الصوديوم (SAR)
-
-    USSL 1954:
-    S1: 0-10 | S2: 10-18 | S3: 18-26 | S4: >26
-    """
     try:
-        na = float(na); ca = float(ca); mg = float(mg)
+        na, ca, mg = float(na), float(ca), float(mg)
         if ca + mg <= 0:
-            return {"sar": None, "level": "غير محدد", "color": "gray",
-                    "action": "بيانات ناقصة"}
-        sar = na / np.sqrt((ca + mg) / 2)
-        if sar < 10:
-            level, color, action = "منخفض", "green", "آمن للري"
-        elif sar < 18:
-            level, color, action = "متوسط", "yellow", "مراقبة دورية"
-        elif sar < 26:
-            level, color, action = "مرتفع", "orange", "يحتاج معالجة"
-        else:
-            level, color, action = "مرتفع جدا", "red", "غير مناسب للري"
-        return {"sar": round(sar, 2), "level": level, "color": color, "action": action}
+            return {"sar": None, "level": "غير محدد", "color": "gray", "action": "بيانات ناقصة"}
+        s = dc.sar(na, ca, mg)
+        cls = dc.ussl_sodium(s)
+        lvl, col, act = {"S1": ("منخفض", "green", "آمن للري"), "S2": ("متوسط", "yellow", "مراقبة دورية"),
+                         "S3": ("مرتفع", "orange", "يحتاج معالجة"),
+                         "S4": ("مرتفع جدا", "red", "غير مناسب للري")}[cls]
+        return {"sar": round(s, 2), "class": cls, "level": lvl, "color": col, "action": act}
     except Exception:
-        return {"sar": None, "level": "خطأ", "color": "gray",
-                "action": "بيانات غير صحيحة"}
+        return {"sar": None, "level": "خطأ", "color": "gray", "action": "بيانات غير صحيحة"}
 
 
 def calculate_na_percent(na, ca, mg, k=0):
-    """حساب نسبة الصوديوم (Na%)"""
+    """Wilcox (1955): Na% = (Na + K) / (Ca + Mg + Na + K) x 100  (fixes v60: K was omitted)."""
     try:
-        na = float(na); ca = float(ca); mg = float(mg); k = float(k)
-        total = na + ca + mg + k
-        if total <= 0:
-            return {"na_percent": None, "level": "غير محدد", "color": "gray",
-                    "action": "بيانات ناقصة"}
-        nap = (na / total) * 100
-        if nap < 20:
-            level, color, action = "ممتاز", "green", "آمن تماماً"
-        elif nap < 40:
-            level, color, action = "جيد", "green", "آمن"
-        elif nap < 60:
-            level, color, action = "مقبول", "yellow", "مراقبة"
-        elif nap < 80:
-            level, color, action = "مشكوك", "orange", "يحتاج معالجة"
-        else:
-            level, color, action = "غير مناسب", "red", "غير صالح للري"
-        return {"na_percent": round(nap, 2), "level": level, "color": color,
-                "action": action}
+        na, ca, mg, k = float(na), float(ca), float(mg), float(k)
+        if na + ca + mg + k <= 0:
+            return {"na_percent": None, "level": "غير محدد", "color": "gray", "action": "بيانات ناقصة"}
+        p = dc.na_percent(na, k, ca, mg)
+        lvl, col, act = (("ممتاز", "green", "آمن تماماً") if p < 20 else
+                         ("جيد", "green", "آمن") if p < 40 else
+                         ("مقبول", "yellow", "مراقبة") if p < 60 else
+                         ("مشكوك", "orange", "يحتاج معالجة") if p < 80 else
+                         ("غير مناسب", "red", "غير صالح للري"))
+        return {"na_percent": round(p, 2), "level": lvl, "color": col, "action": act}
     except Exception:
-        return {"na_percent": None, "level": "خطأ", "color": "gray",
-                "action": "بيانات غير صحيحة"}
+        return {"na_percent": None, "level": "خطأ", "color": "gray", "action": "بيانات غير صحيحة"}
 
 
 def calculate_ec_quality(ec):
-    """
-    تصنيف جودة المياه حسب التوصيلية الكهربائية (EC)
-
-    ✅ USSL 1954 — محدث بدقة:
-    C1: < 0.25 | C2: 0.25-0.75 | C3: 0.75-2.25 | C4: 2.25-4.0 | C4+: >4.0
-    """
     try:
         ec = float(ec)
-        if ec < 0.25:
-            level, color, action = "C1 - ممتاز", "green", "آمن للري"
-        elif ec < 0.75:
-            level, color, action = "C2 - جيد", "green", "آمن"
-        elif ec < 2.25:
-            level, color, action = "C3 - مقبول", "yellow", "مراقبة"
-        elif ec < 4.0:
-            level, color, action = "C4 - مشكوك", "orange", "يحتاج معالجة"
-        else:
-            level, color, action = "C4+ - غير مناسب", "red", "غير صالح للري"
-        return {"ec": ec, "level": level, "color": color, "action": action}
+        cls = dc.ussl_salinity(ec)
+        lvl, col, act = {"C1": ("C1 - ممتاز", "green", "آمن للري"), "C2": ("C2 - جيد", "green", "آمن"),
+                         "C3": ("C3 - مقبول", "yellow", "مراقبة"),
+                         "C4": ("C4 - مشكوك/عالي", "orange", "يحتاج معالجة ومحاصيل متحملة")}[cls]
+        return {"ec": ec, "class": cls, "level": lvl, "color": col, "action": act}
     except Exception:
-        return {"ec": None, "level": "خطأ", "color": "gray",
-                "action": "بيانات غير صحيحة"}
-
-
-def calculate_nitrate_risk_index(no3_mg_l, fertilizer_use=0.5,
-                                   land_use_factor=0.5, depth_m=15):
-    """حساب مؤشر مخاطر النترات (NRI)"""
-    try:
-        no3 = float(no3_mg_l)
-        LIMIT = 50.0  # WHO 2022
-        ratio = no3 / LIMIT if LIMIT > 0 else 0
-        nri = ratio * fertilizer_use * land_use_factor
-        depth_factor = max(0.1, min(1.0, 15.0 / max(1, depth_m)))
-        nri *= depth_factor
-        nri = round(nri, 3)
-
-        if nri <= 0.3: level, color, action = "منخفض", "green", "مراقبة سنوية"
-        elif nri <= 1.0: level, color, action = "متوسط", "yellow", "مراقبة دورية"
-        elif nri <= 2.0: level, color, action = "مرتفع", "orange", "تدخل عاجل"
-        else: level, color, action = "مرتفع جدا", "red", "إيقاف التسميد"
-
-        return {"nri": nri, "no3_ratio": round(ratio, 2),
-                "fertilizer_factor": fertilizer_use,
-                "land_use_factor": land_use_factor,
-                "depth_factor": round(depth_factor, 3),
-                "level": level, "color": color, "action": action,
-                "no3_limit": LIMIT}
-    except Exception as e:
-        return {"nri": None, "level": "خطأ", "color": "gray",
-                "action": f"خطأ: {str(e)[:40]}"}
-
-
-def calculate_agricultural_drastic(base_drastic, no3_mg_l,
-                                     fertilizer_use=0.5,
-                                     land_use_factor=0.5,
-                                     depth_m=15,
-                                     alpha_agri=0.50,
-                                     max_cap=300):
-    """
-    DRASTIC-Agri = DRASTIC × (1 + α × NRI)
-
-    ✅ إصلاح v60.0: max_cap = 300 (متوافق مع DRASTIC-Tox)
-    """
-    nri_result = calculate_nitrate_risk_index(
-        no3_mg_l, fertilizer_use, land_use_factor, depth_m)
-    nri = nri_result.get("nri", 0)
-    if nri is None:
-        nri = 0
-
-    modifier = 1.0 + (alpha_agri * nri)
-    drastic_agri = min(max_cap, base_drastic * modifier)
-
-    if drastic_agri >= 180: level, color = "مرتفع جدا", "red"
-    elif drastic_agri >= 140: level, color = "مرتفع", "orange"
-    elif drastic_agri >= 100: level, color = "متوسط", "yellow"
-    else: level, color = "منخفض", "green"
-
-    return {
-        "base_drastic": base_drastic,
-        "nri": nri_result.get("nri"),
-        "drastic_agri": round(drastic_agri, 1),
-        "modifier": round(modifier, 3),
-        "increase_pct": round(((drastic_agri - base_drastic) / base_drastic * 100)
-                              if base_drastic > 0 else 0, 1),
-        "level": level, "color": color,
-        "nri_details": nri_result,
-        "alpha_agri": alpha_agri,
-        "max_cap": max_cap
-    }
+        return {"ec": None, "level": "خطأ", "color": "gray", "action": "بيانات غير صحيحة"}
 
 
 def classify_irrigation_water(sar_result, na_result, ec_result):
-    """تصنيف شامل لجودة مياه الري"""
-    score = 0
-    if sar_result.get("color") == "green": score += 3
-    elif sar_result.get("color") == "yellow": score += 2
-    elif sar_result.get("color") == "orange": score += 1
+    """Real USSL class (from EC and SAR) + FAO 29 hazards. v60 used a colour-score
+    that printed class labels unrelated to the actual EC/SAR."""
+    ec, s = ec_result.get("ec"), sar_result.get("sar")
+    if ec is None or s is None:
+        return {"class": "N/A", "level": "غير محدد", "color": "gray", "action": "بيانات ناقصة"}
+    c, sd = dc.ussl_salinity(ec), dc.ussl_sodium(s)
+    sal, inf = dc.fao_salinity_hazard(ec), dc.fao_infiltration_hazard(s, ec)
+    worst = max(int(c[1]), int(sd[1]))
+    lvl, col, act = {1: ("ممتاز", "green", "آمن لجميع المحاصيل"),
+                     2: ("جيد", "green", "آمن لمعظم المحاصيل"),
+                     3: ("مقبول", "yellow", "آمن لمحاصيل متحملة للملوحة"),
+                     4: ("مشكوك", "orange", "يحتاج معالجة/غسيل وتصريف")}[worst]
+    if "severe" in (sal, inf) and worst < 4:
+        lvl, col, act = "مشكوك", "orange", "خطر شديد حسب FAO 29 (ملوحة أو تسرب)"
+    return {"class": f"{c}-{sd}", "level": lvl, "color": col, "action": act,
+            "fao_salinity_hazard": sal, "fao_infiltration_hazard": inf,
+            "na_class": na_result.get("level")}
 
-    if na_result.get("color") == "green": score += 3
-    elif na_result.get("color") == "yellow": score += 2
-    elif na_result.get("color") == "orange": score += 1
 
-    if ec_result.get("color") == "green": score += 3
-    elif ec_result.get("color") == "yellow": score += 2
-    elif ec_result.get("color") == "orange": score += 1
+# ===================================================== 6. agricultural (experimental)
+def calculate_agricultural_drastic(base_drastic, no3_mg_l, fertilizer_use=0.5,
+                                   land_use_factor=0.5, depth_m=15, alpha_agri=0.50, max_cap=300):
+    """EXPERIMENTAL additive nitrate bonus: base + log score of NO3/50 (0 if compliant).
+    fertilizer_use, land_use_factor, depth_m, alpha_agri, max_cap are ignored (kept for
+    compatibility; the old factors had no source). Prefer Pesticide DRASTIC for the
+    agricultural vulnerability and use NO3 only as VALIDATION data - using it as an input
+    and then validating against it is circular."""
+    try:
+        hq = float(no3_mg_l) / NO3_LIMIT
+    except (ValueError, TypeError):
+        hq = 0.0
+    bonus = _score_hq(hq)
+    total = base_drastic + bonus
+    lvl, col = _level(total)
+    return {"base_drastic": base_drastic, "nri": round(hq, 3), "drastic_agri": round(total, 1),
+            "modifier": round(total / base_drastic, 3) if base_drastic > 0 else 1.0,
+            "increase_pct": round(bonus / base_drastic * 100, 1) if base_drastic > 0 else 0,
+            "level": lvl, "color": col, "nri_details": {"no3_ratio": round(hq, 3), "no3_limit": NO3_LIMIT},
+            "alpha_agri": 1.0, "max_cap": None,
+            "warning": "Do not validate against nitrate if nitrate is an input."}
 
-    if score >= 8:
-        return {"class": "C1-S1", "level": "ممتاز", "color": "green",
-                "action": "آمن لجميع المحاصيل"}
-    elif score >= 6:
-        return {"class": "C2-S1", "level": "جيد", "color": "green",
-                "action": "آمن لمعظم المحاصيل"}
-    elif score >= 4:
-        return {"class": "C3-S2", "level": "مقبول", "color": "yellow",
-                "action": "آمن لمحاصيل متحملة"}
-    elif score >= 2:
-        return {"class": "C4-S3", "level": "مشكوك", "color": "orange",
-                "action": "يحتاج معالجة"}
-    else:
-        return {"class": "C4-S4", "level": "غير مناسب", "color": "red",
-                "action": "غير صالح للري"}
+
+# ===================================================== 7. independent validation
+def _youden_threshold(score, y):
+    s = np.sort(np.unique(score))
+    cands = np.concatenate(([s[0] - 1], (s[:-1] + s[1:]) / 2, [s[-1] + 1]))
+    best_j, best = -2, []
+    for th in cands:
+        p = score >= th
+        j = (p[y == 1].mean() if (y == 1).any() else 0) - (p[y == 0].mean() if (y == 0).any() else 0)
+        if j > best_j + 1e-12: best_j, best = j, [th]
+        elif abs(j - best_j) <= 1e-12: best.append(th)
+    return float(np.median(best)), best_j
+
+
+def independent_validation(df, drastic_col, actual_col, alpha_range=(0.0, 1.0, 0.1),
+                           beta_range=(0.0, 1.0, 0.1), test_size=0.3, random_state=42):
+    """Stratified hold-out. Weights (alpha->CN, beta->Hg) AND threshold are fitted on
+    training sites only; same ADDITIVE log model as drastic_core (v60 used a different,
+    multiplicative formula capped at 230). With n~11 the test set is 3-4 sites:
+    treat as a demonstration, not as evidence."""
+    n = len(df)
+    y_all = df[actual_col].astype(int).values
+    if n < 6 or len(set(y_all)) < 2:
+        return {"error": "Need >= 6 samples with both classes"}
+    L = dc.LIMITS_MG_L["EU"]
+    cn = np.array([dc.hazard_score(float(v), L["cn"], HQ_REF) for v in df.get("cn_water_mg_l", [0.0] * n)])
+    hg = np.array([dc.hazard_score(float(v), L["hg"], HQ_REF) for v in df.get("hg_water_mg_l", [0.0] * n)])
+    base = df[drastic_col].astype(float).values
+    rng = np.random.default_rng(random_state)
+    test = []
+    for c in (0, 1):
+        idx = np.where(y_all == c)[0]; rng.shuffle(idx)
+        k = min(max(1, int(round(len(idx) * test_size))), max(len(idx) - 1, 0))
+        test += list(idx[:k])
+    test = np.array(sorted(test)); train = np.array([i for i in range(n) if i not in set(test)])
+    alphas = np.arange(alpha_range[0], alpha_range[1] + 1e-9, alpha_range[2])
+    betas = np.arange(beta_range[0], beta_range[1] + 1e-9, beta_range[2])
+    best = None
+    for a in alphas:
+        for b in betas:
+            sc = base[train] + np.minimum(50.0, a * cn[train] + b * hg[train])
+            th, j = _youden_threshold(sc, y_all[train])
+            key = (round(j, 6), -abs(a - 1) - abs(b - 1))      # ties -> nearest equal weights
+            if best is None or key > best[0]:
+                best = (key, a, b, th)
+    _, a, b, th = best
+    m_tr = calculate_confusion_matrix(base[train] + np.minimum(50.0, a * cn[train] + b * hg[train]), y_all[train], th)
+    m_te = calculate_confusion_matrix(base[test] + np.minimum(50.0, a * cn[test] + b * hg[test]), y_all[test], th)
+    return {"best_alpha": round(float(a), 2), "best_beta": round(float(b), 2), "threshold": round(th, 1),
+            "train_kappa": m_tr["kappa"], "test_kappa": m_te["kappa"],
+            "test_accuracy": m_te["accuracy"], "test_recall": m_te["recall"], "test_metrics": m_te,
+            "n_train": len(train), "n_test": len(test),
+            "alpha_range": alpha_range[:2], "beta_range": beta_range[:2]}
