@@ -1,5 +1,12 @@
-"""قاعدة بيانات السودان الكاملة - نظام التعدين السوداني v56.2"""
+"""قاعدة بيانات السودان - نظام التعدين السوداني v61
+
+ملاحظات علمية مهمة (لم تُعدَّل أي قيمة قياس هنا، فقط الدوال والوسوم):
+  * verified=True ليس تحققاً مستقلاً: يعني فقط أن الصف مُدخل من مصدر مذكور. راجع get_data_caveats().
+  * صفوف جاف/رطب لنفس المكان تشترك في الخصائص الهيدروجيولوجية (location_id واحد).
+  * المواقع 'تقديرات عامة' و GRAY_ZONE_SITES (اصطناعية) لا تدخل المعايرة ولا التحقق.
+"""
 import pandas as pd
+import drastic_core as dc
 
 # ============================================================
 # الولايات السودانية (18 ولاية)
@@ -127,7 +134,7 @@ STATES_DATABASE = {
                 "activity": "تعدين + زراعة", "verified": True,
             },
             "El_Damer": {
-                "name_ar": "الدamer",
+                "name_ar": "الدامر",
                 "coords": (17.59, 33.96),
                 "depth_m": 20.0, "recharge_mm": 15.0, "slope_pct": 4.0,
                 "conductivity": 4.0, "aquifer": "massive_sandstone",
@@ -679,145 +686,145 @@ KHARTOUM_LOCALITIES = {
 # ============================================================
 # الدوال
 # ============================================================
+def _is_estimate(state_data):
+    return "تقديرات" in str(state_data.get("source", ""))
+
+
+def _location_id(coords):
+    try:
+        return f"{float(coords[0]):.2f},{float(coords[1]):.2f}"
+    except Exception:
+        return None
+
+
+def _site_row(state_name, state_data, site_key, site_data, synthetic=False):
+    coords = site_data.get("coords") or (None, None)
+    return {
+        "site_name": (f"GZ-{site_data.get('name_ar', site_key)}" if synthetic
+                      else f"{state_name}-{site_data.get('name_ar', site_key)}"),
+        "state": state_name, "site_key": site_key,
+        "lat": coords[0], "lon": coords[1], "location_id": _location_id(coords),
+        "depth_m": site_data["depth_m"], "recharge_mm": site_data["recharge_mm"],
+        "slope_pct": site_data.get("slope_pct", 3.0), "conductivity": site_data["conductivity"],
+        "aquifer": site_data["aquifer"], "soil": site_data["soil"], "vadose": site_data["vadose"],
+        "cn_water_mg_l": site_data["cn_water_mg_l"], "hg_water_mg_l": site_data["hg_water_mg_l"],
+        "actual_contaminated": site_data["actual_contaminated"],
+        "source": state_data.get("source", ""), "season": site_data.get("season", "-"),
+        "activity": site_data.get("activity", ""),
+        "verified": bool(site_data.get("verified", False)) and not synthetic,
+        "is_estimate": _is_estimate(state_data), "is_gray_zone": bool(synthetic),
+        "is_synthetic": bool(synthetic),
+    }
+
+
+def validate_site(site):
+    """Raises ValueError with a clear message if a site record is not usable."""
+    req = ["depth_m", "recharge_mm", "slope_pct", "conductivity", "aquifer", "soil", "vadose",
+           "cn_water_mg_l", "hg_water_mg_l", "actual_contaminated"]
+    miss = [k for k in req if k not in site]
+    if miss:
+        raise ValueError(f"Missing fields: {miss}")
+    dc.rate_D(float(site["depth_m"])); dc.rate_R(float(site["recharge_mm"]))
+    dc.rate_T(float(site["slope_pct"])); dc.rate_C(float(site["conductivity"]))
+    dc._cat(dc.AQUIFER, site["aquifer"], "aquifer")
+    dc._cat(dc.SOIL, site["soil"], "soil")
+    dc._cat(dc.VADOSE, site["vadose"], "vadose")
+    if float(site["cn_water_mg_l"]) < 0 or float(site["hg_water_mg_l"]) < 0:
+        raise ValueError("Concentrations must be >= 0")
+    if int(site["actual_contaminated"]) not in (0, 1):
+        raise ValueError("actual_contaminated must be 0 or 1")
+    coords = site.get("coords")
+    if coords is not None:
+        lat, lon = float(coords[0]), float(coords[1])
+        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+            raise ValueError("Invalid coordinates")
+    return True
+
+
 def get_preset_locations_for_app():
-    """إرجاع قاموس المواقع"""
     preset = {}
     for state_name, state_data in STATES_DATABASE.items():
         for site_key, site_data in state_data["sites"].items():
-            display_name = f"{state_name} - {site_data['name_ar']}"
-            preset[display_name] = {
-                "coords": site_data["coords"],
-                "depth": site_data["depth_m"],
-                "conductivity": site_data["conductivity"],
-                "recharge": site_data["recharge_mm"],
-                "verified": site_data.get("verified", False),
-            }
+            preset[f"{state_name} - {site_data['name_ar']}"] = {
+                "coords": site_data["coords"], "depth": site_data["depth_m"],
+                "conductivity": site_data["conductivity"], "recharge": site_data["recharge_mm"],
+                "verified": site_data.get("verified", False)}
     return preset
 
 
 def get_data_summary():
-    """ملخص بيانات التعدين"""
-    return {
-        "total_states": len(STATES_DATABASE),
-        "total_sites": sum(len(s["sites"]) for s in STATES_DATABASE.values()),
-        "verified_sites": sum(
-            1 for state in STATES_DATABASE.values()
-            for site in state["sites"].values()
-            if site.get("verified", False)
-        ),
-        "states": list(STATES_DATABASE.keys()),
-    }
+    sites = [(sd, st) for st in STATES_DATABASE.values() for sd in st["sites"].values()]
+    ver = [sd for sd, _ in sites if sd.get("verified", False)]
+    locs = {_location_id(sd["coords"]) for sd in ver}
+    return {"total_states": len(STATES_DATABASE), "total_sites": len(sites),
+            "verified_sites": len(ver), "verified_locations": len(locs),
+            "estimate_sites": sum(1 for _, st in sites if _is_estimate(st)),
+            "states": list(STATES_DATABASE.keys())}
 
 
 def get_sites_by_state(state_name):
-    if state_name in STATES_DATABASE:
-        return STATES_DATABASE[state_name]["sites"]
-    return {}
+    return STATES_DATABASE[state_name]["sites"] if state_name in STATES_DATABASE else {}
 
 
 def get_site_data(state_name, site_key):
-    if state_name in STATES_DATABASE:
-        sites = STATES_DATABASE[state_name]["sites"]
-        if site_key in sites:
-            site = sites[site_key].copy()
-            site["state"] = state_name
-            site["source"] = STATES_DATABASE[state_name]["source"]
-            return site
+    if state_name in STATES_DATABASE and site_key in STATES_DATABASE[state_name]["sites"]:
+        site = STATES_DATABASE[state_name]["sites"][site_key].copy()
+        site["state"] = state_name
+        site["source"] = STATES_DATABASE[state_name]["source"]
+        return site
     return None
 
 
-def add_new_site(state_name, site_key, site_data):
+def add_new_site(state_name, site_key, site_data, verified=False):
+    """Manual entries are NOT verified unless you say so explicitly. Raises ValueError if invalid."""
+    validate_site(site_data)
+    site = dict(site_data)
+    site["verified"] = bool(verified)
     if state_name not in STATES_DATABASE:
-        STATES_DATABASE[state_name] = {
-            "description": f"ولاية {state_name}",
-            "source": site_data.get("source", "إدخال يدوي"),
-            "sites": {}
-        }
-    STATES_DATABASE[state_name]["sites"][site_key] = site_data
+        STATES_DATABASE[state_name] = {"description": f"ولاية {state_name}",
+                                       "source": site.get("source", "إدخال يدوي"), "sites": {}}
+    STATES_DATABASE[state_name]["sites"][site_key] = site
     return True
 
 
 def get_all_sites_as_dataframe():
-    """قاعدة بيانات مواقع التعدين — كل المواقع"""
-    rows = []
-    for state_name, state_data in STATES_DATABASE.items():
-        for site_key, site_data in state_data["sites"].items():
-            rows.append({
-                "site_name": f"{state_name}-{site_data.get('name_ar', site_key)}",
-                "state": state_name,
-                "site_key": site_key,
-                "depth_m": site_data["depth_m"],
-                "recharge_mm": site_data["recharge_mm"],
-                "slope_pct": site_data.get("slope_pct", 3.0),
-                "conductivity": site_data["conductivity"],
-                "aquifer": site_data["aquifer"],
-                "soil": site_data["soil"],
-                "vadose": site_data["vadose"],
-                "cn_water_mg_l": site_data["cn_water_mg_l"],
-                "hg_water_mg_l": site_data["hg_water_mg_l"],
-                "actual_contaminated": site_data["actual_contaminated"],
-                "source": state_data["source"],
-                "season": site_data["season"],
-                "activity": site_data["activity"],
-                "verified": site_data.get("verified", False),
-                "is_gray_zone": False,
-            })
+    rows = [_site_row(sn, sd, k, v) for sn, sd in STATES_DATABASE.items() for k, v in sd["sites"].items()]
     return pd.DataFrame(rows)
 
 
 def get_verified_sites_as_dataframe():
-    """المواقع الموثقة فقط"""
     df = get_all_sites_as_dataframe()
     return df[df["verified"] == True].reset_index(drop=True)
 
 
 def get_all_sites_as_dataframe_with_flag():
-    """كل المواقع مع علامة verified"""
     return get_all_sites_as_dataframe()
 
 
+def get_calibration_dataset():
+    """The ONLY table that should feed calibration / validation: verified, non-estimate, non-synthetic."""
+    df = get_all_sites_as_dataframe()
+    return df[(df["verified"] == True) & (~df["is_estimate"]) & (~df["is_synthetic"])].reset_index(drop=True)
+
+
 def get_combined_dataset(include_gray=False):
-    """
-    قاعدة بيانات موحّدة
-    - include_gray=False: الموثقة فقط (11)
-    - include_gray=True: الموثقة + الرمادية (17)
-    """
-    rows = []
-    for state_name, state_data in STATES_DATABASE.items():
-        for site_key, site_data in state_data.get("sites", {}).items():
-            if site_data.get("verified", False):
-                rows.append({
-                    "site_name": f"{state_name}-{site_data.get('name_ar', site_key)}",
-                    "state": state_name, "site_key": site_key,
-                    "depth_m": site_data["depth_m"],
-                    "recharge_mm": site_data["recharge_mm"],
-                    "slope_pct": site_data.get("slope_pct", 3.0),
-                    "conductivity": site_data["conductivity"],
-                    "aquifer": site_data["aquifer"], "soil": site_data["soil"],
-                    "vadose": site_data["vadose"],
-                    "cn_water_mg_l": site_data["cn_water_mg_l"],
-                    "hg_water_mg_l": site_data["hg_water_mg_l"],
-                    "actual_contaminated": site_data["actual_contaminated"],
-                    "verified": True, "is_gray_zone": False,
-                })
+    """Verified sites (+ synthetic Gray Zone sites if include_gray=True, flagged is_synthetic=True).
+    Synthetic rows are for SOFTWARE TESTING ONLY."""
+    rows = [_site_row(sn, sd, k, v) for sn, sd in STATES_DATABASE.items()
+            for k, v in sd.get("sites", {}).items() if v.get("verified", False)]
     if include_gray:
-        for state_name, state_data in GRAY_ZONE_SITES.items():
-            for site_key, site_data in state_data.get("sites", {}).items():
-                rows.append({
-                    "site_name": f"GZ-{site_data.get('name_ar', site_key)}",
-                    "state": state_name, "site_key": site_key,
-                    "depth_m": site_data["depth_m"],
-                    "recharge_mm": site_data["recharge_mm"],
-                    "slope_pct": site_data.get("slope_pct", 3.0),
-                    "conductivity": site_data["conductivity"],
-                    "aquifer": site_data["aquifer"], "soil": site_data["soil"],
-                    "vadose": site_data["vadose"],
-                    "cn_water_mg_l": site_data["cn_water_mg_l"],
-                    "hg_water_mg_l": site_data["hg_water_mg_l"],
-                    "actual_contaminated": site_data["actual_contaminated"],
-                    "verified": False, "is_gray_zone": True,
-                })
+        rows += [_site_row(sn, sd, k, v, synthetic=True) for sn, sd in GRAY_ZONE_SITES.items()
+                 for k, v in sd.get("sites", {}).items()]
     return pd.DataFrame(rows)
+
+
+def get_data_caveats():
+    """Runtime audit of the verified table (see data_validator.audit_site_dataset)."""
+    try:
+        import data_validator as dv
+        return dv.audit_site_dataset(get_verified_sites_as_dataframe())
+    except Exception as e:                                   # pragma: no cover
+        return [{"type": "audit_failed", "severity": "info", "message_ar": str(e), "message_en": str(e)}]
 
 
 def get_states_list():
@@ -825,9 +832,7 @@ def get_states_list():
 
 
 def get_sites_list(state_name):
-    if state_name in STATES_DATABASE:
-        return list(STATES_DATABASE[state_name]["sites"].keys())
-    return []
+    return list(STATES_DATABASE[state_name]["sites"].keys()) if state_name in STATES_DATABASE else []
 
 
 # ============================================================
