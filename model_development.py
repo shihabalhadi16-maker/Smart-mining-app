@@ -1,301 +1,153 @@
 """
-تطوير النموذج — v61
-=====================================
-- معايرة α و β (Grid Search)
-- مقارنة النماذج (3 نماذج — بعد إزالة DRASTIC-Lu المُختلق)
-- أوزان AHP مع فحص الاتساق
+model_development.py  v61 - drop-in replacement for v56.2
+Requires: drastic_core.py, drastic_bridge.py, auto_calibration.py in the same folder.
 
-v61 Changes:
-  * REMOVED: DRASTIC-Lu (multiplicative land-use formula had NO source)
-  * Threshold for DRASTIC-T unified on 144.4 (was 140)
-  * AHP-DRASTIC now reports Consistency Ratio (CR < 0.10 required)
-  * Docstring explicitly labels AHP weights as exploratory
+Public names kept: calibrate_alpha_beta, calculate_ahp_weights, compare_models, evaluate_model.
 
-References
-----------
-- Saaty, T.L. (1980). The Analytic Hierarchy Process. McGraw-Hill.
-- Aller et al. (1987). DRASTIC. EPA/600/2-87/035.
-- Landis & Koch (1977). The measurement of observer agreement. Biometrics.
+Why the old version was replaced
+  * calibrate_alpha_beta searched alpha/beta on the same rows it reported, at a typed threshold,
+    with the old linear (saturating) scores
+  * calculate_ahp_weights used a pairwise matrix with no source, never checked consistency
+    (CR < 0.10 is required) and then rescaled/clipped the result to 1..5, which destroys AHP
+  * compare_models used a different typed threshold for each model (100 / 140 / 100) on the
+    training rows, so the comparison was not fair; "DRASTIC-Lu" used cyanide concentration as
+    a "land-use factor" (the contaminant itself, i.e. circular)
+Now every model is evaluated with the same leave-one-LOCATION-out scheme, threshold fitted
+in-fold, on raw indices (no hidden rescaling).
 """
 import numpy as np
 import pandas as pd
-from sklearn.metrics import cohen_kappa_score, roc_auc_score, confusion_matrix
+import drastic_core as dc
+import auto_calibration as ac
+from drastic_bridge import (get_d_rating, get_r_rating, get_a_rating, get_s_rating,
+                            get_t_rating, get_i_rating, get_c_rating)
 
-# ============================================================
-# Canonical constants (v61)
-# ============================================================
-CN_LIMIT = 0.05       # mg/L (EU 98/83/EC)
-HG_LIMIT = 0.001      # mg/L (EU 98/83/EC)  ← was 0.0007
-MAX_CN_SCORE = 30.0
-MAX_HG_SCORE = 30.0
-MAX_TOXICITY_BONUS = 50.0
-DEFAULT_THRESHOLD_DT = 144.4    # unified
-DRASTIC_MAX = 226
-DTOX_MAX = 276                  # 226 + 50
+RI_SAATY = {1: 0.0, 2: 0.0, 3: 0.58, 4: 0.90, 5: 1.12, 6: 1.24, 7: 1.32, 8: 1.41, 9: 1.45, 10: 1.49}
+CRITERIA = ["D", "R", "A", "S", "T", "I", "C"]
+
+# ILLUSTRATIVE matrix (the one used before). It is NOT expert-derived: replace it with the
+# consensus matrix of at least 3-5 hydrogeologists before calling the result "AHP".
+DEFAULT_COMPARISON = np.array([
+    [1,   2,   3,   4,   7,   2,   3],
+    [1/2, 1,   2,   3,   5,   1,   2],
+    [1/3, 1/2, 1,   2,   4,   1,   1],
+    [1/4, 1/3, 1/2, 1,   3,   1/2, 1/2],
+    [1/7, 1/5, 1/4, 1/3, 1,   1/5, 1/4],
+    [1/2, 1,   1,   2,   5,   1,   2],
+    [1/3, 1/2, 1,   2,   4,   1/2, 1],
+])
 
 
-# ============================================================
-# 1. معايرة α و β — Grid Search
-# ============================================================
-def calibrate_alpha_beta(df, thresholds_dict, alpha_range=None, beta_range=None):
-    """
-    Grid Search لإيجاد أفضل α و β
-
-    Parameters
-    ----------
-    df : DataFrame
-        يجب أن يحتوي على: DRASTIC, cn_water_mg_l, hg_water_mg_l, actual_contaminated
-    thresholds_dict : dict
-        {'DRASTIC': 100, 'DRASTIC-T': 144.4}
-    alpha_range, beta_range : list
-        نطاقات البحث
-
-    Returns
-    -------
-    dict with best_kappa, best_balanced, results
-    """
-    if alpha_range is None:
-        alpha_range = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-    if beta_range is None:
-        beta_range = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-
-    results = []
-    y_true = df["actual_contaminated"].values
-    base_drastic = df["DRASTIC"].values
-    cn = df["cn_water_mg_l"].values
-    hg = df["hg_water_mg_l"].values
-    th_dt = thresholds_dict.get("DRASTIC-T", DEFAULT_THRESHOLD_DT)   # ← v61
-
-    for alpha in alpha_range:
-        for beta in beta_range:
-            dts = []
-            for i in range(len(df)):
-                cn_score = min(MAX_CN_SCORE, (cn[i] / CN_LIMIT) * MAX_CN_SCORE)
-                hg_score = min(MAX_HG_SCORE, (hg[i] / HG_LIMIT) * MAX_HG_SCORE)
-                bonus = min(MAX_TOXICITY_BONUS, alpha * cn_score + beta * hg_score)
-                dts.append(base_drastic[i] + bonus)
-
-            dts = np.array(dts)
-            y_pred = (dts >= th_dt).astype(int)
-
-            try:
-                kappa = cohen_kappa_score(y_true, y_pred)
-                acc = np.mean(y_true == y_pred) * 100
-                tp = np.sum((y_true == 1) & (y_pred == 1))
-                fn = np.sum((y_true == 1) & (y_pred == 0))
-                recall = (tp / (tp + fn) * 100) if (tp + fn) > 0 else 0
-
-                results.append({
-                    "alpha": round(alpha, 2), "beta": round(beta, 2),
-                    "kappa": round(kappa, 3),
-                    "accuracy": round(acc, 1),
-                    "recall": round(recall, 1),
-                })
-            except Exception:
-                continue
-
-    results_df = pd.DataFrame(results)
-
-    if results_df.empty:
+# ------------------------------------------------------------------ 1. alpha/beta
+def calibrate_alpha_beta(df, thresholds_dict=None, alpha_range=None, beta_range=None):
+    """Keeps the old return shape (best_kappa / best_balanced / results) but the kappa shown is
+    the nested leave-one-location-out estimate. thresholds_dict is ignored (fitted in-fold)."""
+    try:
+        d, cn, hg, y = _arrays_from_df(df)
+    except ValueError as e:
+        return {"error": str(e)}
+    groups = ac.location_groups(df)
+    A = list(alpha_range) if alpha_range is not None else [round(x, 2) for x in np.arange(0, 1.01, 0.1)]
+    B = list(beta_range) if beta_range is not None else [round(x, 2) for x in np.arange(0, 1.01, 0.1)]
+    rows = []
+    for a in A:
+        for b in B:
+            pred, sc = ac.grouped_cv(d, cn, hg, y, fixed=(float(a), float(b)), groups=groups)
+            m = ac.classification_metrics(y, pred, sc)
+            rows.append({"alpha": round(float(a), 2), "beta": round(float(b), 2), "kappa": m["kappa"],
+                         "accuracy": m["accuracy"], "recall": m["recall"]})
+    res = pd.DataFrame(rows)
+    if res.empty:
         return {"error": "No valid results"}
-
-    best_idx = results_df["kappa"].idxmax()
-    best = results_df.loc[best_idx]
-
-    results_df["score"] = results_df["kappa"] * 0.5 + results_df["recall"] / 100 * 0.5
-    best_balanced_idx = results_df["score"].idxmax()
-    best_balanced = results_df.loc[best_balanced_idx]
-
-    return {
-        "best_kappa": {
-            "alpha": float(best["alpha"]), "beta": float(best["beta"]),
-            "kappa": float(best["kappa"]), "accuracy": float(best["accuracy"]),
-            "recall": float(best["recall"]),
-        },
-        "best_balanced": {
-            "alpha": float(best_balanced["alpha"]), "beta": float(best_balanced["beta"]),
-            "kappa": float(best_balanced["kappa"]),
-            "accuracy": float(best_balanced["accuracy"]),
-            "recall": float(best_balanced["recall"]),
-        },
-        "results": results_df,
-        "warning": "Grid-search values are fitted on the SAME data. "
-                   "Not a validation result; use nested CV or external data.",
-    }
+    res["score"] = res["kappa"] * 0.5 + res["recall"] / 100 * 0.5
+    # ties -> closest to equal weights (no preference for extreme values)
+    res["dist"] = (res["alpha"] - 1).abs() + (res["beta"] - 1).abs()
+    best = res.sort_values(["kappa", "dist"], ascending=[False, True]).iloc[0]
+    bal = res.sort_values(["score", "dist"], ascending=[False, True]).iloc[0]
+    pack = lambda r: {"alpha": float(r["alpha"]), "beta": float(r["beta"]), "kappa": float(r["kappa"]),
+                      "accuracy": float(r["accuracy"]), "recall": float(r["recall"])}
+    return {"best_kappa": pack(best), "best_balanced": pack(bal), "results": res.drop(columns=["dist"]),
+            "note": "Each (alpha,beta) is scored out-of-location with a threshold fitted in-fold; "
+                    "picking the maximum of this table is still optimistic (selection bias)."}
 
 
-# ============================================================
-# 2. أوزان AHP (مع فحص الاتساق)
-# ============================================================
-def calculate_ahp_weights():
-    """
-    حساب أوزان AHP للـ 7 معايير + Consistency Ratio.
-
-    ⚠️ مصفوفة المقارنة أدناه تقديرية (قرار الباحث) وليست مرجعاً منشوراً.
-    يجب اعتبار الأوزان استكشافية حتى تُدعَم بمسح خبراء.
-
-    Returns
-    -------
-    dict with weights, raw_weights, consistency_ratio, is_consistent
-    """
-    comparison = np.array([
-        [1,   2,   3,   4,   7,   2,   3],
-        [1/2, 1,   2,   3,   5,   1,   2],
-        [1/3, 1/2, 1,   2,   4,   1,   1],
-        [1/4, 1/3, 1/2, 1,   3,   1/2, 1/2],
-        [1/7, 1/5, 1/4, 1/3, 1,   1/5, 1/4],
-        [1/2, 1,   1,   2,   5,   1,   2],
-        [1/3, 1/2, 1,   2,   4,   1/2, 1],
-    ])
-
-    n = comparison.shape[0]
-    eigvals, eigvecs = np.linalg.eig(comparison)
-    max_idx = int(np.argmax(eigvals.real))
-    lambda_max = float(eigvals.real[max_idx])
-    weights = eigvecs[:, max_idx].real
-    weights = np.abs(weights) / np.abs(weights).sum()
-
-    # Consistency Ratio (Saaty)
-    CI = (lambda_max - n) / (n - 1) if n > 1 else 0.0
-    # Random Index (Saaty 1980) for n=7
-    RI_TABLE = {1: 0.00, 2: 0.00, 3: 0.58, 4: 0.90, 5: 1.12,
-                6: 1.24, 7: 1.32, 8: 1.41, 9: 1.45, 10: 1.49}
-    RI = RI_TABLE.get(n, 1.32)
-    CR = CI / RI if RI > 0 else 0.0
-
-    weights_scaled = np.round(weights * 7 / weights.max(), 1)
-    weights_scaled = np.clip(weights_scaled, 1, 5)
-
-    return {
-        "D": float(weights_scaled[0]), "R": float(weights_scaled[1]),
-        "A": float(weights_scaled[2]), "S": float(weights_scaled[3]),
-        "T": float(weights_scaled[4]), "I": float(weights_scaled[5]),
-        "C": float(weights_scaled[6]),
-        "raw_weights": weights.tolist(),
-        "consistency_ratio": round(float(CR), 4),
-        "is_consistent": bool(CR < 0.10),
-        "note": "AHP pair-wise matrix is the author's judgement, not a "
-                "published source. Treat weights as exploratory.",
-    }
+def _arrays_from_df(df):
+    """Accept either a raw site table or one that already has a DRASTIC column."""
+    return ac.prepare_arrays(df)
 
 
-# ============================================================
-# 3. مقارنة النماذج (v61: DRASTIC-Lu REMOVED)
-# ============================================================
-def compare_models(df, get_rating_funcs, calc_index_func):
-    """
-    مقارنة 3 نماذج (v61: DRASTIC-Lu أُزيل):
-    1. DRASTIC (الأساسي)          — Aller 1987
-    2. DRASTIC-T (الحالي)          — هذه الدراسة
-    3. AHP-DRASTIC (استكشافي)     — Saaty 1980
+# ------------------------------------------------------------------ 2. AHP
+def calculate_ahp_weights(comparison=None):
+    """Saaty AHP with consistency check. Returns raw weights (sum 1) and, for compatibility,
+    D..C keys = weights x 7 (so a uniform vector would be 1.0 each) - no clipping."""
+    M = np.array(DEFAULT_COMPARISON if comparison is None else comparison, dtype=float)
+    n = M.shape[0]
+    eigvals, eigvecs = np.linalg.eig(M)
+    k = int(np.argmax(eigvals.real))
+    w = np.abs(eigvecs[:, k].real)
+    w = w / w.sum()
+    lam = float(eigvals[k].real)
+    ci = (lam - n) / (n - 1) if n > 1 else 0.0
+    cr = ci / RI_SAATY.get(n, 1.49) if RI_SAATY.get(n, 1.49) > 0 else 0.0
+    out = {c: float(round(w[i] * n, 3)) for i, c in enumerate(CRITERIA[:n])}
+    out.update({"raw_weights": w.tolist(), "lambda_max": round(lam, 4), "CI": round(ci, 4),
+                "CR": round(cr, 4), "consistent": bool(cr < 0.10),
+                "source": "illustrative default matrix" if comparison is None else "user matrix"})
+    return out
 
-    Parameters
-    ----------
-    df : DataFrame
-    get_rating_funcs : tuple (get_d, get_r, get_a, get_s, get_t, get_i, get_c)
-    calc_index_func : function
 
-    Returns
-    -------
-    dict with results for each model
-    """
-    get_d, get_r, get_a, get_s, get_t, get_i, get_c = get_rating_funcs
-    y_true = df["actual_contaminated"].values
-    n = len(df)
+def ahp_index(ratings_df, ahp):
+    return sum(ratings_df[c].values * ahp[c] for c in CRITERIA)
 
-    # Conductivity: accept both column names
-    cond_col = "conductivity_m_d" if "conductivity_m_d" in df.columns else "conductivity"
 
-    D_r = np.array([get_d(float(v)) for v in df["depth_m"]])
-    R_r = np.array([get_r(float(v)) for v in df["recharge_mm"]])
-    A_r = np.array([get_a(str(v)) for v in df["aquifer"]])
-    S_r = np.array([get_s(str(v)) for v in df["soil"]])
-    T_r = np.array([get_t(float(v)) for v in df["slope_pct"]])
-    I_r = np.array([get_i(str(v)) for v in df["vadose"]])
-    C_r = np.array([get_c(float(v)) for v in df[cond_col]])
-    cn = df["cn_water_mg_l"].values
-    hg = df["hg_water_mg_l"].values
+# ------------------------------------------------------------------ 3. compare models
+def _rating_table(df):
+    return pd.DataFrame({
+        "D": [get_d_rating(float(v)) for v in df["depth_m"]],
+        "R": [get_r_rating(float(v)) for v in df["recharge_mm"]],
+        "A": [get_a_rating(str(v)) for v in df["aquifer"]],
+        "S": [get_s_rating(str(v)) for v in df["soil"]],
+        "T": [get_t_rating(float(v)) for v in df["slope_pct"]],
+        "I": [get_i_rating(str(v)) for v in df["vadose"]],
+        "C": [get_c_rating(float(v)) for v in df["conductivity"]]})
 
-    results = {}
 
-    # 1. DRASTIC
-    drastic = D_r*5 + R_r*4 + A_r*3 + S_r*2 + T_r*1 + I_r*5 + C_r*3
-    results["DRASTIC"] = evaluate_model(y_true, drastic, 100)
-    results["DRASTIC"]["values"] = drastic.tolist()
-
-    # 2. DRASTIC-T  (v61: log-score matching drastic_core.hazard_score)
-    drastic_t = []
-    for i in range(n):
-        cn_score = _log_hazard_score(cn[i], CN_LIMIT, MAX_CN_SCORE)
-        hg_score = _log_hazard_score(hg[i], HG_LIMIT, MAX_HG_SCORE)
-        bonus = min(MAX_TOXICITY_BONUS, 0.5 * cn_score + 0.5 * hg_score)
-        drastic_t.append(drastic[i] + bonus)
-    drastic_t = np.array(drastic_t)
-    results["DRASTIC-T"] = evaluate_model(y_true, drastic_t, DEFAULT_THRESHOLD_DT)
-    results["DRASTIC-T"]["values"] = drastic_t.tolist()
-
-    # 3. AHP-DRASTIC  (v61: consistency flag included)
+def compare_models(df, get_rating_funcs=None, calc_index_func=None):
+    """Returns {model: metrics}. Same evaluation for all (leave-one-location-out, fitted threshold).
+    Extra args are accepted for backward compatibility and ignored."""
+    try:
+        d, cn, hg, y = ac.prepare_arrays(df)
+    except ValueError as e:
+        return {"_error": {"error": str(e)}}
+    groups = ac.location_groups(df)
+    R = _rating_table(df)
+    zeros = np.zeros(len(y))
+    pest = sum(R[k].values * w for k, w in dc.W_PEST.items())
     ahp = calculate_ahp_weights()
-    drastic_ahp = (D_r*ahp["D"] + R_r*ahp["R"] + A_r*ahp["A"] +
-                   S_r*ahp["S"] + T_r*ahp["T"] + I_r*ahp["I"] + C_r*ahp["C"])
-    results["AHP-DRASTIC"] = evaluate_model(y_true, drastic_ahp, 100)
-    results["AHP-DRASTIC"]["values"] = drastic_ahp.tolist()
-    results["AHP-DRASTIC"]["weights"] = ahp
+    ahp_val = ahp_index(R, ahp)
 
-    # REMOVED in v61: DRASTIC-Lu  (multiplicative land-use, no source)
+    def run(base, fixed):
+        pred, sc = ac.grouped_cv(base, cn, hg, y, fixed=fixed, groups=groups)
+        return ac.classification_metrics(y, pred, sc)
 
-    return results
-
-
-# ============================================================
-# Helpers
-# ============================================================
-def _log_hazard_score(conc, limit, max_score, hq_ref=1000.0):
-    """Matches drastic_core.hazard_score: 0 if compliant, log10 otherwise."""
-    if conc is None or conc <= 0:
-        return 0.0
-    hq = conc / limit
-    if hq <= 1:
-        return 0.0
-    return min(max_score, max_score * np.log10(hq) / np.log10(hq_ref))
+    out = {
+        "DRASTIC": run(d, (0.0, 0.0)),
+        "Pesticide DRASTIC": run(pest, (0.0, 0.0)),
+        "AHP-DRASTIC (illustrative matrix)": run(ahp_val, (0.0, 0.0)),
+        "DRASTIC-Tox (equal weights)": run(d, (1.0, 1.0)),
+        "Pesticide DRASTIC-Tox": run(pest, (1.0, 1.0)),
+        "CN + Hg only (no hydrogeology)": run(zeros, (1.0, 1.0)),
+    }
+    out["AHP-DRASTIC (illustrative matrix)"]["weights"] = {k: ahp[k] for k in CRITERIA}
+    out["AHP-DRASTIC (illustrative matrix)"]["CR"] = ahp["CR"]
+    out["AHP-DRASTIC (illustrative matrix)"]["consistent"] = ahp["consistent"]
+    return out
 
 
 def evaluate_model(y_true, y_score, threshold):
-    """تقييم نموذج واحد"""
-    try:
-        y_pred = (y_score >= threshold).astype(int)
-
-        cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
-        if cm.size == 4:
-            tn, fp, fn, tp = cm.ravel()
-        else:
-            tn = fp = fn = tp = 0
-
-        kappa = cohen_kappa_score(y_true, y_pred) if len(np.unique(y_true)) > 1 else 0.0
-        recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-        precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
-        accuracy = (tp + tn) / max(1, (tp + tn + fp + fn))
-
-        try:
-            auc = roc_auc_score(y_true, y_score)
-        except Exception:
-            auc = 0.5
-
-        return {
-            "kappa": round(float(kappa), 3),
-            "recall": round(float(recall) * 100, 1),
-            "precision": round(float(precision) * 100, 1),
-            "accuracy": round(float(accuracy) * 100, 1),
-            "auc": round(float(auc), 3),
-            "tp": int(tp), "tn": int(tn), "fp": int(fp), "fn": int(fn),
-            "threshold": threshold,
-        }
-    except Exception as e:
-        return {"error": str(e)}
-
-
-if __name__ == "__main__":
-    ahp = calculate_ahp_weights()
-    print(f"v61 — AHP Consistency Ratio = {ahp['consistency_ratio']} "
-          f"({'OK' if ahp['is_consistent'] else 'INCONSISTENT'})")
-    print("DRASTIC-Lu has been removed.")
+    """In-sample evaluation at a GIVEN threshold (kept for compatibility; optimistic)."""
+    y = np.asarray(y_true).astype(int)
+    s = np.asarray(y_score, dtype=float)
+    m = ac.classification_metrics(y, (s >= threshold).astype(int), s)
+    m["threshold"] = threshold
+    return m
