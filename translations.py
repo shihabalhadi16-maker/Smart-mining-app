@@ -4,6 +4,8 @@ TEXTS = {
     "ar": {
         # ===== عام =====
         "app_title": "نظام التعدين السوداني",
+        "bulk_assessment": "التقييم الجماعي",
+        "drastic_threshold": "عتبة DRASTIC",
         "university": "جامعة الخرطوم - كلية الهندسة",
         "subtitle": "DRASTIC + DRASTIC-Tox + MODFLOW 6",
         "version": "الإصدار",
@@ -195,7 +197,7 @@ TEXTS = {
 
         # ===== التحقق المتقدم =====
         "advanced_title": "التحقق المتقدم",
-        "advanced_hint": "Kappa + ROC-AUC + Bootstrap CI + LOOCV",
+        "advanced_hint": "Descriptive metrics (same data) - honest estimates: External Validation tab",
         "no_sklearn": "scikit-learn غير متثبت",
         "upload_validation_first": "ارفع ملف التحقق أولاً",
         "file_missing_tox": "الملف يفتقد أعمدة CN/Hg",
@@ -310,6 +312,8 @@ TEXTS = {
     "en": {
         # ===== General =====
         "app_title": "Sudan Mining System",
+        "bulk_assessment": "Bulk assessment",
+        "drastic_threshold": "DRASTIC threshold",
         "university": "University of Khartoum - Faculty of Engineering",
         "subtitle": "DRASTIC + DRASTIC-Tox + MODFLOW 6",
         "version": "Version",
@@ -501,7 +505,7 @@ TEXTS = {
 
         # ===== Advanced =====
         "advanced_title": "Advanced Validation",
-        "advanced_hint": "Kappa + ROC-AUC + Bootstrap CI + LOOCV",
+        "advanced_hint": "Descriptive metrics (same data) - honest estimates: External Validation tab",
         "no_sklearn": "scikit-learn not installed",
         "upload_validation_first": "Upload validation file first",
         "file_missing_tox": "File missing CN/Hg columns",
