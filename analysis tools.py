@@ -13,7 +13,7 @@ from drastic_bridge import (
 
 STANDARD = "EU"
 
-# =============================================================== SPSA
+
 def spsa_analysis(pv):
     D_r = get_d_rating(float(pv.get("depth", 15.0)))
     R_r = get_r_rating(float(pv.get("recharge", 100.0)))
@@ -42,7 +42,6 @@ def spsa_analysis(pv):
             "least_influential": results_sorted[-1]["param"] if results_sorted else None}
 
 
-# =============================================================== Sensitivity
 def sensitivity_analysis(pv, variation=0.10):
     D = float(pv.get("depth", 15.0)); R = float(pv.get("recharge", 100.0))
     A = str(pv.get("aquifer", "massive_sandstone")); S = str(pv.get("soil", "sand"))
@@ -76,7 +75,6 @@ def sensitivity_analysis(pv, variation=0.10):
             "most_sensitive": list(sr.keys())[0] if sr else None}
 
 
-# =============================================================== Monte Carlo
 def monte_carlo_analysis(pv, n_iter=1000, variation=0.15, mining_type="traditional",
                           calibrated_weights=None):
     np.random.seed(42)
@@ -131,7 +129,8 @@ def monte_carlo_analysis(pv, n_iter=1000, variation=0.15, mining_type="tradition
     res = np.sort(drastic.astype(int))
     res_tox = np.sort(tox)
 
-    def pct(arr, p): return float(np.percentile(arr, p))
+    def pct(arr, p):
+        return float(np.percentile(arr, p))
 
     return {
         "mean": round(float(np.mean(res)), 1), "std": round(float(np.std(res)), 2),
@@ -148,7 +147,6 @@ def monte_carlo_analysis(pv, n_iter=1000, variation=0.15, mining_type="tradition
     }
 
 
-# =============================================================== Mitigation
 def mitigate(idx, hdpe=False, treat=False, mon=False):
     m = float(idx)
     if hdpe: m *= 0.40
@@ -158,7 +156,6 @@ def mitigate(idx, hdpe=False, treat=False, mon=False):
     return {"mitigated_index": round(m, 1), "reduction_pct": round(red, 1)}
 
 
-# =============================================================== Toxicity
 def weighted_toxicity(hgw, hgs, cnw, cns, mining_type="traditional",
                       alpha_override=None, beta_override=None, SF_override=None,
                       use_log_transform=True):
@@ -184,7 +181,6 @@ def weighted_toxicity(hgw, hgs, cnw, cns, mining_type="traditional",
     }
 
 
-# =============================================================== HTML report
 def generate_html_report(site_info, drastic, drastic_t, level, recommendation):
     name = site_info.get("name", "N/A")
     state = site_info.get("state", "N/A")
@@ -212,4 +208,4 @@ def generate_html_report(site_info, drastic, drastic_t, level, recommendation):
         '<p style="text-align:center;color:#666;">DRASTIC-Tox v61</p>'
         "</body></html>"
     )
-    return html 
+    return html
