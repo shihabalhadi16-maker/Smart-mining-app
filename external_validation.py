@@ -1,297 +1,125 @@
 """
-External Validation Module — DRASTIC-Tox v61
-Author: Shihab Alhadi + Sarah Akasha
-University of Khartoum, Faculty of Engineering
+external_validation.py  v61 - drop-in replacement for v58.3
+Requires: drastic_core.py, drastic_bridge.py, auto_calibration.py in the same folder.
 
-Provides:
-    - external_validation_analysis(): train/test split + K-Fold CV
-    - baseline_ml_models(): LogReg + Random Forest baselines
-    - enhanced_metrics(): PR-AUC + Brier score
+Why the old version was replaced
+  * "external validation" was a split of the SAME sites; with n=11 the test set had 3-4 rows
+  * the threshold (106.5 / 140 / 144.4 ...) was typed in, never fitted inside the training part
+  * Dry/Wet rows of the same place were split between train and test (leakage)
+  * 5-fold CV on 11 rows gave folds of 2 rows: kappa/AUC per fold are meaningless
+  * Brier score was computed on score/230 (not a probability)
+  * the "baselines" were fitted on the DRASTIC-Tox score itself (one feature), so they were
+    not baselines at all; a concentration-only baseline was missing (the label is probably
+    defined by concentrations)
+  * rows that failed were silently skipped
 
-v61 Changes:
-  * threshold_dt default fixed: 106.5 → 144.4 (aligns with weight_manager v61)
-  * Normalisation divisors corrected:
-      DRASTIC      max = 226  (was 230)
-      DRASTIC-Tox  max = 276  (was 280; = 226 + max_toxicity_bonus)
-  * Docstring clarifies that Brier/PR-AUC use min-max normalisation
-    because DRASTIC is NOT a probability.
+What it does now
+  * leave-one-LOCATION-out CV: weights (if fitted) and threshold are fitted on the other locations
+  * compares: DRASTIC alone, DRASTIC-Tox (equal weights), DRASTIC-Tox (weights fitted in-fold),
+    Hg only, CN+Hg only (no hydrogeology), and the plain regulatory exceedance rule
+  * 95% CI of kappa by resampling locations; a leaky leave-one-row-out run is shown for contrast
+If a concentration-only model matches DRASTIC-Tox, the hydrogeological part adds nothing yet.
 """
 import numpy as np
 import pandas as pd
+import auto_calibration as ac
 
-# ============================================================
-# Canonical ranges (v61: aligned with drastic_core.py)
-# ============================================================
-DRASTIC_MIN    = 23.0    # index_range(W_STD)[0]
-DRASTIC_MAX    = 226.0   # index_range(W_STD)[1]
-DTOX_MIN       = 23.0
-DTOX_MAX       = 276.0   # 226 + MAX_TOXICITY_BONUS (50)
-DEFAULT_THRESH_DT = 144.4
+NAMES = {
+    "drastic": "DRASTIC",
+    "tox_equal": "DRASTIC-Tox (equal weights)",
+    "tox_fit": "DRASTIC-Tox (weights fitted in-fold)",
+    "hg_only": "Hg only (no hydrogeology)",
+    "cnhg_only": "CN + Hg only (no hydrogeology)",
+    "exceed": "Regulatory exceedance rule (no fitting)",
+}
 
 
-def _norm_drastic(x):
-    """Map DRASTIC [23, 226] -> [0, 1]."""
-    return (np.asarray(x, dtype=float) - DRASTIC_MIN) / (DRASTIC_MAX - DRASTIC_MIN)
-
-def _norm_dtox(x):
-    """Map DRASTIC-Tox [23, 276] -> [0, 1]."""
-    return (np.asarray(x, dtype=float) - DTOX_MIN) / (DTOX_MAX - DTOX_MIN)
+def _pr_auc(y, s):
+    try:
+        from sklearn.metrics import average_precision_score
+        return round(float(average_precision_score(y, s)), 3)
+    except Exception:
+        return None
 
 
 def external_validation_analysis(
-    df,
-    mining_type="traditional",
-    threshold_d=100,
-    threshold_dt=DEFAULT_THRESH_DT,       # ← v61: was 106.5
-    test_size=0.30,
-    n_folds=5,
-    random_state=42,
-    calc_index_fn=None,
-    calc_drastic_t_fn=None,
-    get_d_rating_fn=None,
-    get_r_rating_fn=None,
-    get_a_rating_fn=None,
-    get_s_rating_fn=None,
-    get_t_rating_fn=None,
-    get_i_rating_fn=None,
-    get_c_rating_fn=None,
-    calibrated_weights=None,
-    sklearn_ok=True,
-):
-    """
-    External Validation via train/test split + Stratified K-Fold CV.
-
-    Notes
-    -----
-    - With n ~ 11 the test set is 3-4 sites: treat as demonstration only.
-    - PR-AUC / Brier use min-max normalisation because DRASTIC is not a
-      probability. Numbers are indicative, not calibrated probabilities.
-    """
-    if not sklearn_ok:
-        return {"error": "scikit-learn required"}
-
+        df, mining_type="traditional", threshold_d=None, threshold_dt=None,
+        test_size=None, n_folds=None, random_state=42,
+        calc_index_fn=None, calc_drastic_t_fn=None, get_d_rating_fn=None,
+        get_r_rating_fn=None, get_a_rating_fn=None, get_s_rating_fn=None,
+        get_t_rating_fn=None, get_i_rating_fn=None, get_c_rating_fn=None,
+        calibrated_weights=None, sklearn_ok=True, n_boot=2000, n_steps=11):
+    """Old keyword arguments are accepted and ignored (thresholds are fitted, not typed)."""
     try:
-        from sklearn.model_selection import (train_test_split, StratifiedKFold)
-        from sklearn.linear_model import LogisticRegression
-        from sklearn.ensemble import RandomForestClassifier
-        from sklearn.metrics import (cohen_kappa_score, roc_auc_score,
-                                     average_precision_score, brier_score_loss)
-    except ImportError as e:
-        return {"error": f"Missing sklearn module: {e}"}
+        d, cn, hg, y = ac.prepare_arrays(df)
+    except ValueError as e:
+        return {"error": str(e)}
+    groups = ac.location_groups(df)
+    n, n_loc = len(y), len(np.unique(groups))
+    pos_loc = len(np.unique(groups[y == 1]))
+    neg_loc = len(np.unique(groups[y == 0]))
+    if n_loc < 4 or pos_loc < 2 or neg_loc < 2:
+        return {"error": f"Need >= 2 contaminated and >= 2 clean LOCATIONS "
+                         f"(found {pos_loc} / {neg_loc} in {n_loc} locations)."}
 
-    required_fns = [calc_index_fn, calc_drastic_t_fn, get_d_rating_fn,
-                    get_r_rating_fn, get_a_rating_fn, get_s_rating_fn,
-                    get_t_rating_fn, get_i_rating_fn, get_c_rating_fn]
-    if any(f is None for f in required_fns):
-        return {"error": "All rating/index functions must be provided"}
+    grid = ac.score_grid(n_steps, None, None)
+    zeros = np.zeros(n)
+    cn_mg = df["cn_water_mg_l"].astype(float).values
+    hg_mg = df["hg_water_mg_l"].astype(float).values
+    cn_lim, hg_lim = ac.CN_LIMIT, ac.HG_LIMIT
 
-    # ---------------- Prepare arrays ----------------
-    drastic_arr, dtox_arr, actual_arr = [], [], []
-
-    for _, row in df.iterrows():
-        try:
-            ix = calc_index_fn(
-                get_d_rating_fn(float(row["depth_m"])),
-                get_r_rating_fn(float(row["recharge_mm"])),
-                get_a_rating_fn(str(row["aquifer"])),
-                get_s_rating_fn(str(row["soil"])),
-                get_t_rating_fn(float(row["slope_pct"])),
-                get_i_rating_fn(str(row["vadose"])),
-                get_c_rating_fn(float(row.get("conductivity_m_d")
-                                       or row.get("conductivity"))),
-            )
-            cn = float(row.get("cn_water_mg_l", 0.0))
-            hg = float(row.get("hg_water_mg_l", 0.0))
-
-            if calibrated_weights and calibrated_weights.get("mining_type") == mining_type:
-                dtox = calc_drastic_t_fn(
-                    ix, cn, hg, mining_type=mining_type,
-                    alpha_override=calibrated_weights["alpha"],
-                    beta_override=calibrated_weights["beta"],
-                    SF_override=calibrated_weights["SF"],
-                )["drastic_t"]
-            else:
-                dtox = calc_drastic_t_fn(ix, cn, hg, mining_type=mining_type)["drastic_t"]
-
-            drastic_arr.append(ix)
-            dtox_arr.append(dtox)
-            actual_arr.append(int(row["actual_contaminated"]))
-        except Exception:
-            continue
-
-    X_d  = np.array(drastic_arr).reshape(-1, 1)
-    X_dt = np.array(dtox_arr).reshape(-1, 1)
-    y = np.array(actual_arr)
-    n = len(y)
-
-    if n < 8:
-        return {"error": f"Need at least 8 sites, got {n}"}
-    if len(np.unique(y)) < 2:
-        return {"error": "Need both classes (contaminated & clean)"}
-
-    results = {
-        "n_total": n,
-        "n_contaminated": int(y.sum()),
-        "n_clean": int((y == 0).sum()),
-        "mining_type": mining_type,
-        "threshold_d": threshold_d,
-        "threshold_dt": threshold_dt,
-        "scoring_version": "v61",
-        "drastic_range": [DRASTIC_MIN, DRASTIC_MAX],
-        "dtox_range": [DTOX_MIN, DTOX_MAX],
+    runs = {
+        "drastic": ac.grouped_cv(d, cn, hg, y, fixed=(0.0, 0.0), groups=groups),
+        "tox_equal": ac.grouped_cv(d, cn, hg, y, fixed=(1.0, 1.0), groups=groups),
+        "tox_fit": ac.grouped_cv(d, cn, hg, y, grid=grid, groups=groups),
+        "hg_only": ac.grouped_cv(zeros, cn, hg, y, fixed=(0.0, 1.0), groups=groups),
+        "cnhg_only": ac.grouped_cv(zeros, cn, hg, y, fixed=(1.0, 1.0), groups=groups),
     }
+    hq = np.maximum(cn_mg / cn_lim, hg_mg / hg_lim)
+    runs["exceed"] = ((hq > 1).astype(int), hq)
 
-    # =========================================================
-    # 1. TRAIN / TEST SPLIT (stratified)
-    # =========================================================
-    try:
-        idx_train, idx_test = train_test_split(
-            np.arange(n), test_size=test_size,
-            random_state=random_state, stratify=y,
-        )
-        results["test_size_pct"] = int(test_size * 100)
-        results["n_train"] = len(idx_train)
-        results["n_test"]  = len(idx_test)
+    models = {}
+    for key, (pred, sc) in runs.items():
+        m = ac.classification_metrics(y, pred, sc)
+        lo, hi = ac.bootstrap_group_ci(y, pred, groups, n_boot=n_boot, seed=random_state)
+        m.update({"name": NAMES[key], "kappa_ci_95": (lo, hi), "pr_auc": _pr_auc(y, sc)})
+        models[key] = m
 
-        y_test = y[idx_test]
-        y_pred_d  = (X_d[idx_test, 0]  >= threshold_d).astype(int)
-        y_pred_dt = (X_dt[idx_test, 0] >= threshold_dt).astype(int)
+    naive_pred, naive_sc = ac.grouped_cv(d, cn, hg, y, fixed=(1.0, 1.0), groups=None)
+    naive = ac.classification_metrics(y, naive_pred, naive_sc)
 
-        results["test_kappa_drastic"] = round(
-            float(cohen_kappa_score(y_test, y_pred_d)), 3
-        ) if len(np.unique(y_test)) > 1 else 0.0
+    extra = None
+    if calibrated_weights and "alpha" in calibrated_weights:
+        p, s = ac.grouped_cv(d, cn, hg, y, fixed=(float(calibrated_weights["alpha"]),
+                                                  float(calibrated_weights["beta"])), groups=groups)
+        extra = ac.classification_metrics(y, p, s)
+        extra["note"] = "Profile weights were fitted on these same sites: optimistic."
 
-        results["test_kappa_drastic_tox"] = round(
-            float(cohen_kappa_score(y_test, y_pred_dt)), 3
-        ) if len(np.unique(y_test)) > 1 else 0.0
+    warnings = [
+        f"{n} rows but only {n_loc} independent locations "
+        f"({pos_loc} contaminated, {neg_loc} clean): intervals are very wide.",
+        "Dry/Wet rows of one place are never split between training and test.",
+    ]
+    if pos_loc < 5:
+        warnings.append("Fewer than 5 contaminated locations: kappa/AUC are not stable.")
+    gap = naive["kappa"] - models["tox_equal"]["kappa"]
+    if gap > 0.1:
+        warnings.append(f"Leave-one-row-out (leaky) kappa is {gap:+.2f} higher than leave-one-location-out.")
+    best_conc = max(models["hg_only"]["kappa"], models["cnhg_only"]["kappa"], models["exceed"]["kappa"])
+    if best_conc >= models["tox_equal"]["kappa"]:
+        warnings.append("A concentration-only rule is as good as DRASTIC-Tox: the hydrogeological "
+                        "part adds no detectable value on this dataset.")
 
-        try:
-            results["test_auc_drastic"] = round(
-                float(roc_auc_score(y_test, X_d[idx_test, 0])), 3
-            )
-            results["test_auc_drastic_tox"] = round(
-                float(roc_auc_score(y_test, X_dt[idx_test, 0])), 3
-            )
-        except Exception:
-            results["test_auc_drastic"] = None
-            results["test_auc_drastic_tox"] = None
+    site_col = "site_name" if "site_name" in df.columns else ("site_key" if "site_key" in df.columns else None)
+    table = pd.DataFrame({
+        "site": df[site_col].values if site_col else np.arange(n),
+        "actual": y, "DRASTIC": d.round(1),
+        "Tox_score(equal w)": np.round(runs["tox_equal"][1], 1),
+        "Tox_predicted": runs["tox_equal"][0],
+        "HQ_max": np.round(hq, 2)})
 
-        results["train_indices"] = idx_train.tolist()
-        results["test_indices"]  = idx_test.tolist()
-    except Exception as e:
-        results["split_error"] = str(e)
-
-    # =========================================================
-    # 2. STRATIFIED K-FOLD CROSS-VALIDATION
-    # =========================================================
-    try:
-        skf = StratifiedKFold(
-            n_splits=min(n_folds, n),
-            shuffle=True,
-            random_state=random_state,
-        )
-        fold_kappas_d, fold_kappas_dt = [], []
-        fold_aucs_d,   fold_aucs_dt   = [], []
-
-        for _, test_idx in skf.split(X_d, y):
-            yt = y[test_idx]
-            if len(np.unique(yt)) < 2:
-                continue
-            yp_d  = (X_d[test_idx, 0]  >= threshold_d).astype(int)
-            yp_dt = (X_dt[test_idx, 0] >= threshold_dt).astype(int)
-            try:
-                fold_kappas_d.append(cohen_kappa_score(yt, yp_d))
-                fold_kappas_dt.append(cohen_kappa_score(yt, yp_dt))
-                fold_aucs_d.append(roc_auc_score(yt, X_d[test_idx, 0]))
-                fold_aucs_dt.append(roc_auc_score(yt, X_dt[test_idx, 0]))
-            except Exception:
-                continue
-
-        results["cv_n_folds"] = len(fold_kappas_d)
-        if fold_kappas_d:
-            results["cv_kappa_drastic_mean"]      = round(float(np.mean(fold_kappas_d)), 3)
-            results["cv_kappa_drastic_std"]       = round(float(np.std(fold_kappas_d)), 3)
-            results["cv_kappa_drastic_tox_mean"]  = round(float(np.mean(fold_kappas_dt)), 3)
-            results["cv_kappa_drastic_tox_std"]   = round(float(np.std(fold_kappas_dt)), 3)
-            results["cv_auc_drastic_mean"]        = round(float(np.mean(fold_aucs_d)), 3)
-            results["cv_auc_drastic_tox_mean"]    = round(float(np.mean(fold_aucs_dt)), 3)
-            results["fold_kappas_drastic"]        = [round(float(k), 3) for k in fold_kappas_d]
-            results["fold_kappas_drastic_tox"]    = [round(float(k), 3) for k in fold_kappas_dt]
-    except Exception as e:
-        results["cv_error"] = str(e)
-
-    # =========================================================
-    # 3. BASELINE ML MODELS
-    # =========================================================
-    try:
-        X_features = np.column_stack([X_dt.flatten()])
-        idx_train, idx_test = train_test_split(
-            np.arange(n), test_size=test_size,
-            random_state=random_state, stratify=y,
-        )
-
-        lr = LogisticRegression(random_state=random_state, max_iter=1000)
-        lr.fit(X_features[idx_train], y[idx_train])
-        y_pred_lr = lr.predict(X_features[idx_test])
-        y_prob_lr = lr.predict_proba(X_features[idx_test])[:, 1]
-
-        results["baseline_logreg_kappa"] = round(
-            float(cohen_kappa_score(y[idx_test], y_pred_lr)), 3
-        )
-        results["baseline_logreg_auc"] = round(
-            float(roc_auc_score(y[idx_test], y_prob_lr)), 3
-        )
-
-        rf = RandomForestClassifier(
-            n_estimators=100, random_state=random_state,
-            max_depth=3, min_samples_leaf=2,
-        )
-        rf.fit(X_features[idx_train], y[idx_train])
-        y_pred_rf = rf.predict(X_features[idx_test])
-        y_prob_rf = rf.predict_proba(X_features[idx_test])[:, 1]
-
-        results["baseline_rf_kappa"] = round(
-            float(cohen_kappa_score(y[idx_test], y_pred_rf)), 3
-        )
-        results["baseline_rf_auc"] = round(
-            float(roc_auc_score(y[idx_test], y_prob_rf)), 3
-        )
-    except Exception as e:
-        results["baseline_error"] = str(e)
-
-    # =========================================================
-    # 4. ENHANCED METRICS  (v61: correct normalisation)
-    # =========================================================
-    try:
-        idx_train, idx_test = train_test_split(
-            np.arange(n), test_size=test_size,
-            random_state=random_state, stratify=y,
-        )
-        y_test = y[idx_test]
-
-        # min-max normalisation to [0, 1]  (DRASTIC is NOT a probability)
-        score_d_norm  = _norm_drastic(X_d[idx_test, 0])
-        score_dt_norm = _norm_dtox(X_dt[idx_test, 0])
-
-        results["pr_auc_drastic"] = round(
-            float(average_precision_score(y_test, score_d_norm)), 3
-        )
-        results["pr_auc_drastic_tox"] = round(
-            float(average_precision_score(y_test, score_dt_norm)), 3
-        )
-        results["brier_drastic"] = round(
-            float(brier_score_loss(y_test, score_d_norm)), 3
-        )
-        results["brier_drastic_tox"] = round(
-            float(brier_score_loss(y_test, score_dt_norm)), 3
-        )
-        results["normalisation_note"] = (
-            "Brier/PR-AUC use min-max normalisation: "
-            f"DRASTIC [{DRASTIC_MIN:.0f}, {DRASTIC_MAX:.0f}], "
-            f"DRASTIC-Tox [{DTOX_MIN:.0f}, {DTOX_MAX:.0f}]. "
-            "These are indicative, not calibrated probabilities."
-        )
-    except Exception as e:
-        results["enhanced_metrics_error"] = str(e)
-
-    return results 
+    return {"n_total": n, "n_contaminated": int(y.sum()), "n_clean": int((y == 0).sum()),
+            "n_locations": n_loc, "n_pos_locations": pos_loc, "n_neg_locations": neg_loc,
+            "mining_type": mining_type, "scheme": "leave-one-location-out (nested)",
+            "models": models, "leaky_row_out_tox_equal": naive, "profile_weights_model": extra,
+            "site_table": table, "warnings": warnings}
