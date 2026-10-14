@@ -1,3 +1,6 @@
+st.set_page_config(page_title="Debug", page_icon="🔧", layout="wide")
+st.title("✅ التطبيق بدأ يعمل")
+st.write("Loading modules...") 
 """
 modflow_engine.py  v61 - generic steady-state MODFLOW 6 box model (FloPy)
 
