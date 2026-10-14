@@ -255,7 +255,8 @@ if MODE_KEY == "system":
                 use_container_width=True, hide_index=True)
             show_two_axis(idx, cn, hg)
             st.markdown("---")
-            _site_info = {"name": site_key_current, "state": mt_key, "coords": "Sudan", "depth": cv.get("depth", "N/A"),
+            _site_info = {"name": site_key_current, "state": st.session_state.get("current_state", "N/A"), "mining_type": mt_key,
+                          "coords": str(st.session_state.get("current_site_data", {}).get("coords", "N/A")), "depth": cv.get("depth", "N/A"),
                           "recharge": cv.get("recharge", "N/A"), "slope": cv.get("slope", "N/A"),
                           "conductivity": cv.get("conductivity", "N/A"), "cn": cn, "hg": hg}
             c1, c2 = st.columns(2)
@@ -266,7 +267,8 @@ if MODE_KEY == "system":
                             site_info=_site_info, drastic=idx, drastic_t=dt_res["drastic_t"], level=t(dt_res["level"]),
                             recommendation=t(current_risk["action"]) if current_risk else "—",
                             cn_score=dt_res["cn_score"], hg_score=dt_res["hg_score"], base_bonus=dt_res["base_bonus"],
-                            source_factor=dt_res["source_factor"], toxicity_bonus=dt_res["toxicity_bonus"], cn_value=cn, hg_value=hg)
+                            source_factor=dt_res["source_factor"], toxicity_bonus=dt_res["toxicity_bonus"], cn_value=cn, hg_value=hg,
+                            warnings=dt_res.get("unit_warnings"))
                         if pdf_bytes:
                             st.download_button("📄 تحميل PDF", data=pdf_bytes, file_name=f"report_{site_key_current}.pdf",
                                                mime="application/pdf", key="download_pdf_btn")
