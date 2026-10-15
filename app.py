@@ -289,14 +289,13 @@ def monte_carlo(site, std, n=1000, var=0.15, seed=42):
             "p_high": round(float(np.mean(dr >= DRASTIC_HIGH) * 100), 1), "n": n}
 
 
-def mitigate(idx, hdpe=False, treat=False, mon=False):
-    """معاملات توضيحية بلا مصدر (تُعرض كذلك في الواجهة)."""
-    m = float(idx)
-    if hdpe: m *= 0.40
-    if treat: m *= 0.60
-    if mon: m *= 0.85
-    red = (idx - m) / idx * 100 if idx > 0 else 0.0
-    return {"after": round(m, 1), "reduction_pct": round(red, 1)}
+def scenario(site, std, cn_red=0.0, hg_red=0.0):
+    """سيناريو تقليل المصدر: يخفّض التراكيز فقط ويترك DRASTIC كما هو (خاصية جيولوجية لا تتغير)."""
+    cn = _chk(site.get("cn_water_mg_l"), "CN") * (1 - cn_red / 100.0)
+    hg = _chk(site.get("hg_water_mg_l"), "Hg") * (1 - hg_red / 100.0)
+    idx = index_of(ratings(site))
+    t = tox_eval(idx, cn, hg, std)
+    return {"cn": round(cn, 6), "hg": round(hg, 6), "tox": t, "action": action_code(idx, t["exceeds"])}
 
 
 def html_report(site_name, state, ev, std):
@@ -559,20 +558,28 @@ def tab_toxicity(site, std):
                   "The hazard scale is a model convention, not from literature."))
 
 
-def tab_solutions(ev):
-    st.warning(tx("⚠️ معاملات التخفيض افتراضات توضيحية بلا مصدر.",
-                  "⚠️ Reduction factors are illustrative assumptions without a source."))
-    if ev is None:
+def tab_solutions(site, std):
+    if site is None:
         st.info(tx("اختر موقعاً أولاً", "Select a site first"))
         return
-    c1, c2, c3 = st.columns(3)
-    hdpe = c1.checkbox(tx("بطانة HDPE", "HDPE liner"), key="chk_hdpe")
-    treat = c2.checkbox(tx("معالجة السيانيد", "Cyanide treatment"), key="chk_treat")
-    mon = c3.checkbox(tx("آبار مراقبة", "Monitoring wells"), key="chk_mon")
-    r = mitigate(ev["idx"], hdpe, treat, mon)
+    st.info(tx("السيناريوهات تخفّض تركيز المصدر فقط. DRASTIC لا يتغير لأنه خاصية جيولوجية للموقع.",
+               "Scenarios reduce source concentration only. DRASTIC does not change: it is a site property."))
+    st.warning(tx("⚠️ نسب التخفيض مدخلات افتراضية من المستخدم، وليست قيماً مُقاسة أو موثقة.",
+                  "⚠️ Reduction percentages are user assumptions, not measured or documented values."))
     c1, c2 = st.columns(2)
-    c1.metric(tx("قبل", "Before"), ev["idx"])
-    c2.metric(tx("بعد", "After"), r["after"], delta=f"-{r['reduction_pct']}%" if r["reduction_pct"] > 0 else None)
+    cn_red = c1.slider(tx("تخفيض CN %", "CN reduction %"), 0, 100, 0, 5, key="sc_cn")
+    hg_red = c2.slider(tx("تخفيض Hg %", "Hg reduction %"), 0, 100, 0, 5, key="sc_hg")
+    base = scenario(site, std)
+    sc = scenario(site, std, cn_red, hg_red)
+    rows = [{tx("المؤشر", "Metric"): tx("أقصى HQ", "Max HQ"), tx("الحالي", "Current"): base["tox"]["hq"],
+             tx("السيناريو", "Scenario"): sc["tox"]["hq"]},
+            {tx("المؤشر", "Metric"): tx("تصنيف السمية", "Toxicity class"),
+             tx("الحالي", "Current"): lb(base["tox"]["hq_class"]),
+             tx("السيناريو", "Scenario"): lb(sc["tox"]["hq_class"])},
+            {tx("المؤشر", "Metric"): "DRASTIC-Tox", tx("الحالي", "Current"): base["tox"]["tox"],
+             tx("السيناريو", "Scenario"): sc["tox"]["tox"]}]
+    st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+    {"urgent": st.error, "watch": st.warning, "routine": st.success}[sc["action"]](lb(sc["action"]))
 
 
 def tab_report(site, std, ev):
@@ -648,8 +655,8 @@ def tab_verification(ds, std):
     p4 = (cal["hq"].values > 1).astype(int)
     add(tx("قاعدة التجاوز (HQ > 1، بلا معايرة)", "Exceedance rule (HQ > 1, no fitting)"), p4, "1")
     st.dataframe(pd.DataFrame(res), hide_index=True, use_container_width=True)
-    st.caption(tx("خط الأساس الحاسم: DRASTIC وحده. نتائج kappa فوق 0.3 تعني توافقاً ضعيفاً جداً مع البيانات الحالية.",
-                  "Key baseline: DRASTIC alone. Kappa values near zero mean no agreement beyond chance."))
+    st.caption(tx("خط الأساس الحاسم: DRASTIC وحده. kappa قرب الصفر = توافق بقدر الصدفة فقط، ولا يكفي لاستنتاج أي شيء مع 9 مواقع.",
+                  "Key baseline: DRASTIC alone. Kappa near zero = agreement no better than chance; with 9 sites this cannot support any conclusion."))
     with st.expander(tx("الصفوف المستخدمة", "Rows used")):
         st.dataframe(cal, hide_index=True, use_container_width=True)
 
@@ -661,8 +668,6 @@ def view_agri(ds, std):
     sites = ds.AGRICULTURAL_DATA[state]["sites"]
     key = c2.selectbox(tx("البئر", "Well"), list(sites), key="ag_site")
     w = dict(sites[key])
-    w.setdefault("slope_pct", 3.0)
-    w.setdefault("conductivity", w.get("conductivity"))
     m = ag_metrics(w)
     c1, c2, c3 = st.columns(3)
     c1.metric("SAR", m["sar"])
@@ -745,7 +750,7 @@ def main():
             site = cur_site()
             ev = evaluate(site, STD) if site else None
             with t[3]: tab_toxicity(site, STD)
-            with t[4]: tab_solutions(ev)
+            with t[4]: tab_solutions(site, STD)
             with t[5]: tab_report(site, STD, ev)
             with t[6]: tab_analysis(site, STD)
         elif mode == "agri":
