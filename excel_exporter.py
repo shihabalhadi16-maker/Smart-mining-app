@@ -23,7 +23,7 @@ try:
     import drastic_core as dc
     from drastic_bridge import STANDARD, DRASTIC_MAX
 except Exception:            # keep the exporter usable even if the core is missing
-    dc, STANDARD, DRASTIC_MAX = None, "EU", 226
+    dc, STANDARD, DRASTIC_MAX = None, "SD", 226
 
 
 def _has_openpyxl():
@@ -129,6 +129,7 @@ def generate_excel_report(site_info, drastic_result, risk_info, mining_type, sps
 
     wb = Workbook()
     now = datetime.datetime.now()
+    L_CN, L_HG = (dc.LIMITS_MG_L[STANDARD]["cn"], dc.LIMITS_MG_L[STANDARD]["hg"]) if dc else ("-", "-")
 
     # ------------------------------------------------------------ 1. Summary
     ws = wb.active
@@ -159,7 +160,7 @@ def generate_excel_report(site_info, drastic_result, risk_info, mining_type, sps
         row = _kv(ws, row, "Vulnerability class", f"{v} ({vp}% of range)")
         row = _kv(ws, row, "Hazard class (max conc/limit)", f"{h} (HQ = {hq})")
         row = _kv(ws, row, "Combined risk", rk, bold=True)
-        row = _kv(ws, row, "Limits used", f"{STANDARD}: CN {L['cn']} mg/L, Hg {L['hg']} mg/L (EU Directive 98/83/EC)")
+        row = _kv(ws, row, "Limits used", f"{STANDARD}: CN {L['cn']} mg/L, Hg {L['hg']} mg/L ({dc.standard_label(STANDARD)})")
 
     row = _section(ws, row + 1, "DRASTIC-Tox (EXPERIMENTAL, range 23-276 with equal weights)")
     for label, key in (("CN Score", "cn_score"), ("Hg Score", "hg_score"), ("alpha (CN weight)", "alpha"),
@@ -290,7 +291,8 @@ def generate_excel_report(site_info, drastic_result, risk_info, mining_type, sps
         ("Institution", "University of Khartoum - Faculty of Engineering"), ("Status", "Pilot version"), ("", ""),
         ("References", "Aller et al. (1987) - DRASTIC, EPA/600/2-87/035"),
         ("", "Napolitano & Fabbri (1996) - SPSA"),
-        ("", "Council Directive 98/83/EC - drinking-water limits used (CN 0.05, Hg 0.001 mg/L)"),
+        ("", f"Limits used: {dc.standard_label(STANDARD) if dc else STANDARD} (CN {L_CN} mg/L, Hg {L_HG} mg/L)"),
+        ("", "Council Directive 98/83/EC (EU) - for comparison: CN 0.05, Hg 0.001 mg/L"),
         ("", "WHO Guidelines for Drinking-water Quality, 4th ed. + addenda (Hg 0.006 mg/L; cyanide GV withdrawn)"),
         ("", "Konate et al. (2025) - modified DRASTIC for artisanal gold mining (context; DRASTIC-Tox coefficients are NOT taken from it)"),
         ("", ""),
