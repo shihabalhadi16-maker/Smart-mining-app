@@ -3,7 +3,7 @@ drastic_core.py - standards-based core (pure Python, no dependencies)
 
 References
   DRASTIC & Pesticide DRASTIC : Aller et al. (1987) EPA/600/2-87/035
-  Drinking-water limits        : EU Directive 98/83/EC; WHO GDWQ 4th ed.+addenda
+  Drinking-water limits        : Sudanese standard (default), EU Directive 98/83/EC, WHO GDWQ 4th ed.+addenda
   Irrigation water             : Richards (1954) USDA HB 60; Ayers & Westcot (1985) FAO 29
   Crop salt tolerance          : Maas & Hoffman (1977) / FAO 29 Table 4  (VERIFY values)
 
@@ -66,8 +66,33 @@ def vulnerability_class(idx, weights=W_STD):
     return ("low" if p < 25 else "moderate" if p < 50 else "high" if p < 75 else "very_high"), round(p, 1)
 
 # ---------------------------------------------------------------- hazard
-LIMITS_MG_L = {"EU":  {"cn": 0.05, "hg": 0.001},    # Directive 98/83/EC
-               "WHO": {"cn": None, "hg": 0.006}}    # WHO cyanide GV withdrawn (2009)
+LIMITS_MG_L = {
+    # Sudanese drinking-water standard: CN 0.05, Hg (total) 0.002 mg/L. Source: "Sudanese Drink Water Standards",
+    # Appendix D of a Sudan University of Science and Technology thesis (repository.sustech.edu, handle 123456789/6980).
+    # That is a SECONDARY source: confirm the values and standard number against the official SSMO document.
+    "SD":  {"cn": 0.05, "hg": 0.002},
+    "EU":  {"cn": 0.05, "hg": 0.001},    # Council Directive 98/83/EC
+    "WHO": {"cn": None, "hg": 0.006},    # WHO cyanide GV withdrawn (2009)
+}
+DEFAULT_STANDARD = "SD"
+STANDARD_LABEL = {
+    "SD": "Sudanese drinking-water standard (SSMO; values as reproduced in a SUST thesis appendix - verify against the official document)",
+    "EU": "EU Council Directive 98/83/EC",
+    "WHO": "WHO Guidelines for Drinking-water Quality, 4th ed. + addenda",
+}
+
+
+def standard_label(standard=None):
+    return STANDARD_LABEL[standard or DEFAULT_STANDARD]
+
+
+def label_by_standard(cn, hg, standard=None):
+    """1 = contaminated if CN or Hg is ABOVE the limit of the chosen standard (strictly greater), else 0.
+    Use this to define actual_contaminated for new sites, so the ground truth is a stated, reproducible rule."""
+    L = LIMITS_MG_L[standard or DEFAULT_STANDARD]
+    over_cn = L["cn"] is not None and cn > L["cn"]
+    return int(bool(over_cn or hg > L["hg"]))
+
 
 def check_units(cn=None, hg=None):
     w = []
@@ -93,10 +118,10 @@ def hazard_class(max_hq):
     return ("compliant" if max_hq <= 1 else "elevated" if max_hq <= 10
             else "high" if max_hq <= 100 else "severe")
 
-def experimental_tox(idx, cn, hg, standard="EU", w_cn=1.0, w_hg=1.0, hq_ref=1000.0):
+def experimental_tox(idx, cn, hg, standard=None, w_cn=1.0, w_hg=1.0, hq_ref=1000.0):
     """EXPERIMENTAL DRASTIC-Tox: idx + min(50, w_cn*s_cn + w_hg*s_hg). Range 23-276.
     Weights are an unvalidated assumption -> run sensitivity analysis."""
-    L = LIMITS_MG_L[standard]
+    L = LIMITS_MG_L[standard or DEFAULT_STANDARD]
     s_cn = hazard_score(cn, L["cn"], hq_ref) if L["cn"] else 0.0
     s_hg = hazard_score(hg, L["hg"], hq_ref)
     return idx + min(50.0, w_cn * s_cn + w_hg * s_hg), s_cn, s_hg
@@ -155,6 +180,8 @@ def _selftest():
     # D9*5 + R6*4 + A8*3 + S6*2 + T10*1 + I8*5 + C6*3 = 45+24+24+12+10+40+18
     assert index(site) == 173, index(site)
     assert hazard_score(0.05, 0.05) == 0 and hazard_score(0.001, 0.001) == 0
+    assert label_by_standard(0.011, 0.0) == 0 and label_by_standard(0.0, 0.011) == 1
+    assert label_by_standard(0.008, 0.002) == 0      # at the limit = compliant (strict >)
     assert round(sar(10, 4, 2), 2) == 5.77
     assert relative_yield("wheat", 1.0) == 100.0
     assert experimental_tox(100, 0.0, 0.0)[0] == 100
