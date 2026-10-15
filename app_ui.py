@@ -32,8 +32,9 @@ def show_two_axis(idx, cn, hg):
     k1.metric(tx("الهشاشة (DRASTIC)", "Vulnerability (DRASTIC)"), f"{lab(ta['vuln'])} ({ta['vuln_pct']}%)")
     k2.metric(tx("الخطر (التركيز ÷ الحد)", "Hazard (conc ÷ limit)"), f"{lab(ta['hazard'])} (HQ={ta['max_hq']})")
     k3.metric(tx("فئة المخاطر المركّبة", "Combined risk"), lab(ta["risk"]))
-    st.caption(tx(f"الحدود: EU Directive 98/83/EC ({at.STANDARD}) — السيانيد 0.05 و الزئبق 0.001 mg/L. الفئات اصطلاحية وليست من Aller 1987.",
-                  f"Limits: EU Directive 98/83/EC ({at.STANDARD}) — CN 0.05, Hg 0.001 mg/L. Classes are conventions, not from Aller 1987."))
+    _L = dc.LIMITS_MG_L[at.STANDARD]
+    st.caption(tx(f"المعيار المستخدم ({at.STANDARD}): {dc.standard_label(at.STANDARD)} — السيانيد {_L['cn']} و الزئبق {_L['hg']} mg/L. الفئات اصطلاحية وليست من Aller 1987.",
+                  f"Standard used ({at.STANDARD}): {dc.standard_label(at.STANDARD)} - CN {_L['cn']}, Hg {_L['hg']} mg/L. Classes are conventions, not from Aller 1987."))
     return ta
 
 
