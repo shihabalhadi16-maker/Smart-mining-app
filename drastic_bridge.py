@@ -1,116 +1,93 @@
 """
-drastic_bridge.py — واجهة توافق بين app.py و drastic_core.py
-يوفر: get_*_rating, calc_index, calc_pesticide_index, classify,
-       calc_drastic_t, DEFAULT_TOX_THRESHOLD, DRASTIC_MAX
+drastic_bridge.py - keeps app.py's existing function names/signatures,
+but delegates all calculations to drastic_core.py.
+
+In app.py: delete the old definitions of
+  get_d_rating ... get_c_rating, calc_index, classify, calc_drastic_t
+and put instead:
+  from drastic_bridge import (get_d_rating, get_r_rating, get_a_rating, get_s_rating,
+      get_t_rating, get_i_rating, get_c_rating, calc_index, classify, calc_drastic_t,
+      calc_pesticide_index, DEFAULT_TOX_THRESHOLD, DRASTIC_MAX)
 """
-import math
 import drastic_core as dc
 
-DRASTIC_MIN = 23
-DRASTIC_MAX = 226
-DTOX_MIN = 23
-DTOX_MAX = 276
-DEFAULT_TOX_THRESHOLD = 144.4
+STANDARD = dc.DEFAULT_STANDARD   # "SD" (Sudanese, default) | "EU" | "WHO" (WHO has no cyanide limit)
+HQ_REF = 1000.0             # hazard quotient mapped to score 30 (assumption)
+DRASTIC_MAX = 226           # was 230 - correct maximum (Aller 1987)
+DEFAULT_TOX_THRESHOLD = 140.0   # old 144.4 was fitted on the OLD scoring: retired
 
-# ---------------------------------------------------------------- ratings
-def get_d_rating(depth_m):       return dc.rate_D(float(depth_m))
-def get_r_rating(recharge_mm):   return dc.rate_R(float(recharge_mm))
-def get_t_rating(slope_pct):     return dc.rate_T(float(slope_pct))
-def get_c_rating(conductivity):  return dc.rate_C(float(conductivity))
+# ---- ratings (unknown categories / negative values now raise ValueError)
+get_d_rating = dc.rate_D
+get_r_rating = dc.rate_R
+get_t_rating = dc.rate_T
+get_c_rating = dc.rate_C
+def get_a_rating(a): return dc._cat(dc.AQUIFER, a, "A")
+def get_s_rating(s): return dc._cat(dc.SOIL, s, "S")
+def get_i_rating(i): return dc._cat(dc.VADOSE, i, "I")
 
-def get_a_rating(aquifer):
-    key = str(aquifer)
-    if key not in dc.AQUIFER:
-        raise ValueError(f"Aquifer unknown: {key}. Valid: {sorted(dc.AQUIFER)}")
-    return dc.AQUIFER[key]
 
-def get_s_rating(soil):
-    key = str(soil)
-    if key not in dc.SOIL:
-        raise ValueError(f"Soil unknown: {key}. Valid: {sorted(dc.SOIL)}")
-    return dc.SOIL[key]
-
-def get_i_rating(vadose):
-    key = str(vadose)
-    if key not in dc.VADOSE:
-        raise ValueError(f"Vadose unknown: {key}. Valid: {sorted(dc.VADOSE)}")
-    return dc.VADOSE[key]
-
-# ---------------------------------------------------------------- indices
 def calc_index(D, R, A, S, T, I, C):
     w = dc.W_STD
-    return (D * w["D"]) + (R * w["R"]) + (A * w["A"]) + (S * w["S"]) + \
-           (T * w["T"]) + (I * w["I"]) + (C * w["C"])
+    return D * w["D"] + R * w["R"] + A * w["A"] + S * w["S"] + T * w["T"] + I * w["I"] + C * w["C"]
+
 
 def calc_pesticide_index(D, R, A, S, T, I, C):
+    """Pesticide DRASTIC (agricultural), range 26-256. Same ratings as calc_index."""
     w = dc.W_PEST
-    return (D * w["D"]) + (R * w["R"]) + (A * w["A"]) + (S * w["S"]) + \
-           (T * w["T"]) + (I * w["I"]) + (C * w["C"])
+    return D * w["D"] + R * w["R"] + A * w["A"] + S * w["S"] + T * w["T"] + I * w["I"] + C * w["C"]
 
-# ---------------------------------------------------------------- classify
+
 def classify(idx, mining_type=None, is_tox=False, calibrated_threshold=None):
-    if is_tox:
-        th = calibrated_threshold if calibrated_threshold is not None else DEFAULT_TOX_THRESHOLD
-        if idx >= th + 80:
-            return {"level": "very_high", "color": "red", "action": "action_immediate"}
-        if idx >= th:
-            return {"level": "high", "color": "orange", "action": "action_urgent"}
-        if idx >= th - 30:
-            return {"level": "medium", "color": "yellow", "action": "action_periodic"}
+    """Same return shape as before. For Tox, an explicit calibrated threshold wins;
+    otherwise the same 100/140/180 bands are used."""
+    if is_tox and calibrated_threshold is not None:
+        th = calibrated_threshold
+        if idx >= th + 80: return {"level": "very_high", "color": "red", "action": "action_immediate"}
+        if idx >= th:      return {"level": "high", "color": "orange", "action": "action_urgent"}
+        if idx >= th - 30: return {"level": "medium", "color": "yellow", "action": "action_periodic"}
         return {"level": "low", "color": "green", "action": "action_routine"}
-    if idx >= 180:
-        return {"level": "very_high", "color": "red", "action": "action_immediate"}
-    if idx >= 140:
-        return {"level": "high", "color": "orange", "action": "action_urgent"}
-    if idx >= 100:
-        return {"level": "medium", "color": "yellow", "action": "action_periodic"}
+    if idx >= 180: return {"level": "very_high", "color": "red", "action": "action_immediate"}
+    if idx >= 140: return {"level": "high", "color": "orange", "action": "action_urgent"}
+    if idx >= 100: return {"level": "medium", "color": "yellow", "action": "action_periodic"}
     return {"level": "low", "color": "green", "action": "action_routine"}
 
-# ---------------------------------------------------------------- DRASTIC-Tox
+
 def calc_drastic_t(base_drastic, cn_water, hg_water, distance_m=100.0, seepage=1.0,
-                   bio_acc=1.0, mining_type="traditional",
-                   alpha_override=None, beta_override=None, SF_override=None,
-                   use_log_transform=True, calibrated_threshold=None):
-    """DRASTIC-Tox = base + min(50, alpha·CN + beta·Hg) · SF
-    CN/Hg use log10 hazard score (saturates at HQ=1000)."""
-    CN_LIMIT = dc.LIMITS_MG_L["EU"]["cn"]      # 0.05 mg/L
-    HG_LIMIT = dc.LIMITS_MG_L["EU"]["hg"]      # 0.001 mg/L
-    MAX_BONUS = 50.0
+                   bio_acc=1.0, mining_type="traditional", alpha_override=None,
+                   beta_override=None, SF_override=None, use_log_transform=None,
+                   calibrated_threshold=None):
+    """Drop-in replacement. alpha->weight of CN score, beta->weight of Hg score,
+    SF multiplies the bonus (default 1.0: mining-type factors are no longer assumed).
+    distance_m / seepage / bio_acc / use_log_transform are ignored (kept for compatibility)."""
+    w_cn = 1.0 if alpha_override is None else alpha_override
+    w_hg = 1.0 if beta_override is None else beta_override
+    sf = 1.0 if SF_override is None else SF_override
+    L = dc.LIMITS_MG_L[STANDARD]
+    s_cn = dc.hazard_score(cn_water, L["cn"], HQ_REF) if L["cn"] else 0.0
+    s_hg = dc.hazard_score(hg_water, L["hg"], HQ_REF)
+    base_bonus = min(50.0, w_cn * s_cn + w_hg * s_hg)
+    bonus = base_bonus * sf
+    dt = base_drastic + bonus
+    cls = classify(dt, is_tox=True, calibrated_threshold=calibrated_threshold)
+    return {"base_drastic": base_drastic, "mining_type": mining_type,
+            "alpha": w_cn, "beta": w_hg, "source_factor": sf,
+            "cri": round(cn_water / L["cn"], 3) if L["cn"] else 0.0,
+            "mri": round(hg_water / L["hg"], 3),
+            "cn_score": round(s_cn, 2), "hg_score": round(s_hg, 2),
+            "base_bonus": round(base_bonus, 2), "toxicity_bonus": round(bonus, 2),
+            "drastic_t": round(dt, 1), "drastic_p": round(dt, 1),
+            "modifier": round(1.0 + bonus / max(base_drastic, 1), 3),
+            "increase_pct": round(bonus / base_drastic * 100, 1) if base_drastic > 0 else 0,
+            "level": cls["level"], "color": cls["color"], "used_log_transform": True,
+            "unit_warnings": dc.check_units(cn_water, hg_water)}
 
-    alpha = alpha_override if alpha_override is not None else 1.0
-    beta = beta_override if beta_override is not None else 1.0
-    SF = SF_override if SF_override is not None else 1.0
 
-    d_factor = max(0.1, min(1.0, 100.0 / max(1.0, float(distance_m))))
-    s_factor = max(0.1, min(1.0, float(seepage)))
-    b_factor = max(0.1, min(1.0, float(bio_acc)))
-
-    cn = float(cn_water) if cn_water else 0.0
-    hg = float(hg_water) if hg_water else 0.0
-
-    cn_score = (dc.hazard_score(cn, CN_LIMIT) if cn > 0 else 0.0) * d_factor * s_factor
-    hg_score = (dc.hazard_score(hg, HG_LIMIT) if hg > 0 else 0.0) * d_factor * b_factor
-
-    base_bonus = min(MAX_BONUS, alpha * cn_score + beta * hg_score)
-    toxicity_bonus = base_bonus * SF
-    drastic_t = float(base_drastic) + toxicity_bonus
-
-    _cls = classify(drastic_t, mining_type=mining_type, is_tox=True,
-                    calibrated_threshold=calibrated_threshold)
-    inc = (toxicity_bonus / base_drastic * 100) if base_drastic > 0 else 0.0
-
-    return {
-        "base_drastic": base_drastic,
-        "mining_type": mining_type,
-        "alpha": alpha, "beta": beta, "source_factor": SF,
-        "cri": round(cn / CN_LIMIT, 3) if CN_LIMIT else 0.0,
-        "mri": round(hg / HG_LIMIT, 3) if HG_LIMIT else 0.0,
-        "cn_score": round(cn_score, 2),
-        "hg_score": round(hg_score, 2),
-        "base_bonus": round(base_bonus, 2),
-        "toxicity_bonus": round(toxicity_bonus, 2),
-        "drastic_t": round(drastic_t, 1),
-        "increase_pct": round(inc, 1),
-        "level": _cls["level"], "color": _cls["color"], "action": _cls["action"],
-        "used_log_transform": bool(use_log_transform),
-    }
+if __name__ == "__main__":
+    r = calc_drastic_t(calc_index(9, 6, 8, 6, 10, 8, 6), 0.35, 0.36)
+    assert r["hg_score"] < 30 and r["drastic_t"] > 173
+    assert calc_drastic_t(100, 0.01, 0.0005)["toxicity_bonus"] == 0
+    try:
+        get_i_rating("bad"); raise SystemExit("no error")
+    except ValueError:
+        pass
+    print("bridge OK", r["drastic_t"], r["cn_score"], r["hg_score"])
