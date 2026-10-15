@@ -18,8 +18,8 @@ from drastic_bridge import (get_d_rating, get_r_rating, get_a_rating, get_s_rati
                             get_t_rating, get_i_rating, get_c_rating, calc_index)
 
 SKLEARN_OK = True        # kept for compatibility: no sklearn needed any more
-CN_LIMIT = dc.LIMITS_MG_L["EU"]["cn"]
-HG_LIMIT = dc.LIMITS_MG_L["EU"]["hg"]
+CN_LIMIT = dc.LIMITS_MG_L[dc.DEFAULT_STANDARD]["cn"]
+HG_LIMIT = dc.LIMITS_MG_L[dc.DEFAULT_STANDARD]["hg"]
 HQ_REF = 1000.0
 MAX_TOXICITY_BONUS = 50.0
 DEFAULT_THRESHOLD = 140
