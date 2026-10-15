@@ -207,6 +207,6 @@ th{{background-color:#f5eedc;color:#5c2c16;}}.metric{{font-size:1.5em;font-weigh
 <tr><th>Level</th><td class="metric">{level}</td></tr>
 </table>
 <p><b>{recommendation}</b></p>
-<div class="warn">Screening-level result from a pilot tool. Limits: EU Directive 98/83/EC ({STANDARD}).
+<div class="warn">Screening-level result from a pilot tool. Limits: {dc.standard_label(STANDARD)}.
 The DRASTIC-Tox bonus is an unvalidated formulation; not for regulatory or health decisions.</div>
 </body></html>"""
