@@ -148,8 +148,8 @@ def ceiling_report(df, frac=0.95):
     if len(c) == 0:
         return {"cn": None, "hg": None, "any": False}
     out = {}
-    for name, col, lim in (("cn", "cn_water_mg_l", dc.LIMITS_MG_L["EU"]["cn"]),
-                           ("hg", "hg_water_mg_l", dc.LIMITS_MG_L["EU"]["hg"])):
+    for name, col, lim in (("cn", "cn_water_mg_l", dc.LIMITS_MG_L[dc.DEFAULT_STANDARD]["cn"]),
+                           ("hg", "hg_water_mg_l", dc.LIMITS_MG_L[dc.DEFAULT_STANDARD]["hg"])):
         if col not in c.columns:
             out[name] = None
             continue
