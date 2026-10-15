@@ -20,7 +20,7 @@ try:
     import drastic_core as dc
     from drastic_bridge import STANDARD, DRASTIC_MAX
 except Exception:
-    dc, STANDARD, DRASTIC_MAX = None, "EU", 226
+    dc, STANDARD, DRASTIC_MAX = None, "SD", 226
 
 
 def _has_fpdf():
@@ -233,7 +233,7 @@ def generate_pdf_report(site_info, drastic, drastic_t, level, recommendation, cn
         _row(pdf, "Vulnerability class", f"{ta['vuln'].replace('_', ' ').title()} ({ta['vuln_pct']}% of range)")
         _row(pdf, "Hazard class", f"{ta['hazard'].title()} (max conc/limit = {ta['hq']})")
         _row(pdf, "Combined risk", ta["risk"].replace("_", " ").title())
-        _row(pdf, "Limits used", f"{STANDARD}: CN {ta['limits']['cn']}, Hg {ta['limits']['hg']} mg/L")
+        _row(pdf, "Limits used", f"{STANDARD}: CN {ta['limits']['cn']}, Hg {ta['limits']['hg']} mg/L ({_latin(dc.standard_label(STANDARD))})")
         pdf.ln(6)
 
     _heading(pdf, "4. DRASTIC-Tox (EXPERIMENTAL, range 23-276 with equal weights)")
