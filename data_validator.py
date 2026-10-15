@@ -367,7 +367,8 @@ def location_keys(df):
     return None
 
 
-def audit_site_dataset(df, standard="EU"):
+def audit_site_dataset(df, standard=None):
+    standard = standard or dc.DEFAULT_STANDARD
     """Returns a list of findings (dicts with severity warning/info) for a mining site table."""
     f = []
     n = len(df)
