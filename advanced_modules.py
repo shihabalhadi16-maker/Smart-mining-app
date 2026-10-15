@@ -272,7 +272,7 @@ def independent_validation(df, drastic_col, actual_col, alpha_range=(0.0, 1.0, 0
     y_all = df[actual_col].astype(int).values
     if n < 6 or len(set(y_all)) < 2:
         return {"error": "Need >= 6 samples with both classes"}
-    L = dc.LIMITS_MG_L["EU"]
+    L = dc.LIMITS_MG_L[dc.DEFAULT_STANDARD]
     cn = np.array([dc.hazard_score(float(v), L["cn"], HQ_REF) for v in df.get("cn_water_mg_l", [0.0] * n)])
     hg = np.array([dc.hazard_score(float(v), L["hg"], HQ_REF) for v in df.get("hg_water_mg_l", [0.0] * n)])
     base = df[drastic_col].astype(float).values
