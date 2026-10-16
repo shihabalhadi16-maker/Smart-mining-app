@@ -6,19 +6,27 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-VERSION = "v62"
+VERSION = "v64"
 
 # ============================================================
 # 1. المعايير — مصدر واحد للحدود (كل المواضع تقرأ منه)
 # ============================================================
 STANDARDS = {
-    "SUDAN": {"cn": 0.05, "hg": 0.002, "name": ("السودان (SSMO)", "Sudan (SSMO)"),
-              "note": ("⚠️ تحقق من وثيقة SSMO — المصدر ثانوي", "⚠️ Verify against SSMO document — secondary source")},
+    "SUDAN": {"cn": 0.05, "hg": 0.004, "name": ("السودان (SSMO)", "Sudan (SSMO)"),
+              "note": ("⚠️ Hg = 0.004 mg/L وفق ملخص SSMO (مصدر ثانوي). النص الأصلي للوثيقة لم يُفحص بعد. البدائل في تبويب الإدخال اليدوي",
+                       "⚠️ Hg = 0.004 mg/L per SSMO summary (secondary). Primary document not yet checked. Alternatives in manual tab")},
     "EU": {"cn": 0.05, "hg": 0.001, "name": ("الاتحاد الأوروبي (EU)", "European Union (EU)"), "note": ("", "")},
-    "WHO": {"cn": None, "hg": 0.006, "name": ("منظمة الصحة العالمية (WHO)", "WHO"),
-            "note": ("لا توجد قيمة CN في هذا الإصدار", "No CN value in this version")},
+    "WHO": {"cn": 0.07, "hg": 0.006, "name": ("منظمة الصحة العالمية (WHO)", "WHO"),
+            "note": ("CN: WHO 2003 — Hg: WHO الطبعة الرابعة (غير العضوي)", "CN: WHO 2003 — Hg: WHO 4th ed. (inorganic)")},
 }
 DEFAULT_STD = "SUDAN"
+# بدائل حد الزئبق السوداني: القيمة غير محسومة حتى التحقق من وثيقة SSMO
+SUDAN_HG_ALTERNATIVES = [
+    (0.004, ("SSMO وفق ملخص بحث (القيمة الافتراضية)", "SSMO per research summary (default)")),
+    (0.0007, ("EMRO 2006 (معيار السودان 2002، ICS 13.060.00)", "EMRO 2006 (Sudan 2002 standard)")),
+    (0.001, ("Elwaleed et al. 2024 (يذكر 1 µg/L)", "Elwaleed et al. 2024 (states 1 µg/L)")),
+    (0.002, ("القيمة السابقة في البرنامج (بلا مصدر محقق)", "Previous value (no verified source)")),
+]
 
 # ============================================================
 # 2. جداول DRASTIC
@@ -387,6 +395,48 @@ def probe_optional():
     return out
 
 
+def parse_conc(v, rule):
+    """يحوّل القيم مثل '<0.001' حسب قاعدة صريحة يختارها المستخدم: 0، أو نصف حد الكشف، أو حد الكشف."""
+    if isinstance(v, str):
+        t = v.strip().replace(",", ".")
+        if t.startswith("<"):
+            dl = float(t[1:])
+            return {"صفر": 0.0, "نصف حد الكشف": dl / 2, "حد الكشف": dl}[rule]
+        return float(t)
+    return v
+
+
+def audit_db(ds):
+    """يتحقق من وجود كل الحقول صراحة في البيانات الخام (قبل أي قيمة افتراضية)."""
+    need = ("depth_m", "recharge_mm", "slope_pct", "conductivity", "aquifer", "soil", "vadose",
+            "cn_water_mg_l", "hg_water_mg_l")
+    issues = []
+    for st_name, d in ds.STATES_DATABASE.items():
+        for k, v in d["sites"].items():
+            for f in need:
+                if f not in v:
+                    issues.append(f"{st_name}/{k}: {f} مفقود")
+    return issues
+
+
+def check_core_consistency(core_mod):
+    """يقارن الجداول والدوال في drastic_core.py الحقيقي (إن وُجد) مع جداول التطبيق."""
+    probs = []
+    for name, mine in (("W_STD", W_STD), ("AQUIFER", AQUIFER), ("SOIL", SOIL), ("VADOSE", VADOSE)):
+        if getattr(core_mod, name, None) != mine:
+            probs.append(f"{name} مختلف")
+    for fn_name, mine in (("rate_D", r_D), ("rate_R", r_R), ("rate_T", r_T), ("rate_C", r_C)):
+        f = getattr(core_mod, fn_name, None)
+        if f is None:
+            probs.append(f"{fn_name} غير موجودة")
+            continue
+        for x in (0.5, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0):
+            if f(x) != mine(x):
+                probs.append(f"{fn_name}({x}) مختلف")
+                break
+    return probs
+
+
 def list_site(ds, state, key):
     s = ds.get_site_data(state, key)
     if s is None:
@@ -434,7 +484,7 @@ def tab_input(ds, std):
     state = c1.selectbox(tx("الولاية", "State"), states, key="s_state")
     sites = ds.get_sites_by_state(state)
     key = c2.selectbox(tx("الموقع", "Site"), list(sites), key="s_site",
-                       format_func=lambda k: sites[k]["name_ar"])
+                       format_func=lambda k: sites[k]["name_ar"] + ("" if sites[k].get("verified") else tx(" (تقديري)", " (estimated)")))
     if "تقديرات" in str(ds.STATES_DATABASE[state].get("source", "")):
         st.warning(tx("موقع تقديري (تقديرات عامة) — لا يدخل المعايرة ولا التحقق",
                       "Estimated site — excluded from calibration and validation"))
@@ -451,6 +501,14 @@ def tab_input(ds, std):
     c1.metric("CN", f"{site['cn_water_mg_l']} mg/L")
     c2.metric("Hg", f"{site['hg_water_mg_l']} mg/L")
     render_eval(evaluate(site, std))
+
+
+def tox_with_limits(base, cn, hg, cn_lim, hg_lim):
+    """نفس منطق tox_eval لكن بحدود صريحة (لمقارنة البدائل)."""
+    cs = hazard_score(cn, cn_lim); hs = hazard_score(hg, hg_lim)
+    bonus = min(50.0, cs + hs)
+    hq = max((cn / cn_lim) if (cn_lim and cn > 0) else 0.0, (hg / hg_lim) if hg > 0 else 0.0)
+    return {"tox": round(base + bonus, 1), "bonus": round(bonus, 2), "hq": round(hq, 3)}
 
 
 def tab_manual(ds, std):
@@ -496,6 +554,12 @@ def tab_manual(ds, std):
         rows.append({tx("المعيار", "Standard"): tx(*STANDARDS[k]["name"]),
                      "DRASTIC-Tox": e2["tox"]["tox"], tx("المكافأة", "Bonus"): e2["tox"]["bonus"],
                      "max HQ": e2["tox"]["hq"]})
+    for hg_lim, label in SUDAN_HG_ALTERNATIVES:
+        r2 = tox_with_limits(ev["idx"], cn, hg, STANDARDS["SUDAN"]["cn"], hg_lim)
+        rows.append({tx("المعيار", "Standard"): "Hg: " + tx(*label),
+                     "DRASTIC-Tox": r2["tox"], tx("المكافأة", "Bonus"): r2["bonus"], "max HQ": r2["hq"]})
+    st.caption(tx("حد الزئبق السوداني 0.004 وفق ملخص SSMO، ويبقى غير مُتحقَّق منه من الوثيقة الأصلية. الصفوف الأخرى بدائل للمقارنة فقط.",
+                  "Sudan Hg limit 0.004 per SSMO summary, not yet verified against the primary document. Other rows are for comparison only."))
     st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
 
 
@@ -517,6 +581,13 @@ def tab_bulk(std):
     if miss:
         st.error(f"{tx('أعمدة ناقصة', 'Missing columns')}: {miss}")
         return
+    rule = st.selectbox(tx("قاعدة القيم تحت حد الكشف (<)", "Rule for values below detection limit (<)"),
+                        ["نصف حد الكشف", "حد الكشف", "صفر"], key="dl_rule")
+    st.caption(tx("القاعدة افتراض يجب ذكره في العرض. الافتراضي نصف حد الكشف.",
+                  "This rule is an assumption and must be stated in the presentation. Default: half DL."))
+    for col in ("cn_water_mg_l", "hg_water_mg_l"):
+        if col in df.columns:
+            df[col] = df[col].map(lambda v: parse_conc(v, rule))
     out, errs = [], []
     for i, row in df.iterrows():
         s = row.to_dict()
@@ -604,6 +675,8 @@ def tab_analysis(site, std):
     st.dataframe(pd.DataFrame([{tx("المعامل", "Parameter"): k, "new index": v["new"],
                                  "change": v["chg"], "sensitivity %": v["sens_pct"]}
                                 for k, v in sens.items()]), hide_index=True, use_container_width=True)
+    st.caption(tx("التقييم فئوي: الصفر يعني أن التغيير لم يعبر حداً فاصلاً، وليس أن المتغير لا يهم.",
+                  "Ratings are categorical: zero means the change did not cross a class boundary, not that the variable is irrelevant."))
     st.subheader("SPSA")
     tot = sum(W_STD.values())
     rt = ratings(site)
@@ -613,6 +686,8 @@ def tab_analysis(site, std):
                                 "effect. %": round(w * rt[k] / DI * 100, 2)} for k, w in W_STD.items()]),
                  hide_index=True, use_container_width=True)
     st.subheader("Monte Carlo")
+    st.caption(tx("يمثل هذا عدم اليقين في المدخلات الفيزيائية فقط، وليس عدم اليقين في القياسات المخبرية. A/S/I ثابتة. المتوسط قد يختلف عن القيمة الأساسية بسبب التقييم الفئوي.",
+                  "This represents uncertainty in physical inputs only, not laboratory measurement uncertainty. A/S/I are fixed. The mean may differ from the base value due to categorical ratings."))
     n = st.slider(tx("عدد المحاكاة", "Simulations"), 100, 3000, 1000, 100, key="mc_n")
     v = st.slider(tx("الاختلاف %", "Variation %"), 5, 30, 15, 5, key="mc_v")
     if st.button(tx("تشغيل Monte Carlo", "Run Monte Carlo"), key="mc_run"):
@@ -699,6 +774,53 @@ def view_transport(site):
                   "gradient; no dispersion, sorption or decay. Not a contaminant transport model."))
 
 
+def run_self_tests(ds=None):
+    res = []
+
+    def chk(name, cond, detail=""):
+        res.append((name, bool(cond), str(detail)))
+
+    base = {"depth_m": 15, "recharge_mm": 20, "slope_pct": 3, "conductivity": 3, "aquifer": "massive_shale",
+            "soil": "thin_or_absent", "vadose": "confining_layer", "cn_water_mg_l": 0.025, "hg_water_mg_l": 0.011}
+    ev = evaluate(base, "SUDAN")
+    chk("A: DRASTIC = 72", ev["idx"] == 72, ev["idx"])
+    chk("A: hazard(Hg=0.011, limit=0.004) = 4.39", round(hazard_score(0.011, 0.004), 2) == 4.39)
+    chk("A: DRASTIC-Tox = 76.4 (SUDAN Hg=0.004)", ev["tox"]["tox"] == 76.4, ev["tox"]["tox"])
+    chk("A: الزيادة 6.1%", ev["tox"]["inc_pct"] == 6.1, ev["tox"]["inc_pct"])
+    chk("A: EU = 82.4", evaluate(base, "EU")["tox"]["tox"] == 82.4, evaluate(base, "EU")["tox"]["tox"])
+    chk("حدود DRASTIC 23..226", index_of({k: 1 for k in W_STD}) == 23 and
+        index_of({"D": 10, "R": 9, "A": 10, "S": 10, "T": 10, "I": 10, "C": 10}) == 226)
+    chk("حدود Pesticide 26..256", index_of({k: 1 for k in W_PEST}, W_PEST) == 26 and
+        index_of({"D": 10, "R": 9, "A": 10, "S": 10, "T": 10, "I": 10, "C": 10}, W_PEST) == 256)
+    chk("WHO: CN = 0.07 يعطي HQ=1", tox_eval(0, 0.07, 0, "WHO")["hq"] == 1.0)
+    chk("تصنيف HQ: 1 مطابق، 5.5 مرتفع قليلاً، 11 مرتفع", hq_class(1) == "compliant" and
+        hq_class(5.5) == "elevated" and hq_class(11) == "hq_high")
+    chk("الميل: 2.0 → 10 و 2.1 → 9", r_T(2.0) == 10 and r_T(2.1) == 9)
+    chk("خطأ صريح عند NaN", _raises(lambda: evaluate({**base, "cn_water_mg_l": float("nan")}, "SUDAN")))
+    chk("خطأ صريح عند فئة غير معروفة", _raises(lambda: evaluate({**base, "soil": "xyz"}, "SUDAN")))
+    chk("parse '<0.001' بقاعدة نصف الحد = 0.0005", parse_conc("<0.001", "نصف حد الكشف") == 0.0005)
+    if ds is not None:
+        try:
+            cal = calib_frame(ds, "SUDAN")
+            p4 = (cal["hq"].values > 1).astype(int)
+            chk("ج: قاعدة التجاوز kappa = 1.0", abs(cohen_kappa(cal["y"].values, p4) - 1.0) < 1e-9)
+            g = ds.get_site_data("كسلا", "Gash_Upstream")
+            eb = evaluate(g, "SUDAN")
+            chk("ب: Gash_Upstream = 159 و 159.0 و مكافأة 0", eb["idx"] == 159 and eb["tox"]["tox"] == 159.0 and eb["tox"]["bonus"] == 0)
+            chk("مراجعة البيانات الخام: كل الحقول موجودة", not audit_db(ds), audit_db(ds)[:3])
+        except Exception as e:
+            chk("اختبارات البيانات", False, f"{type(e).__name__}: {e}")
+    return res
+
+
+def _raises(fn):
+    try:
+        fn()
+    except ValueError:
+        return True
+    return False
+
+
 def main():
     st.set_page_config(page_title=f"Sudan Mining System {VERSION}", page_icon="⛏️", layout="wide")
     st.session_state.setdefault("lang", "ar")
@@ -722,7 +844,24 @@ def main():
         st.caption(f"✅ drastic_core ({core})" if core else "❌ drastic_core")
         for name, err in probe_optional().items():
             st.caption(f"⚪ {name} — {err}" if err else f"✅ {name}")
-        st.caption(tx("الوحدات الاختيارية غير مستخدمة في v62 بعد.", "Optional modules are not used in v62 yet."))
+        st.caption(tx("الوحدات الاختيارية غير مستخدمة في v63 بعد.", "Optional modules are not used in v63 yet."))
+        if ds is not None:
+            issues = audit_db(ds)
+            st.caption(tx("مراجعة البيانات: ✅ كل الحقول موجودة" if not issues else f"❌ {len(issues)} حقل مفقود",
+                          "Data audit: ✅ all fields present" if not issues else f"❌ {len(issues)} missing fields"))
+            for it in issues[:5]:
+                st.caption(it)
+        if core == "ملف":
+            try:
+                import drastic_core as _dc
+                mism = check_core_consistency(_dc)
+                st.caption("✅ drastic_core مطابق للجداول" if not mism else "❌ drastic_core: " + "، ".join(mism))
+            except Exception as e:
+                st.caption(f"❌ drastic_core: {type(e).__name__}: {e}")
+        if st.button(tx("تشغيل الاختبارات الذاتية", "Run self-tests"), key="selftest_btn"):
+            st.session_state["selftest"] = run_self_tests(ds)
+        for name, ok, detail in st.session_state.get("selftest", []):
+            st.caption(("✅ " if ok else "❌ ") + name + ("" if ok else f" — {detail}"))
     STD = st.session_state["std"]
     st.title(tx("نظام التعدين السوداني — DRASTIC-Tox", "Sudan Mining System — DRASTIC-Tox"))
     st.markdown(f"<div class='pilot'>⚠️ {tx('نسخة تجريبية — أداة فرز أولي، لا تُغني عن الفحص المخبري', 'Pilot — screening tool, not a substitute for lab analysis')}</div>",
@@ -767,4 +906,11 @@ def main():
 
 
 if __name__ == "__main__":
+    if "--selftest" in sys.argv:
+        _ds, _err, _ = load_db()
+        _all = run_self_tests(_ds)
+        for _n, _ok, _d in _all:
+            print("PASS" if _ok else "FAIL", _n, _d if not _ok else "")
+        print(f"{sum(o for _, o, _ in _all)}/{len(_all)} passed")
+        sys.exit(0 if all(o for _, o, _ in _all) else 1)
     main()
