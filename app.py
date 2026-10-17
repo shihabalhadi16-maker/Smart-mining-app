@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-VERSION = "v64"
+VERSION = "v66"
 
 # ============================================================
 # 1. المعايير — مصدر واحد للحدود (كل المواضع تقرأ منه)
@@ -336,7 +336,9 @@ LBL = {
     "severe_ag": ("شديد", "Severe"),
 }
 MODE_LBL = {"system": ("النظام الأساسي", "Core system"), "agri": ("القطاع الزراعي", "Agriculture"),
-            "verif": ("التحقق على البيانات الموثقة", "Validation (verified data)"),
+            "verif": ("وصفي على البيانات الموثقة (ليس تنبؤياً)", "Descriptive on verified data (NOT predictive)"),
+            "predict": ("تنبؤ مستقل (تحقق صارم)", "Independent prediction (strict)"),
+            "prev": ("اختبار إضافة التركيز السابق", "Test: does adding prior concentration help?"),
             "transport": ("نقل الملوثات (توجيهي)", "Transport (indicative)")}
 OPTIONAL_MODULES = ["weight_manager", "external_validation", "data_validator", "pdf_generator",
                     "excel_exporter", "gis_raster", "live_apis", "auto_calibration", "auto_maps",
@@ -501,6 +503,150 @@ def tab_input(ds, std):
     c1.metric("CN", f"{site['cn_water_mg_l']} mg/L")
     c2.metric("Hg", f"{site['hg_water_mg_l']} mg/L")
     render_eval(evaluate(site, std))
+
+
+FORBIDDEN_PREDICTORS = {"cn_water_mg_l", "hg_water_mg_l", "DRASTIC-Tox", "drastic_tox", "tox", "bonus",
+                        "hq", "max_HQ", "label", "actual_contaminated"}
+PREDICTOR_COLS = ["depth_m", "recharge_mm", "slope_pct", "conductivity", "aquifer", "soil", "vadose"]
+
+
+def leakage_guard(features):
+    """يرفض أي متنبئ يحمل معلومة الهدف (التركيز أو المؤشرات المشتقة منه أو التسمية)."""
+    bad = [f for f in features if f in FORBIDDEN_PREDICTORS]
+    if bad:
+        raise ValueError("تسرب معلوماتي: المتنبئ يحتوي على متغيرات تحمل معلومة الهدف: " + ", ".join(bad))
+    missing = [c for c in PREDICTOR_COLS if c not in features]
+    if missing:
+        raise ValueError("أعمدة المتنبئ الجيولوجي ناقصة: " + ", ".join(missing))
+    return True
+
+
+def auc_rank(y, score):
+    """AUC بطريقة Mann-Whitney مع معالجة التعادل. 0.5 = الصدفة."""
+    y = np.asarray(y); score = np.asarray(score, float)
+    pos = score[y == 1]; neg = score[y == 0]
+    if len(pos) == 0 or len(neg) == 0:
+        return float("nan")
+    ranks = pd.Series(np.concatenate([pos, neg])).rank().values
+    r_pos = ranks[:len(pos)].sum()
+    return float((r_pos - len(pos) * (len(pos) + 1) / 2.0) / (len(pos) * len(neg)))
+
+
+def boot_auc(df, score, B=1000, seed=42):
+    """فاصل ثقة bootstrap على مستوى الموقع."""
+    rng = np.random.default_rng(seed)
+    locs = pd.unique(df["location_id"].values)
+    groups = [np.where(df["location_id"].values == l)[0] for l in locs]
+    y = df["label"].values; out = []
+    for _ in range(B):
+        pick = rng.integers(0, len(locs), len(locs))
+        idx = np.concatenate([groups[i] for i in pick])
+        a = auc_rank(y[idx], score[idx])
+        if not np.isnan(a): out.append(a)
+    if not out: return float("nan"), float("nan")
+    return float(np.percentile(out, 2.5)), float(np.percentile(out, 97.5))
+
+
+PREREG_RULE = ("قاعدة القبول (تُعلن قبل النظر إلى النتائج): يُقبل التنبؤ الجيولوجي إذا كان الحد الأدنى "
+               "لفاصل AUC أعلى من 0.5، وكانت AUC لـDRASTIC أعلى من المنافس. وإلا يُرفض.")
+
+
+def predictive_eval(df, drastic_scores):
+    """تقييم على مجموعة الاختبار وحدها. drastic_scores مُحسوب من PREDICTOR_COLS فقط."""
+    test = df[df["split"] == "test"].reset_index(drop=True)
+    res = {"n_test_rows": len(test), "n_test_locations": int(test["location_id"].nunique()),
+           "n_pos": int(test["label"].sum()), "warnings": []}
+    if res["n_test_locations"] < 30:
+        res["warnings"].append(f"مواقع الاختبار {res['n_test_locations']} فقط (أقل من 30): الفاصل واسع جداً")
+    if res["n_pos"] < 10:
+        res["warnings"].append(f"عدد المواقع الملوثة في الاختبار {res['n_pos']} فقط (أقل من 10)")
+    d = np.asarray(drastic_scores, float)[df["split"].values == "test"]
+    res["auc_drastic"] = auc_rank(test["label"].values, d)
+    res["ci_drastic"] = boot_auc(test.assign(_s=d), d)
+    if "dist_to_mine_m" in test.columns:
+        comp = -test["dist_to_mine_m"].astype(float).values        # الأقرب للتعدين = خطر أعلى
+        res["auc_comp"] = auc_rank(test["label"].values, comp)
+        res["ci_comp"] = boot_auc(test, comp)
+    else:
+        res["auc_comp"] = None
+    lo = res["ci_drastic"][0]
+    if np.isnan(lo):
+        verdict = "غير قابل للحكم"
+    elif lo > 0.5 and (res["auc_comp"] is None or res["auc_drastic"] > res["auc_comp"]):
+        verdict = "قُبل التنبؤ الجيولوجي وفق القاعدة المعلنة"
+    else:
+        verdict = "رُفض التنبؤ الجيولوجي وفق القاعدة المعلنة"
+    res["verdict"] = verdict
+    return res
+
+
+PREV_COLS = ["cn_prev", "hg_prev"]
+CURRENT_CONC_COLS = ["cn_water_mg_l", "hg_water_mg_l"]
+
+
+def prev_guard(columns):
+    """هذا الوضع يستخدم التركيز السابق فقط. التركيز الحالي ممنوع لأنه قد يكون هو الهدف نفسه."""
+    cur = [c for c in columns if c in CURRENT_CONC_COLS]
+    if cur:
+        raise ValueError("الملف يحوي تركيزاً حالياً (" + ", ".join(cur) + "): احذفه. هذا الوضع يستخدم cn_prev وhg_prev فقط")
+    missing = [c for c in PREDICTOR_COLS + PREV_COLS if c not in columns]
+    if missing:
+        raise ValueError("أعمدة ناقصة: " + ", ".join(missing))
+    return True
+
+
+def boot_diff(df, fn_a, fn_b, B=1000, seed=42):
+    """فرق مقترن (A − B) بفاصل ثقة bootstrap على مستوى الموقع. fn(indices) -> AUC."""
+    rng = np.random.default_rng(seed)
+    locs = pd.unique(df["location_id"].values)
+    groups = [np.where(df["location_id"].values == l)[0] for l in locs]
+    out = []
+    for _ in range(B):
+        pick = rng.integers(0, len(locs), len(locs))
+        idx = np.concatenate([groups[i] for i in pick])
+        a, b = fn_a(idx), fn_b(idx)
+        if not (np.isnan(a) or np.isnan(b)):
+            out.append(a - b)
+    if not out:
+        return float("nan"), float("nan")
+    return float(np.percentile(out, 2.5)), float(np.percentile(out, 97.5))
+
+
+PREREG_PREV = ("قاعدة القبول (تُعلن قبل النظر إلى النتائج): تُقبل إضافة الجيولوجيا إذا كان الحد الأدنى "
+               "لفاصل الفرق AUC(DRASTIC + التركيز السابق) − AUC(التركيز السابق وحده) أعلى من الصفر.")
+
+
+def prev_contrast(df, std):
+    """ثلاثة متنبئات على مجموعة الاختبار: DRASTIC، و DRASTIC + تركيز سابق، والتركيز السابق وحده.
+    لا يوجد أي تعلّم أو ضبط: الدرجات مُعرّفة مسبقاً، لذلك لا يحدث تسرب من التسمية."""
+    test = df[df["split"] == "test"].reset_index(drop=True)
+    L = STANDARDS[std]
+    dr = test["DRASTIC"].values.astype(float)
+    cn = test["cn_prev"].values.astype(float); hg = test["hg_prev"].values.astype(float)
+    bonus = np.array([min(50.0, hazard_score(c, L["cn"]) + hazard_score(h, L["hg"])) for c, h in zip(cn, hg)])
+    hq = np.array([max(hq_pair(c, h, std)) for c, h in zip(cn, hg)])
+    score_a = dr
+    score_b = dr + bonus
+    score_c = hq
+    y = test["label"].values
+    res = {"n_locations": int(test["location_id"].nunique()), "n_pos": int(test["label"].sum()), "warnings": []}
+    if res["n_locations"] < 30:
+        res["warnings"].append(f"مواقع الاختبار {res['n_locations']} فقط (أقل من 30): الفاصل واسع جداً")
+    if res["n_pos"] < 10:
+        res["warnings"].append(f"عدد الحالات الملوثة {res['n_pos']} فقط (أقل من 10)")
+    res["auc_drastic"] = auc_rank(y, score_a)
+    res["auc_drastic_prev"] = auc_rank(y, score_b)
+    res["auc_prev_only"] = auc_rank(y, score_c)
+    res["diff_ci"] = boot_diff(test, lambda i: auc_rank(y[i], score_b[i]),
+                               lambda i: auc_rank(y[i], score_c[i]))
+    lo = res["diff_ci"][0]
+    if np.isnan(lo):
+        res["verdict"] = "غير قابل للحكم"
+    elif lo > 0:
+        res["verdict"] = "الجيولوجيا تضيف معلومة فوق التركيز السابق وفق القاعدة المعلنة"
+    else:
+        res["verdict"] = "لم تثبت الجيولوجيا إضافة فوق التركيز السابق وفق القاعدة المعلنة"
+    return res
 
 
 def tox_with_limits(base, cn, hg, cn_lim, hg_lim):
@@ -736,6 +882,121 @@ def tab_verification(ds, std):
         st.dataframe(cal, hide_index=True, use_container_width=True)
 
 
+def view_predictive(std):
+    st.warning(tx("وضع صارم: DRASTIC وحده متنبئ مسموح. لا يُسمح بالتركيز ولا بـDRASTIC-Tox كمتنبئ. "
+                  "الحكم يتم على مجموعة الاختبار المستقلة فقط.",
+                  "Strict mode: DRASTIC alone is the only allowed predictor. No concentrations or DRASTIC-Tox. "
+                  "Verdict is based only on the independent test set."))
+    st.info(PREREG_RULE)
+    cols = ["location_id", "split", "label"] + PREDICTOR_COLS + ["dist_to_mine_m"]
+    sample = pd.DataFrame(columns=cols)
+    st.download_button(tx("📥 قالب البيانات المستقلة", "📥 Independent data template"),
+                       sample.to_csv(index=False).encode("utf-8-sig"), file_name="independent_template.csv",
+                       mime="text/csv")
+    up = st.file_uploader("CSV / Excel", type=["csv", "xlsx"], key="pred_up")
+    if up is None:
+        st.caption(tx("الأعمدة المطلوبة: location_id، split (train/test)، label (0/1)، والمتنبئات الجيولوجية السبعة. "
+                      "dist_to_mine_m اختياري وهو المنافس.",
+                      "Required: location_id, split (train/test), label (0/1), and the 7 geological predictors. "
+                      "dist_to_mine_m is optional and is the competitor."))
+        return
+    df = pd.read_csv(up) if up.name.endswith(".csv") else pd.read_excel(up)
+    try:
+        leakage_guard(PREDICTOR_COLS)
+        miss = [c for c in ["location_id", "split", "label"] + PREDICTOR_COLS if c not in df.columns]
+        if miss:
+            st.error(f"{tx('أعمدة ناقصة', 'Missing columns')}: {miss}")
+            return
+        df["split"] = df["split"].astype(str).str.strip().str.lower()
+        df["label"] = df["label"].astype(int)
+        if not set(df["label"].unique()) <= {0, 1}:
+            st.error(tx("العمود label يجب أن يكون 0 أو 1", "label must be 0 or 1"))
+            return
+        scores, errs = [], []
+        for i, row in df.iterrows():
+            try:
+                scores.append(index_of(ratings(row.to_dict())))
+            except Exception as e:
+                errs.append(f"row {i + 1}: {type(e).__name__}: {e}")
+                scores.append(np.nan)
+        if errs:
+            st.error(f"{len(errs)} {tx('صف فشل', 'rows failed')}")
+            for e in errs[:10]:
+                st.caption(e)
+            return
+        r = predictive_eval(df, scores)
+        for w in r["warnings"]:
+            st.warning(w)
+        c1, c2, c3 = st.columns(3)
+        c1.metric(tx("مواقع الاختبار", "Test locations"), r["n_test_locations"])
+        c2.metric(tx("ملوثة في الاختبار", "Positive in test"), r["n_pos"])
+        c3.metric("AUC DRASTIC", round(r["auc_drastic"], 3))
+        lo, hi = r["ci_drastic"]
+        st.write(f"95% CI (location bootstrap): [{lo:.3f}, {hi:.3f}]")
+        if r["auc_comp"] is not None:
+            st.write(f"AUC {tx('المنافس: القرب من التعدين', 'competitor: distance to mining')} = {round(r['auc_comp'], 3)}")
+        st.write(f"**{tx('الحكم', 'Verdict')}:** {r['verdict']}")
+    except Exception as e:
+        st.error(f"{type(e).__name__}: {e}")
+
+
+def view_prev(std):
+    st.warning(tx("هذا الوضع يقارن ثلاثة متنبئات على مجموعة اختبار مستقلة. التركيز السابق يأتي من حملة منفصلة، "
+                  "والهدف تجاوز في حملة لاحقة. التركيز الحالي ممنوع.",
+                  "Compares three predictors on an independent test set. Prior concentration is from a separate campaign; "
+                  "the target is an exceedance in a later campaign. Current concentration is not allowed."))
+    st.info(PREREG_PREV)
+    cols = ["location_id", "split", "label"] + PREDICTOR_COLS + PREV_COLS
+    st.download_button(tx("📥 قالب اختبار إضافة التركيز السابق", "📥 Prior-concentration test template"),
+                       pd.DataFrame(columns=cols).to_csv(index=False).encode("utf-8-sig"),
+                       file_name="prev_concentration_template.csv", mime="text/csv")
+    confirmed = st.checkbox(tx("أؤكد أن التسمية (label) مأخوذة من حملة لاحقة لم تُستخدم في أي متنبئ",
+                               "I confirm the label comes from a later campaign not used in any predictor"),
+                            key="prev_confirm")
+    up = st.file_uploader("CSV / Excel", type=["csv", "xlsx"], key="prev_up")
+    if up is None:
+        return
+    if not confirmed:
+        st.error(tx("يجب تأكيد استقلال التسمية قبل التحليل", "You must confirm label independence first"))
+        return
+    df = pd.read_csv(up) if up.name.endswith(".csv") else pd.read_excel(up)
+    try:
+        prev_guard(list(df.columns))
+        df["split"] = df["split"].astype(str).str.strip().str.lower()
+        df["label"] = df["label"].astype(int)
+        if not set(df["label"].unique()) <= {0, 1}:
+            st.error("label must be 0 or 1")
+            return
+        dr, errs = [], []
+        for i, row in df.iterrows():
+            try:
+                dr.append(index_of(ratings(row.to_dict())))
+            except Exception as e:
+                errs.append(f"row {i + 1}: {type(e).__name__}: {e}")
+                dr.append(np.nan)
+        if errs:
+            st.error(f"{len(errs)} {tx('صف فشل', 'rows failed')}")
+            for e in errs[:10]:
+                st.caption(e)
+            return
+        df["DRASTIC"] = dr
+        r = prev_contrast(df, std)
+        for w in r["warnings"]:
+            st.warning(w)
+        st.write(f"{tx('مواقع الاختبار', 'Test locations')}: {r['n_locations']} | {tx('ملوثة', 'Positive')}: {r['n_pos']}")
+        st.dataframe(pd.DataFrame([
+            {tx("المتنبئ", "Predictor"): tx("DRASTIC وحده", "DRASTIC alone"), "AUC": round(r["auc_drastic"], 3)},
+            {tx("المتنبئ", "Predictor"): tx("DRASTIC + تركيز سابق", "DRASTIC + prior conc."), "AUC": round(r["auc_drastic_prev"], 3)},
+            {tx("المتنبئ", "Predictor"): tx("التركيز السابق وحده", "Prior conc. only"), "AUC": round(r["auc_prev_only"], 3)},
+        ]), hide_index=True, use_container_width=True)
+        lo, hi = r["diff_ci"]
+        st.write(f"{tx('فرق AUC (الجمع − التركيز وحده)', 'AUC difference (combined − conc. only)')}: "
+                 f"[{lo:.3f}, {hi:.3f}] 95% (location bootstrap)")
+        st.write(f"**{tx('الحكم', 'Verdict')}:** {r['verdict']}")
+    except Exception as e:
+        st.error(f"{type(e).__name__}: {e}")
+
+
 def view_agri(ds, std):
     states = list(ds.AGRICULTURAL_DATA)
     c1, c2 = st.columns(2)
@@ -799,6 +1060,20 @@ def run_self_tests(ds=None):
     chk("خطأ صريح عند NaN", _raises(lambda: evaluate({**base, "cn_water_mg_l": float("nan")}, "SUDAN")))
     chk("خطأ صريح عند فئة غير معروفة", _raises(lambda: evaluate({**base, "soil": "xyz"}, "SUDAN")))
     chk("parse '<0.001' بقاعدة نصف الحد = 0.0005", parse_conc("<0.001", "نصف حد الكشف") == 0.0005)
+    chk("تسرب: التركيز في المتنبئ يُرفض", _raises_msg(lambda: leakage_guard(PREDICTOR_COLS + ["cn_water_mg_l"]), "تسرب"))
+    chk("تسرب: DRASTIC-Tox في المتنبئ يُرفض", _raises_msg(lambda: leakage_guard(PREDICTOR_COLS + ["DRASTIC-Tox"]), "تسرب"))
+    chk("المتنبئ الجيولوجي وحده مقبول", leakage_guard(PREDICTOR_COLS) is True)
+    chk("AUC: فصل تام = 1.0", auc_rank([0, 0, 1, 1], [1, 2, 3, 4]) == 1.0)
+    chk("AUC: عكس الفصل = 0.0", auc_rank([0, 0, 1, 1], [4, 3, 2, 1]) == 0.0)
+    chk("AUC: كل القيم متعادلة = 0.5", auc_rank([0, 1, 0, 1], [5, 5, 5, 5]) == 0.5)
+    chk("إضافة: التركيز الحالي في الملف يُرفض", _raises_msg(lambda: prev_guard(PREDICTOR_COLS + PREV_COLS + ["cn_water_mg_l"]), "تركيزاً حالياً"))
+    chk("إضافة: الملف الصحيح مقبول", prev_guard(PREDICTOR_COLS + PREV_COLS) is True)
+    _rng = np.random.default_rng(7); _n = 80
+    _d = pd.DataFrame({"location_id": [f"S{i}" for i in range(_n)], "split": ["test"] * _n,
+                       "label": _rng.integers(0, 2, _n), "DRASTIC": _rng.uniform(40, 200, _n),
+                       "cn_prev": 0.01, "hg_prev": 0.001})
+    _r = prev_contrast(_d, "SUDAN")
+    chk("إضافة: بيانات بلا إشارة لا تُقبل", not (_r["diff_ci"][0] > 0), _r["diff_ci"])
     if ds is not None:
         try:
             cal = calib_frame(ds, "SUDAN")
@@ -811,6 +1086,14 @@ def run_self_tests(ds=None):
         except Exception as e:
             chk("اختبارات البيانات", False, f"{type(e).__name__}: {e}")
     return res
+
+
+def _raises_msg(fn, word):
+    try:
+        fn()
+    except ValueError as e:
+        return word in str(e)
+    return False
 
 
 def _raises(fn):
@@ -896,6 +1179,10 @@ def main():
             view_agri(ds, STD)
         elif mode == "verif":
             tab_verification(ds, STD)
+        elif mode == "predict":
+            view_predictive(STD)
+        elif mode == "prev":
+            view_prev(STD)
         else:
             st.radio(tx("مصدر الموقع", "Site source"), ["list", "manual"], horizontal=True,
                      format_func=lambda s: tx("موقع من القائمة", "Site from list") if s == "list"
