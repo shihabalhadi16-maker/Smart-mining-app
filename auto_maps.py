@@ -19,6 +19,17 @@ from plotly.subplots import make_subplots
 from scipy.interpolate import griddata
 
 
+MAX_KM = 50.0  # أقصى مسافة من أي موقع مُقاس يُسمح بالاستيفاء عندها
+
+
+def _km_distance_to_nearest(xi, yi, x, y):
+    """المسافة بالكيلومتر من كل نقطة شبكة إلى أقرب موقع مُقاس (تقريب كروي مقبول لهذا النطاق)."""
+    gx = xi.ravel(); gy = yi.ravel()
+    dy = (gy[:, None] - y[None, :]) * 111.0
+    dx = (gx[:, None] - x[None, :]) * 111.0 * np.cos(np.radians(gy))[:, None]
+    return np.sqrt(dx ** 2 + dy ** 2).min(axis=1).reshape(xi.shape)
+
+
 def _interpolate_idw(x, y, z, xi, yi, power=2.0):
     """
     Interpolation using Inverse Distance Weighting (IDW).
@@ -28,14 +39,9 @@ def _interpolate_idw(x, y, z, xi, yi, power=2.0):
     grid_points = np.column_stack([xi.ravel(), yi.ravel()])
 
     try:
-        # Try scipy griddata first (linear)
+        # linear داخل حدود البيانات فقط. لا تُملأ الأماكن الفارغة بأقرب نقطة.
         if len(points) >= 4:
             zi = griddata(points, z, grid_points, method='linear')
-            # Fill NaN with nearest
-            nan_mask = np.isnan(zi)
-            if nan_mask.any():
-                zi_near = griddata(points, z, grid_points, method='nearest')
-                zi[nan_mask] = zi_near[nan_mask]
         else:
             zi = griddata(points, z, grid_points, method='nearest')
     except Exception:
@@ -46,7 +52,10 @@ def _interpolate_idw(x, y, z, xi, yi, power=2.0):
         weights = 1.0 / (dist ** power)
         zi = (weights * z[None, :]).sum(axis=1) / weights.sum(axis=1)
 
-    return zi.reshape(xi.shape)
+    zi = zi.reshape(xi.shape)
+    # إخفاء أي شبكة تبعد أكثر من MAX_KM عن أقرب موقع مُقاس
+    zi = np.where(_km_distance_to_nearest(xi, yi, x, y) > MAX_KM, np.nan, zi)
+    return zi
 
 
 def _make_map_plot(df, value_col, title, colorscale, unit=""):
@@ -142,7 +151,7 @@ def generate_auto_maps(df, output_path=None):
         subplot_titles=(
             "D - العمق", "R - التغذية", "A - الخزان", "S - التربة",
             "T - الميل", "I - التهوية", "C - التوصيلية", "CN - سيانيد",
-            "Hg - زئبق", "DRASTIC", "DRASTIC-Tox", "التصنيف"
+            "Hg - زئبق", "DRASTIC", "DRASTIC-Tox", ""
         ),
         vertical_spacing=0.12,
         horizontal_spacing=0.06
@@ -161,18 +170,31 @@ def generate_auto_maps(df, output_path=None):
         ("Hg", "YlOrRd"),
         ("DRASTIC", "Viridis"),
         ("DRASTIC_Tox", "Turbo"),
-        ("DRASTIC_Tox", "RdYlGn_r"),
     ]
 
     positions = [(1,1), (1,2), (1,3), (1,4),
                  (2,1), (2,2), (2,3), (2,4),
-                 (3,1), (3,2), (3,3), (3,4)]
+                 (3,1), (3,2), (3,3)]
 
     x = df["lon"].values
     y = df["lat"].values
 
     for (col, cmap), (r, c) in zip(maps, positions):
         z = df[col].values
+
+        if col in ("CN", "Hg"):
+            # تركيزات الملوثات: نقاط القياس فقط، بلا استيفاء بين المواقع
+            fig.add_trace(
+                go.Scatter(
+                    x=x, y=y, mode='markers',
+                    marker=dict(size=9, color=z, colorscale=cmap, showscale=False,
+                                line=dict(color='black', width=0.5)),
+                    showlegend=False,
+                    hovertemplate=f"{col}: %{{marker.color:.4f}} mg/L<extra></extra>"
+                ),
+                row=r, col=c
+            )
+            continue
 
         try:
             xi = np.linspace(x.min() - 0.1, x.max() + 0.1, 60)
