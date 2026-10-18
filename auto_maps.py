@@ -326,12 +326,18 @@ def generate_single_map(df):
     else:
         TraceCls, layout_key = go.Scattermapbox, "mapbox"
 
+    # مركز ومستوى تكبير يناسبان امتداد النقاط، بدل عرض ثابت يصغّر المواقع
+    lat_span = float(df["lat"].max() - df["lat"].min())
+    lon_span = float(df["lon"].max() - df["lon"].min())
+    span = max(lat_span, lon_span, 0.5)
+    zoom = 6.0 if span < 2 else 5.0 if span < 5 else 4.2 if span < 10 else 3.6
+
     fig = go.Figure()
     for i, (col, label, cmap) in enumerate(ONE_MAP_LAYERS):
         fig.add_trace(TraceCls(
             lat=df["lat"].values, lon=df["lon"].values, mode="markers",
-            marker=dict(size=13, color=df[col].values, colorscale=cmap, showscale=True,
-                        colorbar=dict(title=dict(text=label), thickness=12)),
+            marker=dict(size=16, color=df[col].values, colorscale=cmap, showscale=True,
+                        colorbar=dict(title=dict(text=label), thickness=14, len=0.6, x=1.0)),
             customdata=custom, hovertemplate=hover, visible=(i == 0), name=label))
 
     buttons = []
@@ -341,9 +347,9 @@ def generate_single_map(df):
                                   {"title.text": f"{label} — المواقع المقاسة (إحداثيات تقريبية)"}]))
 
     fig.update_layout(**{layout_key: dict(style="open-street-map",
-                    center=dict(lat=float(df["lat"].mean()), lon=float(df["lon"].mean())), zoom=4.6)},
-        title=dict(text=f"{ONE_MAP_LAYERS[0][1]} — المواقع المقاسة (إحداثيات تقريبية)", x=0.5),
-        margin=dict(l=0, r=0, t=50, b=0), height=620,
+                    center=dict(lat=float(df["lat"].mean()), lon=float(df["lon"].mean())), zoom=zoom)},
+        title=dict(text=f"{ONE_MAP_LAYERS[0][1]} — المواقع المقاسة", x=0.5, font=dict(size=14)),
+        margin=dict(l=0, r=0, t=40, b=0), height=460,
         updatemenus=[dict(buttons=buttons, direction="down", x=0.01, y=0.99, showactive=True,
                           bgcolor="white")],
     )
