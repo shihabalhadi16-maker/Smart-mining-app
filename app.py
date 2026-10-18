@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-VERSION = "v69"
+VERSION = "v69b"
 
 # ============================================================
 # 1. المعايير — مصدر واحد للحدود (كل المواضع تقرأ منه)
@@ -1133,6 +1133,26 @@ def build_map_frame(ds, std):
     return pd.DataFrame(rows)
 
 
+MAP_MAX_KM = 50.0
+
+
+def mask_far_cells(raster, pts, max_km=MAP_MAX_KM):
+    """يُفرغ خلايا الشبكة التي تبعد أكثر من max_km عن أقرب موقع مُقاس.
+    pts: قائمة (lat, lon, value). يعيد (الشبكة المقنعة، عدد الخلايا الصالحة، إجمالي الخلايا)."""
+    lats = np.asarray(raster["lats"], float); lons = np.asarray(raster["lons"], float)
+    glon, glat = np.meshgrid(lons, lats)
+    plat = np.array([p[0] for p in pts], float); plon = np.array([p[1] for p in pts], float)
+    gl = glat.ravel()
+    dy = (gl[:, None] - plat[None, :]) * 111.0
+    dx = (glon.ravel()[:, None] - plon[None, :]) * 111.0 * np.cos(np.radians(gl))[:, None]
+    dmin = np.sqrt(dx ** 2 + dy ** 2).min(axis=1).reshape(glat.shape)
+    arr = np.array(raster["raster"], float)
+    arr[dmin > max_km] = np.nan
+    out = dict(raster)
+    out["raster"] = arr
+    return out, int(np.isfinite(arr).sum()), int(arr.size)
+
+
 def view_maps(ds, std):
     st.warning(tx("خرائط تقديرية: تُبنى من 40 موقعاً فقط، وإحداثياتها تقريبية (نحو 5 كم). الاستيفاء بين النقاط تقدير رياضي، وليس قياساً ولا دليلاً مكانياً.",
                   "Estimated maps: built from only 40 sites with approximate coordinates (~5 km). Interpolation between points is a mathematical estimate, not measurement or spatial evidence."))
@@ -1160,10 +1180,10 @@ def view_maps(ds, std):
         if "error" in raster:
             st.error(raster["error"])
             return
-        st.plotly_chart(gr.create_raster_plotly(raster, title="DRASTIC (IDW, تقدير)"), use_container_width=True)
-        stats = gr.compute_raster_statistics(raster)
-        st.caption(tx(f"المساحة المغطاة تقريباً: {stats.get('coverage_km2')} كم²، وهي مساحة الاستيفاء وليست مساحة مُقاسة.",
-                      f"Covered area (approx.): {stats.get('coverage_km2')} km², an interpolation extent, not a measured area."))
+        raster, n_ok, n_all = mask_far_cells(raster, pts)
+        st.plotly_chart(gr.create_raster_plotly(raster, title="DRASTIC (IDW, تقدير ضمن 50 كم)"), use_container_width=True)
+        st.caption(tx(f"يظهر السطح فقط ضمن {MAP_MAX_KM:.0f} كم من موقع مُقاس ({n_ok} من {n_all} خلية). الأماكن الفارغة لا تُقدَّر.",
+                      f"Surface shown only within {MAP_MAX_KM:.0f} km of a measured site ({n_ok} of {n_all} cells). Empty areas are not estimated."))
     except Exception as e:
         st.error(f"{tx('فشل الاستيفاء', 'Interpolation failed')}: {type(e).__name__}: {e}")
 
@@ -1369,6 +1389,9 @@ def run_self_tests(ds=None):
             chk("خرائط: الجدول يحوي كل الأعمدة المطلوبة لكل المواقع", all(c in _f.columns for c in _need) and len(_f) == 40, len(_f))
         except Exception as e:
             chk("خرائط: بناء الجدول", False, f"{type(e).__name__}: {e}")
+    _ra = {"lats": [0.0, 1.0], "lons": [0.0, 1.0], "raster": [[1.0, 1.0], [1.0, 1.0]]}
+    _m, _ok, _all = mask_far_cells(_ra, [(0.0, 0.0, 5.0)], max_km=50)
+    chk("خرائط: الخلايا البعيدة عن المواقع تُفرغ", _ok < _all and np.isnan(_m["raster"][1][1]) and _m["raster"][0][0] == 1.0, (_ok, _all))
     chk("إضافة: التركيز الحالي في الملف يُرفض", _raises_msg(lambda: prev_guard(PREDICTOR_COLS + PREV_COLS + ["cn_water_mg_l"]), "تركيزاً حالياً"))
     chk("إضافة: الملف الصحيح مقبول", prev_guard(PREDICTOR_COLS + PREV_COLS) is True)
     _rng = np.random.default_rng(7); _n = 80
