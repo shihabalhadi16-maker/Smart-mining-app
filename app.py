@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-VERSION = "v69b"
+VERSION = "v70"
 
 # ============================================================
 # 1. المعايير — مصدر واحد للحدود (كل المواضع تقرأ منه)
@@ -1119,13 +1119,51 @@ def view_predictive(std):
         st.error(f"{type(e).__name__}: {e}")
 
 
+COORD_FILE = "site_coordinates.csv"
+SUDAN_LAT = (8.0, 23.5)   # نطاق تحقق تقريبي لخط العرض في السودان
+SUDAN_LON = (21.0, 39.0)  # نطاق تحقق تقريبي لخط الطول في السودان
+
+
+def load_coord_overrides(path=None):
+    """يقرأ الإحداثيات المُدخلة يدوياً من site_coordinates.csv.
+    يعيد (القاموس، قائمة أخطاء). الصفوف الفارغة تُتجاهل، والصفوف غير الصالحة تُسجَّل ولا تُستخدم."""
+    import os
+    path = path or COORD_FILE
+    if not os.path.exists(path):
+        return {}, []
+    df = pd.read_csv(path, dtype=str, encoding="utf-8-sig").fillna("")
+    out, errs = {}, []
+    for i, r in df.iterrows():
+        lat_s, lon_s = r.get("lat", "").strip(), r.get("lon", "").strip()
+        if lat_s == "" and lon_s == "":
+            continue
+        key = (r.get("state", "").strip(), r.get("site_key", "").strip())
+        try:
+            lat, lon = float(lat_s), float(lon_s)
+        except ValueError:
+            errs.append(f"سطر {i + 2} ({key[1]}): الإحداثيات ليست أرقاماً")
+            continue
+        if not (SUDAN_LAT[0] <= lat <= SUDAN_LAT[1] and SUDAN_LON[0] <= lon <= SUDAN_LON[1]):
+            errs.append(f"سطر {i + 2} ({key[1]}): خارج نطاق السودان ({lat}, {lon})")
+            continue
+        src = r.get("source", "").strip() or "غير محدد"
+        date = r.get("read_date", "").strip() or "بلا تاريخ"
+        out[key] = {"lat": lat, "lon": lon, "source": f"{src} ({date})"}
+    return out, errs
+
+
 def build_map_frame(ds, std):
     """يبني جدول المواقع بالأسماء التي تتوقعها وحدة auto_maps: lon, lat، والتقييمات السبعة، و CN، Hg، DRASTIC، DRASTIC_Tox."""
     rows = []
+    overrides, _errs = load_coord_overrides()
     for r in ds.get_all_sites_as_dataframe().to_dict("records"):
         ev = evaluate(r, std)
         rt = ev["rt"]
-        rows.append({"site": r.get("site_name", ""), "lat": float(r["lat"]), "lon": float(r["lon"]),
+        ov = overrides.get((r.get("state", ""), r.get("site_key", "")))
+        lat = ov["lat"] if ov else float(r["lat"])
+        lon = ov["lon"] if ov else float(r["lon"])
+        csrc = ov["source"] if ov else "تقريبي من البيانات الأصلية (نحو 5 كم)"
+        rows.append({"site": r.get("site_name", ""), "lat": lat, "lon": lon, "coord_source": csrc,
                      "D_rating": rt["D"], "R_rating": rt["R"], "A_rating": rt["A"], "S_rating": rt["S"],
                      "T_rating": rt["T"], "I_rating": rt["I"], "C_rating": rt["C"],
                      "CN": float(r["cn_water_mg_l"]), "Hg": float(r["hg_water_mg_l"]),
@@ -1154,38 +1192,25 @@ def mask_far_cells(raster, pts, max_km=MAP_MAX_KM):
 
 
 def view_maps(ds, std):
-    st.warning(tx("خرائط تقديرية: تُبنى من 40 موقعاً فقط، وإحداثياتها تقريبية (نحو 5 كم). الاستيفاء بين النقاط تقدير رياضي، وليس قياساً ولا دليلاً مكانياً.",
-                  "Estimated maps: built from only 40 sites with approximate coordinates (~5 km). Interpolation between points is a mathematical estimate, not measurement or spatial evidence."))
+    st.warning(tx("الإحداثيات في البيانات تقريبية (نحو 5 كم)، وليست GPS. الخريطة تعرض المواقع المقاسة فقط، بلا استيفاء بين المواقع.",
+                  "Coordinates in the data are approximate (~5 km), not GPS. The map shows measured sites only, with no interpolation."))
     try:
         import auto_maps as am
-        import gis_raster as gr
     except Exception as e:
         st.error(f"{tx('وحدة الخرائط غير متاحة', 'Map module unavailable')}: {type(e).__name__}: {e}")
         return
     try:
         frame = build_map_frame(ds, std)
+        _, coord_errs = load_coord_overrides()
+        n_manual = int((frame["coord_source"] != "تقريبي من البيانات الأصلية (نحو 5 كم)").sum())
+        st.write(f"{tx('مواقع بإحداثيات مُدخلة يدوياً', 'Sites with manually entered coordinates')}: {n_manual} / {len(frame)}")
+        for e in coord_errs:
+            st.warning(e)
+        st.plotly_chart(am.generate_single_map(frame), use_container_width=True)
+        st.caption(tx("اختر الطبقة من القائمة المنسدلة أعلى الخريطة. مرّر المؤشر على أي نقطة لرؤية كل القيم.",
+                      "Pick a layer from the dropdown on the map. Hover a point to see all values."))
     except Exception as e:
-        st.error(f"{type(e).__name__}: {e}")
-        return
-    st.subheader(tx("لوحة الخرائط (12 خريطة)", "Map panel (12 maps)"))
-    try:
-        fig = am.generate_auto_maps(frame)
-        st.plotly_chart(fig, use_container_width=True)
-    except Exception as e:
-        st.error(f"{tx('فشل رسم اللوحة', 'Panel failed')}: {type(e).__name__}: {e}")
-    st.subheader(tx("سطح DRASTIC المستنتج (IDW)", "Interpolated DRASTIC surface (IDW)"))
-    try:
-        pts = [(float(a), float(b), float(c)) for a, b, c in zip(frame["lat"], frame["lon"], frame["DRASTIC"])]
-        raster = gr.idw_interpolation(pts, resolution=60)
-        if "error" in raster:
-            st.error(raster["error"])
-            return
-        raster, n_ok, n_all = mask_far_cells(raster, pts)
-        st.plotly_chart(gr.create_raster_plotly(raster, title="DRASTIC (IDW, تقدير ضمن 50 كم)"), use_container_width=True)
-        st.caption(tx(f"يظهر السطح فقط ضمن {MAP_MAX_KM:.0f} كم من موقع مُقاس ({n_ok} من {n_all} خلية). الأماكن الفارغة لا تُقدَّر.",
-                      f"Surface shown only within {MAP_MAX_KM:.0f} km of a measured site ({n_ok} of {n_all} cells). Empty areas are not estimated."))
-    except Exception as e:
-        st.error(f"{tx('فشل الاستيفاء', 'Interpolation failed')}: {type(e).__name__}: {e}")
+        st.error(f"{tx('فشل رسم الخريطة', 'Map failed')}: {type(e).__name__}: {e}")
 
 
 def view_dual(std):
@@ -1392,6 +1417,19 @@ def run_self_tests(ds=None):
     _ra = {"lats": [0.0, 1.0], "lons": [0.0, 1.0], "raster": [[1.0, 1.0], [1.0, 1.0]]}
     _m, _ok, _all = mask_far_cells(_ra, [(0.0, 0.0, 5.0)], max_km=50)
     chk("خرائط: الخلايا البعيدة عن المواقع تُفرغ", _ok < _all and np.isnan(_m["raster"][1][1]) and _m["raster"][0][0] == 1.0, (_ok, _all))
+    import tempfile, os as _os
+    _tmp = _os.path.join(tempfile.gettempdir(), "coords_selftest.csv")
+    pd.DataFrame([
+        {"state": "سنار", "site_key": "A", "lat": "13.5", "lon": "33.6", "source": "Google Maps", "read_date": "2026-10-18"},
+        {"state": "سنار", "site_key": "B", "lat": "45.0", "lon": "33.6", "source": "x", "read_date": ""},
+        {"state": "سنار", "site_key": "C", "lat": "", "lon": "", "source": "", "read_date": ""},
+        {"state": "سنار", "site_key": "D", "lat": "abc", "lon": "33", "source": "", "read_date": ""},
+    ]).to_csv(_tmp, index=False, encoding="utf-8-sig")
+    _ov, _er = load_coord_overrides(_tmp)
+    chk("إحداثيات: الصف الصالح يُقبل", ("سنار", "A") in _ov and _ov[("سنار", "A")]["lat"] == 13.5)
+    chk("إحداثيات: خارج السودان يُرفض مع رسالة", ("سنار", "B") not in _ov and any("خارج نطاق" in e for e in _er), _er)
+    chk("إحداثيات: الصف الفارغ يُتجاهل", ("سنار", "C") not in _ov)
+    chk("إحداثيات: القيمة غير الرقمية تُرفض مع رسالة", ("سنار", "D") not in _ov and any("ليست أرقاماً" in e for e in _er))
     chk("إضافة: التركيز الحالي في الملف يُرفض", _raises_msg(lambda: prev_guard(PREDICTOR_COLS + PREV_COLS + ["cn_water_mg_l"]), "تركيزاً حالياً"))
     chk("إضافة: الملف الصحيح مقبول", prev_guard(PREDICTOR_COLS + PREV_COLS) is True)
     _rng = np.random.default_rng(7); _n = 80
