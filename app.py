@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-VERSION = "v66"
+VERSION = "v69"
 
 # ============================================================
 # 1. المعايير — مصدر واحد للحدود (كل المواضع تقرأ منه)
@@ -339,6 +339,8 @@ MODE_LBL = {"system": ("النظام الأساسي", "Core system"), "agri": ("
             "verif": ("وصفي على البيانات الموثقة (ليس تنبؤياً)", "Descriptive on verified data (NOT predictive)"),
             "predict": ("تنبؤ مستقل (تحقق صارم)", "Independent prediction (strict)"),
             "prev": ("اختبار إضافة التركيز السابق", "Test: does adding prior concentration help?"),
+            "dual": ("نموذج مزدوج مُتعلَّم (تجريبي)", "Learned dual model (experimental)"),
+            "map": ("خرائط تقديرية (تجريبي)", "Estimated maps (experimental)"),
             "transport": ("نقل الملوثات (توجيهي)", "Transport (indicative)")}
 OPTIONAL_MODULES = ["weight_manager", "external_validation", "data_validator", "pdf_generator",
                     "excel_exporter", "gis_raster", "live_apis", "auto_calibration", "auto_maps",
@@ -649,6 +651,166 @@ def prev_contrast(df, std):
     return res
 
 
+def _sigmoid(z):
+    return 1.0 / (1.0 + np.exp(-np.clip(z, -35, 35)))
+
+
+def fit_logistic(x, y, l2=1e-3, iters=100):
+    """انحدار لوجستي بمتنبئ واحد بطريقة Newton-Raphson (IRLS)، مع تنظيم خفيف للاستقرار.
+    يُعاير على بيانات التدريب فقط. يعيد (b0, b1) على المقياس الأصلي، ومعاملي الإزاحة والمقياس."""
+    x = np.asarray(x, float); y = np.asarray(y, float)
+    mu, sd = x.mean(), x.std()
+    if sd == 0:
+        raise ValueError("المتنبئ ثابت في بيانات التدريب: لا يمكن المعايرة")
+    z = (x - mu) / sd
+    X = np.column_stack([np.ones_like(z), z])
+    b = np.zeros(2)
+    for _ in range(iters):
+        p = _sigmoid(X @ b)
+        grad = X.T @ (y - p) - l2 * b
+        H = X.T @ (X * (p * (1 - p))[:, None]) + l2 * np.eye(2)
+        step = np.linalg.solve(H, grad)
+        b = b + step
+        if np.max(np.abs(step)) < 1e-8:
+            break
+    b0 = b[0] - b[1] * mu / sd
+    b1 = b[1] / sd
+    return float(b0), float(b1)
+
+
+def fit_logistic_multi(X, y, l2=1e-3, iters=100):
+    """انحدار لوجستي متعدد المتنبئات (IRLS). X: مصفوفة (n × k) بلا ثابت.
+    يعيد (المعاملات على المقياس الأصلي مع الثابت أولاً، والمتوسطات، والانحرافات)."""
+    X = np.asarray(X, float); y = np.asarray(y, float)
+    mu = X.mean(axis=0); sd = X.std(axis=0)
+    if np.any(sd == 0):
+        raise ValueError("أحد المتنبئات ثابت في بيانات التدريب")
+    Z = np.column_stack([np.ones(len(y)), (X - mu) / sd])
+    b = np.zeros(Z.shape[1])
+    for _ in range(iters):
+        p = _sigmoid(Z @ b)
+        grad = Z.T @ (y - p) - l2 * b
+        H = Z.T @ (Z * (p * (1 - p))[:, None]) + l2 * np.eye(Z.shape[1])
+        step = np.linalg.solve(H, grad)
+        b = b + step
+        if np.max(np.abs(step)) < 1e-8:
+            break
+    beta = b[1:] / sd
+    intercept = b[0] - np.sum(b[1:] * mu / sd)
+    return np.concatenate([[intercept], beta])
+
+
+def brier(p, y):
+    p = np.asarray(p, float); y = np.asarray(y, float)
+    return float(np.mean((p - y) ** 2))
+
+
+def calib_table(p, y, bins=5):
+    """جدول معايرة بتقسيم المواقع حسب الاحتمال المتوقع إلى مجموعات متساوية تقريباً."""
+    p = np.asarray(p, float); y = np.asarray(y, float)
+    order = np.argsort(p)
+    rows = []
+    for chunk in np.array_split(order, bins):
+        if len(chunk) == 0:
+            continue
+        rows.append({"n": int(len(chunk)), "متوسط المتوقع": round(float(p[chunk].mean()), 3),
+                     "نسبة الملاحظ": round(float(y[chunk].mean()), 3)})
+    return rows
+
+
+def logistic_eval(df, drastic_scores):
+    """معايرة على التدريب، وتقييم على الاختبار. Brier skill مقارنة بالتنبؤ بنسبة التدريب الثابتة."""
+    y_all = df["label"].values.astype(float)
+    d_all = np.asarray(drastic_scores, float)
+    tr = df["split"].values == "train"; te = df["split"].values == "test"
+    res = {"n_train": int(tr.sum()), "n_train_pos": int(y_all[tr].sum()),
+           "n_test": int(te.sum()), "n_test_pos": int(y_all[te].sum()), "warnings": []}
+    if res["n_train_pos"] < 10 or (tr.sum() - res["n_train_pos"]) < 10:
+        res["warnings"].append("بيانات التدريب لا تكفي للمعايرة: يجب أن تحوي 10 حالات على الأقل من كل فئة")
+    if res["n_test"] < 30:
+        res["warnings"].append(f"مواقع الاختبار {res['n_test']} فقط: فاصل الثقة سيكون واسعاً")
+    b0, b1 = fit_logistic(d_all[tr], y_all[tr])
+    res["b0"], res["b1"] = b0, b1
+    p_te = _sigmoid(b0 + b1 * d_all[te])
+    y_te = y_all[te]
+    prev_train = float(y_all[tr].mean())
+    null_brier = brier(np.full(len(y_te), prev_train), y_te)
+    res["brier"] = brier(p_te, y_te)
+    res["brier_null"] = null_brier
+    res["skill"] = 1 - res["brier"] / null_brier if null_brier > 0 else float("nan")
+    test_df = df[te].reset_index(drop=True)
+    def skill_on(idx):
+        bb = brier(p_te[idx], y_te[idx]); nb = brier(np.full(len(idx), prev_train), y_te[idx])
+        return 1 - bb / nb if nb > 0 else float("nan")
+    lo, hi = boot_stat_by_location(test_df, skill_on)
+    res["skill_ci"] = (lo, hi)
+    res["calib"] = calib_table(p_te, y_te)
+    res["p_test"] = p_te
+    if np.isnan(lo):
+        res["verdict"] = "غير قابل للحكم"
+    elif lo > 0:
+        res["verdict"] = "المعايرة تتفوق على التنبؤ بالنسبة الثابتة (وفق القاعدة المعلنة)"
+    else:
+        res["verdict"] = "المعايرة لا تتفوق على التنبؤ بالنسبة الثابتة (وفق القاعدة المعلنة)"
+    return res
+
+
+def dual_eval(df, drastic_scores, prev_bonus):
+    """ثلاثة نماذج على مجموعة الاختبار:
+    A: DRASTIC وحده (معايرة)، B: التركيز السابق وحده (معايرة)، C: الاثنان معاً مع أوزان مُتعلَّمة.
+    الأوزان تُقدَّر من التدريب فقط. لا يوجد α أو β مفروضة."""
+    y = df["label"].values.astype(float)
+    d = np.asarray(drastic_scores, float); b = np.asarray(prev_bonus, float)
+    tr = df["split"].values == "train"; te = df["split"].values == "test"
+    res = {"n_train": int(tr.sum()), "n_train_pos": int(y[tr].sum()),
+           "n_test": int(te.sum()), "n_test_pos": int(y[te].sum()), "warnings": []}
+    if res["n_train_pos"] < 20:
+        res["warnings"].append(f"التدريب فيه {res['n_train_pos']} حالة تجاوز فقط: نموذج بمتنبئين يحتاج عادة 20 حالة على الأقل، والأوزان غير مستقرة")
+    if res["n_test"] < 30 or res["n_test_pos"] < 10:
+        res["warnings"].append("مجموعة الاختبار صغيرة: الحكم غير حاسم")
+    coef_c = fit_logistic_multi(np.column_stack([d[tr], b[tr]]), y[tr])
+    coef_a = fit_logistic_multi(d[tr][:, None], y[tr])
+    coef_b = fit_logistic_multi(b[tr][:, None], y[tr])
+    pc = _sigmoid(coef_c[0] + coef_c[1] * d[te] + coef_c[2] * b[te])
+    pa = _sigmoid(coef_a[0] + coef_a[1] * d[te])
+    pb = _sigmoid(coef_b[0] + coef_b[1] * b[te])
+    yt = y[te]
+    res["coef_c"] = coef_c
+    res["auc_a"] = auc_rank(yt, pa); res["auc_b"] = auc_rank(yt, pb); res["auc_c"] = auc_rank(yt, pc)
+    prev_train = float(y[tr].mean())
+    null = brier(np.full(len(yt), prev_train), yt)
+    res["skill_c"] = 1 - brier(pc, yt) / null if null > 0 else float("nan")
+    test_df = df[te].reset_index(drop=True)
+    def diff_auc(idx):
+        return auc_rank(yt[idx], pc[idx]) - auc_rank(yt[idx], pb[idx])
+    res["diff_ci"] = boot_stat_by_location(test_df, diff_auc)
+    lo = res["diff_ci"][0]
+    if np.isnan(lo):
+        res["verdict"] = "غير قابل للحكم"
+    elif lo > 0:
+        res["verdict"] = "النموذج المزدوج المُتعلَّم يتفوق على التركيز السابق وحده (وفق القاعدة المعلنة)"
+    else:
+        res["verdict"] = "النموذج المزدوج المُتعلَّم لا يتفوق على التركيز السابق وحده (وفق القاعدة المعلنة)"
+    return res
+
+
+def boot_stat_by_location(df, fn, B=1000, seed=42):
+    """فاصل ثقة bootstrap لدالة fn(indices) على مستوى الموقع."""
+    rng = np.random.default_rng(seed)
+    locs = pd.unique(df["location_id"].values)
+    groups = [np.where(df["location_id"].values == l)[0] for l in locs]
+    out = []
+    for _ in range(B):
+        pick = rng.integers(0, len(locs), len(locs))
+        idx = np.concatenate([groups[i] for i in pick])
+        v = fn(idx)
+        if not np.isnan(v):
+            out.append(v)
+    if not out:
+        return float("nan"), float("nan")
+    return float(np.percentile(out, 2.5)), float(np.percentile(out, 97.5))
+
+
 def tox_with_limits(base, cn, hg, cn_lim, hg_lim):
     """نفس منطق tox_eval لكن بحدود صريحة (لمقارنة البدائل)."""
     cs = hazard_score(cn, cn_lim); hs = hazard_score(hg, hg_lim)
@@ -936,6 +1098,130 @@ def view_predictive(std):
         if r["auc_comp"] is not None:
             st.write(f"AUC {tx('المنافس: القرب من التعدين', 'competitor: distance to mining')} = {round(r['auc_comp'], 3)}")
         st.write(f"**{tx('الحكم', 'Verdict')}:** {r['verdict']}")
+        st.markdown("---")
+        st.subheader(tx("المعايرة اللوجستية: احتمال التجاوز", "Logistic calibration: exceedance probability"))
+        st.caption(tx("تُعاير العلاقة على مواقع التدريب وحدها، ثم تُقيَّم على الاختبار. المعايرة صالحة فقط للبيئة الجيولوجية نفسها.",
+                      "Calibrated on training sites only, then evaluated on test. Valid only for a similar geological setting."))
+        cal = logistic_eval(df, scores)
+        for w in cal["warnings"]:
+            st.warning(w)
+        st.write(f"{tx('معاملات المعايرة', 'Coefficients')}: b0 = {cal['b0']:.3f}، b1 = {cal['b1']:.4f} "
+                 f"({tx('لكل وحدة من DRASTIC', 'per DRASTIC unit')})")
+        st.write(f"Brier = {cal['brier']:.4f} | Brier (نسبة ثابتة) = {cal['brier_null']:.4f} | "
+                 f"Brier skill = {cal['skill']:.3f}")
+        lo_s, hi_s = cal["skill_ci"]
+        st.write(f"Brier skill 95% CI: [{lo_s:.3f}, {hi_s:.3f}]")
+        st.dataframe(pd.DataFrame(cal["calib"]), hide_index=True, use_container_width=True)
+        st.write(f"**{tx('حكم المعايرة', 'Calibration verdict')}:** {cal['verdict']}")
+        st.caption(tx("Brier skill أكبر من الصفر يعني أن الاحتمالات أفضل من التنبؤ بنسبة التدريب الثابتة.",
+                      "Brier skill above zero means probabilities beat the constant training prevalence."))
+    except Exception as e:
+        st.error(f"{type(e).__name__}: {e}")
+
+
+def build_map_frame(ds, std):
+    """يبني جدول المواقع بالأسماء التي تتوقعها وحدة auto_maps: lon, lat، والتقييمات السبعة، و CN، Hg، DRASTIC، DRASTIC_Tox."""
+    rows = []
+    for r in ds.get_all_sites_as_dataframe().to_dict("records"):
+        ev = evaluate(r, std)
+        rt = ev["rt"]
+        rows.append({"site": r.get("site_name", ""), "lat": float(r["lat"]), "lon": float(r["lon"]),
+                     "D_rating": rt["D"], "R_rating": rt["R"], "A_rating": rt["A"], "S_rating": rt["S"],
+                     "T_rating": rt["T"], "I_rating": rt["I"], "C_rating": rt["C"],
+                     "CN": float(r["cn_water_mg_l"]), "Hg": float(r["hg_water_mg_l"]),
+                     "DRASTIC": ev["idx"], "DRASTIC_Tox": ev["tox"]["tox"]})
+    return pd.DataFrame(rows)
+
+
+def view_maps(ds, std):
+    st.warning(tx("خرائط تقديرية: تُبنى من 40 موقعاً فقط، وإحداثياتها تقريبية (نحو 5 كم). الاستيفاء بين النقاط تقدير رياضي، وليس قياساً ولا دليلاً مكانياً.",
+                  "Estimated maps: built from only 40 sites with approximate coordinates (~5 km). Interpolation between points is a mathematical estimate, not measurement or spatial evidence."))
+    try:
+        import auto_maps as am
+        import gis_raster as gr
+    except Exception as e:
+        st.error(f"{tx('وحدة الخرائط غير متاحة', 'Map module unavailable')}: {type(e).__name__}: {e}")
+        return
+    try:
+        frame = build_map_frame(ds, std)
+    except Exception as e:
+        st.error(f"{type(e).__name__}: {e}")
+        return
+    st.subheader(tx("لوحة الخرائط (12 خريطة)", "Map panel (12 maps)"))
+    try:
+        fig = am.generate_auto_maps(frame)
+        st.plotly_chart(fig, use_container_width=True)
+    except Exception as e:
+        st.error(f"{tx('فشل رسم اللوحة', 'Panel failed')}: {type(e).__name__}: {e}")
+    st.subheader(tx("سطح DRASTIC المستنتج (IDW)", "Interpolated DRASTIC surface (IDW)"))
+    try:
+        pts = [(float(a), float(b), float(c)) for a, b, c in zip(frame["lat"], frame["lon"], frame["DRASTIC"])]
+        raster = gr.idw_interpolation(pts, resolution=60)
+        if "error" in raster:
+            st.error(raster["error"])
+            return
+        st.plotly_chart(gr.create_raster_plotly(raster, title="DRASTIC (IDW, تقدير)"), use_container_width=True)
+        stats = gr.compute_raster_statistics(raster)
+        st.caption(tx(f"المساحة المغطاة تقريباً: {stats.get('coverage_km2')} كم²، وهي مساحة الاستيفاء وليست مساحة مُقاسة.",
+                      f"Covered area (approx.): {stats.get('coverage_km2')} km², an interpolation extent, not a measured area."))
+    except Exception as e:
+        st.error(f"{tx('فشل الاستيفاء', 'Interpolation failed')}: {type(e).__name__}: {e}")
+
+
+def view_dual(std):
+    st.warning(tx("نموذج مزدوج: الأوزان تُتعلَّم من بيانات التدريب بدل فرض α وβ. يحتاج عينة تدريب أكبر من النماذج البسيطة.",
+                  "Dual model: weights are learned from training data instead of fixed α and β. Needs more training data than the simple models."))
+    st.info(PREREG_PREV)
+    cols = ["location_id", "split", "label"] + PREDICTOR_COLS + PREV_COLS
+    st.download_button(tx("📥 قالب النموذج المزدوج", "📥 Dual model template"),
+                       pd.DataFrame(columns=cols).to_csv(index=False).encode("utf-8-sig"),
+                       file_name="dual_model_template.csv", mime="text/csv")
+    confirmed = st.checkbox(tx("أؤكد أن التسمية مأخوذة من حملة لاحقة لم تُستخدم في أي متنبئ",
+                               "I confirm the label comes from a later campaign not used in any predictor"),
+                            key="dual_confirm")
+    up = st.file_uploader("CSV / Excel", type=["csv", "xlsx"], key="dual_up")
+    if up is None:
+        return
+    if not confirmed:
+        st.error(tx("يجب تأكيد استقلال التسمية قبل التحليل", "You must confirm label independence first"))
+        return
+    df = pd.read_csv(up) if up.name.endswith(".csv") else pd.read_excel(up)
+    try:
+        prev_guard(list(df.columns))
+        df["split"] = df["split"].astype(str).str.strip().str.lower()
+        df["label"] = df["label"].astype(int)
+        L = STANDARDS[std]
+        d_list, b_list, errs = [], [], []
+        for i, row in df.iterrows():
+            try:
+                d_list.append(index_of(ratings(row.to_dict())))
+                cn = _chk(row["cn_prev"], "cn_prev"); hg = _chk(row["hg_prev"], "hg_prev")
+                b_list.append(min(50.0, hazard_score(cn, L["cn"]) + hazard_score(hg, L["hg"])))
+            except Exception as e:
+                errs.append(f"row {i + 1}: {type(e).__name__}: {e}")
+                d_list.append(np.nan); b_list.append(np.nan)
+        if errs:
+            st.error(f"{len(errs)} {tx('صف فشل', 'rows failed')}")
+            for e in errs[:10]:
+                st.caption(e)
+            return
+        r = dual_eval(df, d_list, b_list)
+        for w in r["warnings"]:
+            st.warning(w)
+        st.write(f"{tx('التدريب', 'Train')}: {r['n_train']} ({r['n_train_pos']} تجاوز) | "
+                 f"{tx('الاختبار', 'Test')}: {r['n_test']} ({r['n_test_pos']} تجاوز)")
+        c0, c1, c2 = r["coef_c"]
+        st.write(f"**{tx('أوزان مُتعلَّمة', 'Learned weights')}:** ثابت = {c0:.3f} | "
+                 f"DRASTIC = {c1:.4f} | {tx('التركيز السابق', 'prior conc.')} = {c2:.4f}")
+        st.dataframe(pd.DataFrame([
+            {tx("النموذج", "Model"): tx("DRASTIC وحده", "DRASTIC alone"), "AUC": round(r["auc_a"], 3)},
+            {tx("النموذج", "Model"): tx("التركيز السابق وحده", "Prior conc. alone"), "AUC": round(r["auc_b"], 3)},
+            {tx("النموذج", "Model"): tx("المزدوج المُتعلَّم", "Learned dual"), "AUC": round(r["auc_c"], 3)},
+        ]), hide_index=True, use_container_width=True)
+        lo, hi = r["diff_ci"]
+        st.write(f"{tx('فرق AUC (المزدوج − التركيز وحده)', 'AUC diff (dual − conc. only)')}: [{lo:.3f}, {hi:.3f}]")
+        st.write(f"Brier skill (المزدوج مقابل الثابت) = {r['skill_c']:.3f}")
+        st.write(f"**{tx('الحكم', 'Verdict')}:** {r['verdict']}")
     except Exception as e:
         st.error(f"{type(e).__name__}: {e}")
 
@@ -1066,6 +1352,23 @@ def run_self_tests(ds=None):
     chk("AUC: فصل تام = 1.0", auc_rank([0, 0, 1, 1], [1, 2, 3, 4]) == 1.0)
     chk("AUC: عكس الفصل = 0.0", auc_rank([0, 0, 1, 1], [4, 3, 2, 1]) == 0.0)
     chk("AUC: كل القيم متعادلة = 0.5", auc_rank([0, 1, 0, 1], [5, 5, 5, 5]) == 0.5)
+    _xs = np.linspace(-2, 2, 200); _ys = (_xs + np.random.default_rng(3).normal(0, 0.5, 200) > 0).astype(float)
+    _b0, _b1 = fit_logistic(_xs, _ys)
+    chk("معايرة: الميل موجب عندما يرتبط المتنبئ بالهدف", _b1 > 0, round(_b1, 3))
+    chk("معايرة: Brier = 0.25 للاحتمال 0.5 مع نسبة 50%", abs(brier(np.full(4, 0.5), [0, 1, 0, 1]) - 0.25) < 1e-12)
+    chk("معايرة: الاحتمالات بين 0 و1", bool(np.all((_sigmoid(_b0 + _b1 * _xs) > 0) & (_sigmoid(_b0 + _b1 * _xs) < 1))))
+    _r2 = np.random.default_rng(9); _X = _r2.normal(size=(300, 2))
+    _yy = (_X[:, 0] * 2 - _X[:, 1] * 0.5 + _r2.normal(0, 0.5, 300) > 0).astype(float)
+    _c = fit_logistic_multi(_X, _yy)
+    chk("نموذج مزدوج: المعاملان يُستعادان بالإشارة الصحيحة", _c[1] > 0 and _c[2] < 0, [round(v, 2) for v in _c])
+    if ds is not None:
+        try:
+            _f = build_map_frame(ds, "SUDAN")
+            _need = ["lon", "lat", "D_rating", "R_rating", "A_rating", "S_rating", "T_rating", "I_rating",
+                     "C_rating", "CN", "Hg", "DRASTIC", "DRASTIC_Tox"]
+            chk("خرائط: الجدول يحوي كل الأعمدة المطلوبة لكل المواقع", all(c in _f.columns for c in _need) and len(_f) == 40, len(_f))
+        except Exception as e:
+            chk("خرائط: بناء الجدول", False, f"{type(e).__name__}: {e}")
     chk("إضافة: التركيز الحالي في الملف يُرفض", _raises_msg(lambda: prev_guard(PREDICTOR_COLS + PREV_COLS + ["cn_water_mg_l"]), "تركيزاً حالياً"))
     chk("إضافة: الملف الصحيح مقبول", prev_guard(PREDICTOR_COLS + PREV_COLS) is True)
     _rng = np.random.default_rng(7); _n = 80
@@ -1183,6 +1486,10 @@ def main():
             view_predictive(STD)
         elif mode == "prev":
             view_prev(STD)
+        elif mode == "dual":
+            view_dual(STD)
+        elif mode == "map":
+            view_maps(ds, STD)
         else:
             st.radio(tx("مصدر الموقع", "Site source"), ["list", "manual"], horizontal=True,
                      format_func=lambda s: tx("موقع من القائمة", "Site from list") if s == "list"
