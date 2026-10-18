@@ -283,3 +283,63 @@ def prepare_df_for_maps(df, get_rating_funcs):
         out["site"] = out.get("site_name", out.index.astype(str))
 
     return out
+
+
+ONE_MAP_LAYERS = [
+    ("DRASTIC", "DRASTIC", "Viridis"),
+    ("DRASTIC_Tox", "DRASTIC-Tox", "Turbo"),
+    ("CN", "CN (mg/L)", "Reds"),
+    ("Hg", "Hg (mg/L)", "Reds"),
+    ("D_rating", "D: العمق", "Greens"),
+    ("R_rating", "R: التغذية", "Blues"),
+    ("A_rating", "A: الخزان", "Purp"),
+    ("S_rating", "S: التربة", "YlOrBr"),
+    ("T_rating", "T: الميل", "Reds"),
+    ("I_rating", "I: غير المشبعة", "Teal"),
+    ("C_rating", "C: الناقلية", "BuGn"),
+]
+
+
+def generate_single_map(df):
+    """خريطة واحدة لكل المواقع. قائمة منسدلة تختار الطبقة المعروضة، والمرور على أي نقطة يعرض كل القيم."""
+    import plotly.graph_objects as go
+
+    required = ["lon", "lat", "site", "DRASTIC", "DRASTIC_Tox", "CN", "Hg",
+                "D_rating", "R_rating", "A_rating", "S_rating", "T_rating", "I_rating", "C_rating"]
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise ValueError(f"أعمدة مفقودة: {missing}")
+
+    has_src = "coord_source" in df.columns
+    custom = [[str(r.site), round(float(r.DRASTIC), 1), round(float(r.DRASTIC_Tox), 1),
+               round(float(r.CN), 4), round(float(r.Hg), 4),
+               f"{r.D_rating}/{r.R_rating}/{r.A_rating}/{r.S_rating}/{r.T_rating}/{r.I_rating}/{r.C_rating}",
+               str(r.coord_source) if has_src else ""]
+              for r in df.itertuples()]
+    hover = ("<b>%{customdata[0]}</b><br>DRASTIC: %{customdata[1]}<br>DRASTIC-Tox: %{customdata[2]}"
+             "<br>CN: %{customdata[3]} mg/L<br>Hg: %{customdata[4]} mg/L"
+             "<br>التقييمات D/R/A/S/T/I/C: %{customdata[5]}<br>الإحداثيات: %{customdata[6]}<extra></extra>")
+
+    fig = go.Figure()
+    for i, (col, label, cmap) in enumerate(ONE_MAP_LAYERS):
+        fig.add_trace(go.Scattermapbox(
+            lat=df["lat"].values, lon=df["lon"].values, mode="markers",
+            marker=dict(size=13, color=df[col].values, colorscale=cmap, showscale=True,
+                        colorbar=dict(title=dict(text=label), thickness=12)),
+            customdata=custom, hovertemplate=hover, visible=(i == 0), name=label))
+
+    buttons = []
+    for i, (_, label, _) in enumerate(ONE_MAP_LAYERS):
+        buttons.append(dict(label=label, method="update",
+                            args=[{"visible": [j == i for j in range(len(ONE_MAP_LAYERS))]},
+                                  {"title.text": f"{label} — المواقع المقاسة (إحداثيات تقريبية)"}]))
+
+    fig.update_layout(
+        mapbox=dict(style="open-street-map",
+                    center=dict(lat=float(df["lat"].mean()), lon=float(df["lon"].mean())), zoom=4.6),
+        title=dict(text=f"{ONE_MAP_LAYERS[0][1]} — المواقع المقاسة (إحداثيات تقريبية)", x=0.5),
+        margin=dict(l=0, r=0, t=50, b=0), height=620,
+        updatemenus=[dict(buttons=buttons, direction="down", x=0.01, y=0.99, showactive=True,
+                          bgcolor="white")],
+    )
+    return fig
