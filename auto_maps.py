@@ -320,9 +320,15 @@ def generate_single_map(df):
              "<br>CN: %{customdata[3]} mg/L<br>Hg: %{customdata[4]} mg/L"
              "<br>التقييمات D/R/A/S/T/I/C: %{customdata[5]}<br>الإحداثيات: %{customdata[6]}<extra></extra>")
 
+    # Plotly الحديثة (6+) تستبدل Scattermapbox بـ Scattermap. ندعم الاثنين.
+    if hasattr(go, "Scattermap"):
+        TraceCls, layout_key = go.Scattermap, "map"
+    else:
+        TraceCls, layout_key = go.Scattermapbox, "mapbox"
+
     fig = go.Figure()
     for i, (col, label, cmap) in enumerate(ONE_MAP_LAYERS):
-        fig.add_trace(go.Scattermapbox(
+        fig.add_trace(TraceCls(
             lat=df["lat"].values, lon=df["lon"].values, mode="markers",
             marker=dict(size=13, color=df[col].values, colorscale=cmap, showscale=True,
                         colorbar=dict(title=dict(text=label), thickness=12)),
@@ -334,9 +340,8 @@ def generate_single_map(df):
                             args=[{"visible": [j == i for j in range(len(ONE_MAP_LAYERS))]},
                                   {"title.text": f"{label} — المواقع المقاسة (إحداثيات تقريبية)"}]))
 
-    fig.update_layout(
-        mapbox=dict(style="open-street-map",
-                    center=dict(lat=float(df["lat"].mean()), lon=float(df["lon"].mean())), zoom=4.6),
+    fig.update_layout(**{layout_key: dict(style="open-street-map",
+                    center=dict(lat=float(df["lat"].mean()), lon=float(df["lon"].mean())), zoom=4.6)},
         title=dict(text=f"{ONE_MAP_LAYERS[0][1]} — المواقع المقاسة (إحداثيات تقريبية)", x=0.5),
         margin=dict(l=0, r=0, t=50, b=0), height=620,
         updatemenus=[dict(buttons=buttons, direction="down", x=0.01, y=0.99, showactive=True,
