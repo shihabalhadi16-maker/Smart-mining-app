@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-VERSION = "v70"
+VERSION = "v72"
 
 # ============================================================
 # 1. المعايير — مصدر واحد للحدود (كل المواضع تقرأ منه)
@@ -341,6 +341,7 @@ MODE_LBL = {"system": ("النظام الأساسي", "Core system"), "agri": ("
             "prev": ("اختبار إضافة التركيز السابق", "Test: does adding prior concentration help?"),
             "dual": ("نموذج مزدوج مُتعلَّم (تجريبي)", "Learned dual model (experimental)"),
             "map": ("خرائط تقديرية (تجريبي)", "Estimated maps (experimental)"),
+            "overlay": ("خريطة هشاشة بالتراكب (تجريبي)", "Vulnerability overlay (experimental)"),
             "transport": ("نقل الملوثات (توجيهي)", "Transport (indicative)")}
 OPTIONAL_MODULES = ["weight_manager", "external_validation", "data_validator", "pdf_generator",
                     "excel_exporter", "gis_raster", "live_apis", "auto_calibration", "auto_maps",
@@ -1206,7 +1207,24 @@ def view_maps(ds, std):
         st.write(f"{tx('مواقع بإحداثيات مُدخلة يدوياً', 'Sites with manually entered coordinates')}: {n_manual} / {len(frame)}")
         for e in coord_errs:
             st.warning(e)
-        st.plotly_chart(am.generate_single_map(frame), use_container_width=True)
+        size = st.slider(tx("ارتفاع الخريطة (بكسل)", "Map height (px)"), 400, 1000, 650, 50, key="map_h")
+        boost = st.slider(tx("التكبير الإضافي", "Extra zoom"), 0.0, 2.0, 0.6, 0.2, key="map_z")
+        st.plotly_chart(am.generate_single_map(frame, height=size, zoom_boost=boost), use_container_width=True)
+        export_cols = ["site", "lat", "lon", "coord_source", "D_rating", "R_rating", "A_rating", "S_rating",
+                       "T_rating", "I_rating", "C_rating", "DRASTIC", "DRASTIC_Tox", "CN", "Hg"]
+        st.download_button(tx("📥 تصدير لـArcGIS/QGIS (CSV بالإحداثيات)", "📥 Export for ArcGIS/QGIS (CSV)"),
+                           frame[export_cols].to_csv(index=False).encode("utf-8-sig"),
+                           file_name="drastic_tox_points.csv", mime="text/csv")
+        _bins = {"D": ("m", [(10, 1.5), (9, 4.6), (7, 9.1), (5, 15.2), (3, 22.9), (2, 30.5), (1, ">30.5")]),
+                 "R": ("mm/yr", [(1, 50.8), (3, 101.6), (6, 177.8), (8, 254.0), (9, ">254")]),
+                 "T": ("%", [(10, 2.0), (9, 6.0), (5, 12.0), (3, 18.0), (1, ">18")]),
+                 "C": ("m/day", [(1, 4.074), (2, 12.222), (4, 28.518), (6, 40.740), (8, 81.480), (10, ">81.480")])}
+        reclass = pd.DataFrame([{"parameter": k, "unit": u, "rating": rt, "upper_bound": ub}
+                                for k, (u, rows_) in _bins.items() for rt, ub in rows_])
+        reclass["source_status"] = "من الذاكرة، تحتاج مطابقة مع Aller 1987"
+        st.download_button(tx("📥 جدول إعادة التصنيف (للمطابقة في ArcGIS)", "📥 Reclassification table (for ArcGIS)"),
+                           reclass.to_csv(index=False).encode("utf-8-sig"),
+                           file_name="reclassification_table.csv", mime="text/csv")
         st.caption(tx("اختر الطبقة من القائمة المنسدلة أعلى الخريطة. مرّر المؤشر على أي نقطة لرؤية كل القيم.",
                       "Pick a layer from the dropdown on the map. Hover a point to see all values."))
     except Exception as e:
@@ -1430,6 +1448,9 @@ def run_self_tests(ds=None):
     chk("إحداثيات: خارج السودان يُرفض مع رسالة", ("سنار", "B") not in _ov and any("خارج نطاق" in e for e in _er), _er)
     chk("إحداثيات: الصف الفارغ يُتجاهل", ("سنار", "C") not in _ov)
     chk("إحداثيات: القيمة غير الرقمية تُرفض مع رسالة", ("سنار", "D") not in _ov and any("ليست أرقاماً" in e for e in _er))
+    _exp = build_map_frame(ds, "SUDAN") if ds is not None else None
+    if _exp is not None:
+        chk("تصدير: الأعمدة المطلوبة لـArcGIS موجودة", all(c in _exp.columns for c in ["lat", "lon", "D_rating", "C_rating", "DRASTIC", "DRASTIC_Tox", "CN", "Hg"]))
     chk("إضافة: التركيز الحالي في الملف يُرفض", _raises_msg(lambda: prev_guard(PREDICTOR_COLS + PREV_COLS + ["cn_water_mg_l"]), "تركيزاً حالياً"))
     chk("إضافة: الملف الصحيح مقبول", prev_guard(PREDICTOR_COLS + PREV_COLS) is True)
     _rng = np.random.default_rng(7); _n = 80
@@ -1551,6 +1572,14 @@ def main():
             view_dual(STD)
         elif mode == "map":
             view_maps(ds, STD)
+        elif mode == "overlay":
+            try:
+                import gis_overlay as _go
+                _go.render_view(st, tx, {"r_D": r_D, "r_R": r_R, "r_T": r_T, "r_C": r_C,
+                                         "AQUIFER": AQUIFER, "SOIL": SOIL, "VADOSE": VADOSE},
+                                evaluate, STD)
+            except Exception as e:
+                st.error(f"{tx('وحدة التراكب غير متاحة', 'Overlay module unavailable')}: {type(e).__name__}: {e}")
         else:
             st.radio(tx("مصدر الموقع", "Site source"), ["list", "manual"], horizontal=True,
                      format_func=lambda s: tx("موقع من القائمة", "Site from list") if s == "list"
