@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-VERSION = "v72"
+VERSION = "v74"
 
 # ============================================================
 # 1. المعايير — مصدر واحد للحدود (كل المواضع تقرأ منه)
@@ -1051,11 +1051,17 @@ def view_predictive(std):
                   "Strict mode: DRASTIC alone is the only allowed predictor. No concentrations or DRASTIC-Tox. "
                   "Verdict is based only on the independent test set."))
     st.info(PREREG_RULE)
-    cols = ["location_id", "split", "label"] + PREDICTOR_COLS + ["dist_to_mine_m"]
+    cols = (["location_id", "split", "label"] + PREDICTOR_COLS + ["dist_to_mine_m", "lat", "lon",
+            "measure_date", "lab", "method", "detection_limit"])
     sample = pd.DataFrame(columns=cols)
     st.download_button(tx("📥 قالب البيانات المستقلة", "📥 Independent data template"),
                        sample.to_csv(index=False).encode("utf-8-sig"), file_name="independent_template.csv",
                        mime="text/csv")
+    import design_checks as _dc
+    _dc.render_sample_size(st, tx)
+    confirmed = st.checkbox(tx("أؤكد أن التسمية (label) مأخوذة من حملة لاحقة لم تُستخدم في أي متنبئ",
+                               "I confirm the label comes from a later campaign not used in any predictor"),
+                            key="pred_confirm")
     up = st.file_uploader("CSV / Excel", type=["csv", "xlsx"], key="pred_up")
     if up is None:
         st.caption(tx("الأعمدة المطلوبة: location_id، split (train/test)، label (0/1)، والمتنبئات الجيولوجية السبعة. "
@@ -1086,6 +1092,12 @@ def view_predictive(std):
             st.error(f"{len(errs)} {tx('صف فشل', 'rows failed')}")
             for e in errs[:10]:
                 st.caption(e)
+            return
+        df_ds = df.copy(); df_ds["_score"] = scores
+        if not confirmed:
+            st.error(tx("يجب تأكيد استقلال التسمية قبل التحليل", "You must confirm label independence first"))
+            return
+        if _dc.render_design(st, tx, df_ds).startswith("مرفوض"):
             return
         r = predictive_eval(df, scores)
         for w in r["warnings"]:
@@ -1209,7 +1221,14 @@ def view_maps(ds, std):
             st.warning(e)
         size = st.slider(tx("ارتفاع الخريطة (بكسل)", "Map height (px)"), 400, 1000, 650, 50, key="map_h")
         boost = st.slider(tx("التكبير الإضافي", "Extra zoom"), 0.0, 2.0, 0.6, 0.2, key="map_z")
-        st.plotly_chart(am.generate_single_map(frame, height=size, zoom_boost=boost), use_container_width=True)
+        try:
+            fig_ = am.generate_single_map(frame, height=size, zoom_boost=boost)
+        except TypeError:
+            # ملف auto_maps.py في المستودع قديم ولا يقبل المعاملات الجديدة
+            st.error(tx("ملف auto_maps.py في المستودع قديم. ارفع النسخة الأحدث من المجلد المرفق.",
+                        "Your repo's auto_maps.py is outdated. Upload the latest version."))
+            return
+        st.plotly_chart(fig_, use_container_width=True)
         export_cols = ["site", "lat", "lon", "coord_source", "D_rating", "R_rating", "A_rating", "S_rating",
                        "T_rating", "I_rating", "C_rating", "DRASTIC", "DRASTIC_Tox", "CN", "Hg"]
         st.download_button(tx("📥 تصدير لـArcGIS/QGIS (CSV بالإحداثيات)", "📥 Export for ArcGIS/QGIS (CSV)"),
@@ -1385,108 +1404,8 @@ def view_transport(site):
 
 
 def run_self_tests(ds=None):
-    res = []
-
-    def chk(name, cond, detail=""):
-        res.append((name, bool(cond), str(detail)))
-
-    base = {"depth_m": 15, "recharge_mm": 20, "slope_pct": 3, "conductivity": 3, "aquifer": "massive_shale",
-            "soil": "thin_or_absent", "vadose": "confining_layer", "cn_water_mg_l": 0.025, "hg_water_mg_l": 0.011}
-    ev = evaluate(base, "SUDAN")
-    chk("A: DRASTIC = 72", ev["idx"] == 72, ev["idx"])
-    chk("A: hazard(Hg=0.011, limit=0.004) = 4.39", round(hazard_score(0.011, 0.004), 2) == 4.39)
-    chk("A: DRASTIC-Tox = 76.4 (SUDAN Hg=0.004)", ev["tox"]["tox"] == 76.4, ev["tox"]["tox"])
-    chk("A: الزيادة 6.1%", ev["tox"]["inc_pct"] == 6.1, ev["tox"]["inc_pct"])
-    chk("A: EU = 82.4", evaluate(base, "EU")["tox"]["tox"] == 82.4, evaluate(base, "EU")["tox"]["tox"])
-    chk("حدود DRASTIC 23..226", index_of({k: 1 for k in W_STD}) == 23 and
-        index_of({"D": 10, "R": 9, "A": 10, "S": 10, "T": 10, "I": 10, "C": 10}) == 226)
-    chk("حدود Pesticide 26..256", index_of({k: 1 for k in W_PEST}, W_PEST) == 26 and
-        index_of({"D": 10, "R": 9, "A": 10, "S": 10, "T": 10, "I": 10, "C": 10}, W_PEST) == 256)
-    chk("WHO: CN = 0.07 يعطي HQ=1", tox_eval(0, 0.07, 0, "WHO")["hq"] == 1.0)
-    chk("تصنيف HQ: 1 مطابق، 5.5 مرتفع قليلاً، 11 مرتفع", hq_class(1) == "compliant" and
-        hq_class(5.5) == "elevated" and hq_class(11) == "hq_high")
-    chk("الميل: 2.0 → 10 و 2.1 → 9", r_T(2.0) == 10 and r_T(2.1) == 9)
-    chk("خطأ صريح عند NaN", _raises(lambda: evaluate({**base, "cn_water_mg_l": float("nan")}, "SUDAN")))
-    chk("خطأ صريح عند فئة غير معروفة", _raises(lambda: evaluate({**base, "soil": "xyz"}, "SUDAN")))
-    chk("parse '<0.001' بقاعدة نصف الحد = 0.0005", parse_conc("<0.001", "نصف حد الكشف") == 0.0005)
-    chk("تسرب: التركيز في المتنبئ يُرفض", _raises_msg(lambda: leakage_guard(PREDICTOR_COLS + ["cn_water_mg_l"]), "تسرب"))
-    chk("تسرب: DRASTIC-Tox في المتنبئ يُرفض", _raises_msg(lambda: leakage_guard(PREDICTOR_COLS + ["DRASTIC-Tox"]), "تسرب"))
-    chk("المتنبئ الجيولوجي وحده مقبول", leakage_guard(PREDICTOR_COLS) is True)
-    chk("AUC: فصل تام = 1.0", auc_rank([0, 0, 1, 1], [1, 2, 3, 4]) == 1.0)
-    chk("AUC: عكس الفصل = 0.0", auc_rank([0, 0, 1, 1], [4, 3, 2, 1]) == 0.0)
-    chk("AUC: كل القيم متعادلة = 0.5", auc_rank([0, 1, 0, 1], [5, 5, 5, 5]) == 0.5)
-    _xs = np.linspace(-2, 2, 200); _ys = (_xs + np.random.default_rng(3).normal(0, 0.5, 200) > 0).astype(float)
-    _b0, _b1 = fit_logistic(_xs, _ys)
-    chk("معايرة: الميل موجب عندما يرتبط المتنبئ بالهدف", _b1 > 0, round(_b1, 3))
-    chk("معايرة: Brier = 0.25 للاحتمال 0.5 مع نسبة 50%", abs(brier(np.full(4, 0.5), [0, 1, 0, 1]) - 0.25) < 1e-12)
-    chk("معايرة: الاحتمالات بين 0 و1", bool(np.all((_sigmoid(_b0 + _b1 * _xs) > 0) & (_sigmoid(_b0 + _b1 * _xs) < 1))))
-    _r2 = np.random.default_rng(9); _X = _r2.normal(size=(300, 2))
-    _yy = (_X[:, 0] * 2 - _X[:, 1] * 0.5 + _r2.normal(0, 0.5, 300) > 0).astype(float)
-    _c = fit_logistic_multi(_X, _yy)
-    chk("نموذج مزدوج: المعاملان يُستعادان بالإشارة الصحيحة", _c[1] > 0 and _c[2] < 0, [round(v, 2) for v in _c])
-    if ds is not None:
-        try:
-            _f = build_map_frame(ds, "SUDAN")
-            _need = ["lon", "lat", "D_rating", "R_rating", "A_rating", "S_rating", "T_rating", "I_rating",
-                     "C_rating", "CN", "Hg", "DRASTIC", "DRASTIC_Tox"]
-            chk("خرائط: الجدول يحوي كل الأعمدة المطلوبة لكل المواقع", all(c in _f.columns for c in _need) and len(_f) == 40, len(_f))
-        except Exception as e:
-            chk("خرائط: بناء الجدول", False, f"{type(e).__name__}: {e}")
-    _ra = {"lats": [0.0, 1.0], "lons": [0.0, 1.0], "raster": [[1.0, 1.0], [1.0, 1.0]]}
-    _m, _ok, _all = mask_far_cells(_ra, [(0.0, 0.0, 5.0)], max_km=50)
-    chk("خرائط: الخلايا البعيدة عن المواقع تُفرغ", _ok < _all and np.isnan(_m["raster"][1][1]) and _m["raster"][0][0] == 1.0, (_ok, _all))
-    import tempfile, os as _os
-    _tmp = _os.path.join(tempfile.gettempdir(), "coords_selftest.csv")
-    pd.DataFrame([
-        {"state": "سنار", "site_key": "A", "lat": "13.5", "lon": "33.6", "source": "Google Maps", "read_date": "2026-10-18"},
-        {"state": "سنار", "site_key": "B", "lat": "45.0", "lon": "33.6", "source": "x", "read_date": ""},
-        {"state": "سنار", "site_key": "C", "lat": "", "lon": "", "source": "", "read_date": ""},
-        {"state": "سنار", "site_key": "D", "lat": "abc", "lon": "33", "source": "", "read_date": ""},
-    ]).to_csv(_tmp, index=False, encoding="utf-8-sig")
-    _ov, _er = load_coord_overrides(_tmp)
-    chk("إحداثيات: الصف الصالح يُقبل", ("سنار", "A") in _ov and _ov[("سنار", "A")]["lat"] == 13.5)
-    chk("إحداثيات: خارج السودان يُرفض مع رسالة", ("سنار", "B") not in _ov and any("خارج نطاق" in e for e in _er), _er)
-    chk("إحداثيات: الصف الفارغ يُتجاهل", ("سنار", "C") not in _ov)
-    chk("إحداثيات: القيمة غير الرقمية تُرفض مع رسالة", ("سنار", "D") not in _ov and any("ليست أرقاماً" in e for e in _er))
-    _exp = build_map_frame(ds, "SUDAN") if ds is not None else None
-    if _exp is not None:
-        chk("تصدير: الأعمدة المطلوبة لـArcGIS موجودة", all(c in _exp.columns for c in ["lat", "lon", "D_rating", "C_rating", "DRASTIC", "DRASTIC_Tox", "CN", "Hg"]))
-    chk("إضافة: التركيز الحالي في الملف يُرفض", _raises_msg(lambda: prev_guard(PREDICTOR_COLS + PREV_COLS + ["cn_water_mg_l"]), "تركيزاً حالياً"))
-    chk("إضافة: الملف الصحيح مقبول", prev_guard(PREDICTOR_COLS + PREV_COLS) is True)
-    _rng = np.random.default_rng(7); _n = 80
-    _d = pd.DataFrame({"location_id": [f"S{i}" for i in range(_n)], "split": ["test"] * _n,
-                       "label": _rng.integers(0, 2, _n), "DRASTIC": _rng.uniform(40, 200, _n),
-                       "cn_prev": 0.01, "hg_prev": 0.001})
-    _r = prev_contrast(_d, "SUDAN")
-    chk("إضافة: بيانات بلا إشارة لا تُقبل", not (_r["diff_ci"][0] > 0), _r["diff_ci"])
-    if ds is not None:
-        try:
-            cal = calib_frame(ds, "SUDAN")
-            p4 = (cal["hq"].values > 1).astype(int)
-            chk("ج: قاعدة التجاوز kappa = 1.0", abs(cohen_kappa(cal["y"].values, p4) - 1.0) < 1e-9)
-            g = ds.get_site_data("كسلا", "Gash_Upstream")
-            eb = evaluate(g, "SUDAN")
-            chk("ب: Gash_Upstream = 159 و 159.0 و مكافأة 0", eb["idx"] == 159 and eb["tox"]["tox"] == 159.0 and eb["tox"]["bonus"] == 0)
-            chk("مراجعة البيانات الخام: كل الحقول موجودة", not audit_db(ds), audit_db(ds)[:3])
-        except Exception as e:
-            chk("اختبارات البيانات", False, f"{type(e).__name__}: {e}")
-    return res
-
-
-def _raises_msg(fn, word):
-    try:
-        fn()
-    except ValueError as e:
-        return word in str(e)
-    return False
-
-
-def _raises(fn):
-    try:
-        fn()
-    except ValueError:
-        return True
-    return False
+    import selftest
+    return selftest.run(ds, sys.modules[__name__])
 
 
 def main():
